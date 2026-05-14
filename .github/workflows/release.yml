@@ -1,0 +1,77 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve version from tag
+        id: ver
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Patch system.json (version, manifest, download)
+        env:
+          REPO: ${{ github.repository }}
+          VERSION: ${{ steps.ver.outputs.version }}
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          repo = os.environ["REPO"]
+          version = os.environ["VERSION"]
+          tag = os.environ["TAG"]
+          with open("system.json", "r", encoding="utf-8") as f:
+              data = json.load(f)
+          data["version"] = version
+          data["manifest"] = f"https://github.com/{repo}/releases/latest/download/system.json"
+          data["download"] = f"https://github.com/{repo}/releases/download/{tag}/system.zip"
+          with open("system.json", "w", encoding="utf-8") as f:
+              json.dump(data, f, indent=2, ensure_ascii=False)
+              f.write("\n")
+          PY
+          echo "--- Patched system.json ---"
+          cat system.json
+
+      - name: Build system.zip
+        run: |
+          zip -r system.zip \
+            system.json \
+            dbu-old.mjs \
+            module \
+            styles \
+            lang \
+            templates \
+            packs \
+            assets \
+            README.md \
+            LICENSE \
+            CHANGELOG.md \
+            -x "module/data/_build_catalog.py" \
+            -x "packs/**/LOCK"
+          unzip -l system.zip | head -50
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: ${{ steps.ver.outputs.tag }}
+          body_path: CHANGELOG.md
+          draft: false
+          prerelease: false
+          files: |
+            system.json
+            system.zip

@@ -1,0 +1,47 @@
+# Claude Code / MCP / IDE
+.claude/
+.mcp.json
+.playwright-mcp/
+.vscode/
+.idea/
+
+# Local scripts and batch files
+*.bat
+build-zip.ps1
+extract_zim.py
+scripts/
+
+# Secrets - NEVER commit
+google_drive_api.txt
+*.key
+*.pem
+.env
+.env.*
+
+# Development screenshots (root level)
+/*.png
+
+# Reference/source material (kept locally, not distributed)
+Doc.excel.referencia.txt
+legendary-traits-extracted.txt
+Docs/
+Manuales_Organizados/
+
+# Internal build helpers
+module/data/_build_catalog.py
+
+# LevelDB runtime artifacts
+packs/**/LOCK
+
+# Node / build artifacts
+node_modules/
+package.json
+package-lock.json
+yarn.lock
+dist/
+*.log
+
+# OS
+Thumbs.db
+.DS_Store
+desktop.ini

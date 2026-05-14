@@ -1,0 +1,73 @@
+{
+  "id": "DBU-MRR-OLD",
+  "title": "Dragon Ball Universe RPG - Old System",
+  "description": "Sistema no oficial fan-made de Dragon Ball Universe (versión antigua) para Foundry VTT, con mecánicas d10, Tiers of Power, Ki y transformaciones. Sin contenido oficial de los libros.",
+  "version": "1.0.0",
+  "compatibility": {
+    "minimum": "12",
+    "verified": "12",
+    "maximum": "12"
+  },
+  "authors": [
+    {
+      "name": "MRR / ArdillaTactica",
+      "discord": "ardillatactica",
+      "url": "https://github.com/ArdillaTactica"
+    }
+  ],
+  "esmodules": ["dbu-old.mjs"],
+  "styles": [
+    "styles/dbu-old.css"
+  ],
+  "languages": [
+    {
+      "lang": "es",
+      "name": "Español",
+      "path": "lang/es.json"
+    }
+  ],
+  "documentTypes": {
+    "Actor": {
+      "character": {
+        "htmlFields": ["biography", "notes"]
+      },
+      "npc": {
+        "htmlFields": ["description", "notes"]
+      },
+      "battleJacket": {}
+    },
+    "Item": {
+      "technique": { "htmlFields": ["description"] },
+      "transformation": { "htmlFields": ["description"] },
+      "talent": { "htmlFields": ["description"] },
+      "racialTrait": { "htmlFields": ["description"] },
+      "aura": { "htmlFields": ["description"] },
+      "uniqueAbility": { "htmlFields": ["description"] },
+      "equipment": { "htmlFields": ["description"] }
+    }
+  },
+  "packs": [
+    {
+      "name": "racial-traits",
+      "label": "Racial Traits",
+      "path": "packs/racial-traits",
+      "type": "Item",
+      "ownership": {
+        "PLAYER": "OBSERVER",
+        "ASSISTANT": "OWNER"
+      }
+    }
+  ],
+  "gridDistance": 1,
+  "gridUnits": "sq",
+  "primaryTokenAttribute": "lifePoints",
+  "secondaryTokenAttribute": "kiPool",
+  "url": "https://github.com/ArdillaTactica/dbu-mrr-old",
+  "manifest": "https://github.com/ArdillaTactica/dbu-mrr-old/releases/latest/download/system.json",
+  "download": "https://github.com/ArdillaTactica/dbu-mrr-old/releases/download/v1.0.0/system.zip",
+  "readme": "https://github.com/ArdillaTactica/dbu-mrr-old/blob/main/README.md",
+  "changelog": "https://github.com/ArdillaTactica/dbu-mrr-old/blob/main/CHANGELOG.md",
+  "bugs": "https://github.com/ArdillaTactica/dbu-mrr-old/issues",
+  "license": "MIT",
+  "media": []
+}
