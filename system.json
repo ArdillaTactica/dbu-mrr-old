@@ -1,8 +1,8 @@
 {
   "id": "DBU-MRR-OLD",
-  "title": "Dragon Ball Universe RPG - Old System",
-  "description": "Sistema no oficial fan-made de Dragon Ball Universe (versión antigua) para Foundry VTT, con mecánicas d10, Tiers of Power, Ki y transformaciones. Sin contenido oficial de los libros.",
-  "version": "1.0.0",
+  "title": "Dragon Universe RPG - Old System",
+  "description": "Automatización para Foundry VTT del juego de rol Dragon Universe (versión antigua), creado por el equipo de https://dbu-rpg.com/. Implementación con permiso de los autores; mecánicas d10, Tiers of Power, Ki y transformaciones. Proyecto sin ánimo de lucro, gratuito, hecho por fans para fans.",
+  "version": "1.0.1",
   "compatibility": {
     "minimum": "12",
     "verified": "12",

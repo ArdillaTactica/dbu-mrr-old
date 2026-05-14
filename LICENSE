@@ -24,10 +24,14 @@ SOFTWARE.
 
 Note on intellectual property:
 
-This software is an unofficial fan-made implementation of the Dragon Ball
-Universe RPG (DBU) tabletop ruleset, distributed free of charge for the fan
-community. "Dragon Ball" and related names, marks, and logos are trademarks of
-Toei Animation, Bird Studio / Shueisha and Bandai. This project is not
-affiliated with, endorsed, sponsored, or specifically approved by those
-companies. No copyrighted artwork, scanned rulebook content, or commercial
-material is distributed in this repository.
+This repository is the source code of a Foundry VTT automation for the
+Dragon Universe tabletop RPG, whose rules and original design belong to the
+team at https://dbu-rpg.com/. This automation is published with the express
+permission of the original authors. It is a non-commercial, fan-made project
+distributed free of charge. No copyrighted artwork, scanned rulebook content,
+or commercial material is distributed in this repository — for the official
+rules, please visit https://dbu-rpg.com/.
+
+The MIT license above applies exclusively to the automation source code in
+this repository. It does NOT grant any rights over the underlying Dragon
+Universe RPG ruleset, which remains the property of its original authors.
