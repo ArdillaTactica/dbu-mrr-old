@@ -146,3 +146,69 @@ Hooks.once("init", () => {
 Hooks.once("ready", () => {
   console.log("DBU-OLD | System ready");
 });
+
+/**
+ * Chat-message click handler for attack-roll Pay buttons.
+ *
+ * Buttons are injected by the tracker "Roll Attack" feature with:
+ *   data-dbu-pay="ki-cost" | "ki-wager"
+ *   data-actor-id=<actor id>
+ *   data-amount=<KP to deduct>
+ *
+ * Payments are SERIALIZED per actor through a Promise queue so that fast
+ * back-to-back clicks (Pay Cost then Pay Wager) don't race on the same KP
+ * value and silently overwrite each other.
+ */
+const _DBU_PAY_QUEUES = new Map();
+function _dbuQueuePayment(actorId, work) {
+  const prev = _DBU_PAY_QUEUES.get(actorId) || Promise.resolve();
+  const next = prev.then(work, work);  // run even if previous rejected
+  _DBU_PAY_QUEUES.set(actorId, next.catch(() => {}));
+  return next;
+}
+
+Hooks.on("renderChatMessage", (message, html, data) => {
+  const $html = html instanceof HTMLElement ? $(html) : html;
+  $html.find("[data-dbu-pay]").each((_, btn) => {
+    btn.addEventListener("click", async (ev) => {
+      ev.preventDefault();
+      if (btn.disabled) return;
+      const actorId = btn.dataset.actorId;
+      const actor = game.actors.get(actorId);
+      if (!actor) return ui.notifications.error("Actor not found.");
+      if (!actor.isOwner && !game.user.isGM) {
+        return ui.notifications.warn("You don't own this actor.");
+      }
+      const amount = Math.max(0, Number(btn.dataset.amount) || 0);
+      if (amount <= 0) {
+        btn.disabled = true;
+        return;
+      }
+      // Disable button IMMEDIATELY (before await) to prevent the same button
+      // being clicked twice while its own update is in-flight.
+      btn.disabled = true;
+      btn.classList.add("dbu-pay-pending");
+      const kind = btn.dataset.dbuPay === "ki-wager" ? "Wager" : "Cost";
+
+      await _dbuQueuePayment(actorId, async () => {
+        // Re-read ki AT THE MOMENT this queued payment runs so we always see
+        // the post-previous-payment value (prevents the race that lets one
+        // payment overwrite another).
+        const ki = actor.system.kiPool?.value ?? 0;
+        const shortBy = amount - ki;
+        const newKi = Math.max(0, ki - amount);
+        await actor.update({ "system.kiPool.value": newKi });
+        btn.classList.remove("dbu-pay-pending");
+        if (shortBy > 0) {
+          btn.innerHTML = `<i class="fas fa-exclamation-triangle"></i> Short by ${shortBy} KP — paid ${ki}`;
+          btn.classList.add("dbu-pay-paid", "dbu-pay-short");
+          ui.notifications.warn(`${actor.name}: insufficient KP. Paid ${ki}/${amount} ${kind}. Short by ${shortBy} KP.`);
+        } else {
+          btn.innerHTML = `<i class="fas fa-check"></i> Paid ${kind}: ${amount} KP`;
+          btn.classList.add("dbu-pay-paid");
+          ui.notifications.info(`${actor.name}: -${amount} KP (${kind}). Remaining: ${newKi}`);
+        }
+      });
+    });
+  });
+});

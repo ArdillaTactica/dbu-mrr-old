@@ -173,6 +173,40 @@
                 <input type="text" class="action-desc" data-round="{{../roundNumber}}" data-action-index="{{@index}}" value="{{description}}" placeholder="Description..." />
                 <button type="button" class="action-delete-btn" data-action="delete-tracker-action" data-round="{{../roundNumber}}" data-action-index="{{@index}}"><i class="fas fa-times"></i></button>
               </div>
+              {{#if (and (eq type "attack") _attackData)}}
+              <div class="tracker-attack-panel" data-round="{{../roundNumber}}" data-action-index="{{@index}}">
+                <div class="tap-row tap-formula-row">
+                  <span class="tap-label">Strike:</span>
+                  <span class="tap-formula">{{_attackData.strikeFormula}}</span>
+                  <span class="tap-ct">CT {{_attackData.strikeCT}}+</span>
+                </div>
+                <div class="tap-row tap-formula-row">
+                  <span class="tap-label">Wound:</span>
+                  <span class="tap-formula">{{_attackData.woundFormula}}</span>
+                  <span class="tap-cat">{{_attackData.damageCat}}</span>
+                </div>
+                <div class="tap-row tap-meta-row">
+                  <span class="tap-meta-item"><i class="fas fa-bolt"></i> {{_attackData.foundation}}/{{_attackData.profile}}</span>
+                  <span class="tap-meta-item"><i class="fas fa-burst"></i> EC: {{_attackData.energyCharges}}</span>
+                  <span class="tap-meta-item"><i class="fas fa-fire"></i> Cost: {{_attackData.kiCost}} KP</span>
+                  <label class="tap-wager-label">
+                    <i class="fas fa-coins"></i> Ki Wager:
+                    <input type="number" class="tap-wager-input" data-round="{{../roundNumber}}" data-action-index="{{@index}}" value="{{kiWager}}" min="0" />
+                  </label>
+                </div>
+                {{#if _attackData.activeBuffs.length}}
+                <div class="tap-row tap-buffs-row">
+                  <span class="tap-label">Active:</span>
+                  {{#each _attackData.activeBuffs}}<span class="tap-buff-chip" title="{{tooltip}}">{{name}}</span>{{/each}}
+                </div>
+                {{/if}}
+                <div class="tap-row tap-actions-row">
+                  <button type="button" class="tap-roll-btn" data-action="roll-tracker-attack" data-round="{{../roundNumber}}" data-action-index="{{@index}}">
+                    <i class="fas fa-dice-d20"></i> Roll Attack (Strike + Wound)
+                  </button>
+                </div>
+              </div>
+              {{/if}}
               {{else}}
               <div class="tracker-action past-action">
                 <span class="action-type-label">{{type}}</span>
@@ -191,6 +225,7 @@
         {{!-- Tracker Controls --}}
         <div class="tracker-controls">
           <button type="button" data-action="tracker-add-action" class="action-btn primary"><i class="fas fa-plus"></i> Action</button>
+          <button type="button" data-action="tracker-add-action" data-default-type="attack" class="action-btn attack"><i class="fas fa-fist-raised"></i> Attack</button>
           <button type="button" data-action="tracker-next-round" class="action-btn"><i class="fas fa-forward"></i> Next Round</button>
           <button type="button" data-action="tracker-reset" class="action-btn danger"><i class="fas fa-trash"></i> Reset</button>
         </div>

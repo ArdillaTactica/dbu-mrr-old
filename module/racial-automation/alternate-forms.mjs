@@ -76,6 +76,20 @@ function _findOptionValue(options) {
   return null;
 }
 
+function _findAllOptionValues(options) {
+  if (!options) return [];
+  const out = [];
+  for (const key of Object.keys(options)) {
+    const val = options[key];
+    if (Array.isArray(val)) {
+      for (const v of val) if (v && typeof v === "string" && v !== "none") out.push(v);
+    } else if (val && typeof val === "string" && val !== "none") {
+      out.push(val);
+    }
+  }
+  return out;
+}
+
 /**
  * Find a specific option value by effect level key.
  */
@@ -1579,81 +1593,189 @@ function applyBonusesForKey(key, system, tier, baseTier, S, G, options, entry, t
     // ========== MONSTER FORM ==========
 
     case "monster_form": {
+      // Find the active transformation entry for mastery check
+      const mfTrans = transformations.find(t => t.active && t.catalogKey === "monster_form");
+      const isMastered = mfTrans?.mastered === true;
       // Monstrous Ascension L1 [Permanent]: 2 chosen Attributes (not FO/MA/IN) get AMB +1(T)
-      entry.conditionals.push(`2 chosen Attributes: +${tier} AMB each (Monstrous Ascension)`);
-      // Monster Traits — check options (player selects 2)
-      const moOpt = _findOptionValue(options);
-      if (moOpt) {
-        const moLower = moOpt.toLowerCase();
-        if (moLower.includes("ravaging") || moLower.includes("charger")) {
+      // Player records choice in options.monsterAttrs as array of attribute keys (e.g., ["ag", "pe"]).
+      // Valid choices: AG/TE/SC/PE (not FO/MA/IN per catalog).
+      const VALID_MF_ATTRS = new Set(["ag", "te", "sc", "pe"]);
+      const rawAttrs = options?.monsterAttrs;
+      const chosenAttrs = (Array.isArray(rawAttrs) ? rawAttrs : (rawAttrs ? [rawAttrs] : []))
+        .map(a => String(a).toLowerCase())
+        .filter(a => VALID_MF_ATTRS.has(a))
+        .slice(0, 2); // max 2 per catalog
+      if (chosenAttrs.length > 0) {
+        const appliedNames = [];
+        for (const k of chosenAttrs) {
+          if (system.attributes[k]) {
+            system.attributes[k].modifier += tier;
+            system.attributes[k].totalScore = system.attributes[k].score + system.attributes[k].modifier;
+            appliedNames.push(k.toUpperCase());
+          }
+        }
+        entry.bonuses.push(`+${tier} AMB(${appliedNames.join("/")}) (Monstrous Ascension chosen attributes)`);
+      } else {
+        entry.conditionals.push(`2 chosen Attributes: +${tier} AMB each (Monstrous Ascension)`);
+      }
+      // Monster Traits — MULTI-OPTION: player selects 2 different Monster Traits and BOTH apply
+      const moOpts = _findAllOptionValues(options).map(o => o.toLowerCase());
+      const moHas = (key) => moOpts.some(o => o.includes(key));
+      if (moOpts.length > 0) {
+        if (moHas("ravaging") || moHas("charger")) {
           system.aptitudes.monsterRavagingChargerActive = true;
           addSpeed(system, tier);
           totals.speed += tier;
           entry.bonuses.push(`+${tier} Speed (Ravaging Charger)`);
         }
-        if (moLower.includes("unrelenting")) {
+        if (moHas("unrelenting")) {
           system.aptitudes.monsterUnrelentingActive = true;
+          // L1: +2 Steadfast DS
           system.aptitudes.steadfastBonus = (system.aptitudes.steadfastBonus || 0) + 2;
           totals.steadfast += 2;
           entry.bonuses.push("+2 Steadfast Dice Score (Unrelenting)");
-          entry.conditionals.push(`Below Injured: +${2 * baseTier} Soak (Unrelenting)`);
+          // L2: +2(bT) Soak while below Injured Health Threshold (dynamic)
+          const hsU = system.status?.healthStatus || "healthy";
+          const belowInjured = (hsU === "injured" || hsU === "critical");
+          if (belowInjured) {
+            const unSoak = 2 * baseTier;
+            system.status.soak = (system.status.soak || 0) + unSoak;
+            entry.bonuses.push(`+${unSoak} Soak (Unrelenting, below Injured)`);
+          } else {
+            entry.conditionals.push(`Below Injured: +${2 * baseTier} Soak (Unrelenting)`);
+          }
         }
-        if (moLower.includes("adaptive") || moLower.includes("toughness")) {
+        if (moHas("adaptive") || moHas("toughness")) {
           system.aptitudes.monsterAdaptiveToughnessActive = true;
-          entry.conditionals.push(`Per threshold below: +${tier} Soak (Adaptive Toughness)`);
+          // L1: +1(T) Soak per Health Threshold below — dynamic per actor state
+          const thresholdsBelow = system.thresholds?.crossedCount ?? 0;
+          if (thresholdsBelow > 0) {
+            const adapSoak = thresholdsBelow * tier;
+            system.status.soak = (system.status.soak || 0) + adapSoak;
+            entry.bonuses.push(`+${adapSoak} Soak (Adaptive Toughness, ${thresholdsBelow} thresholds below)`);
+          } else {
+            entry.conditionals.push(`Per threshold below: +${tier} Soak (Adaptive Toughness)`);
+          }
         }
-        if (moLower.includes("limber")) {
+        if (moHas("limber")) {
           system.aptitudes.monsterLimberActive = true;
-          entry.conditionals.push(`Above Injured: +${baseTier} Dodge (Limber)`);
+          // L1: +1(bT) Dodge while above Injured Health Threshold
+          const hs = system.status?.healthStatus || "healthy";
+          const aboveInjured = (hs === "healthy" || hs === "bruised");
+          if (aboveInjured) {
+            system.aptitudes.dodgeBuffTotal = (system.aptitudes.dodgeBuffTotal || 0) + baseTier;
+            totals.dodge += baseTier;
+            entry.bonuses.push(`+${baseTier} Dodge (Limber, above Injured)`);
+          } else {
+            entry.conditionals.push(`Above Injured: +${baseTier} Dodge (Limber)`);
+          }
         }
-        if (moLower.includes("evolving")) {
+        if (moHas("evolving")) {
           system.aptitudes.monsterEvolvingBeastActive = true;
-          entry.conditionals.push("2+ Evolution: +1 Steadfast DS (Evolving Beast)");
-          entry.conditionals.push(`4 Evolution: +${tier} Clash DS for Might/Saves (Evolving Beast)`);
+          // L2/L3 stack-dependent passives (Evolution stacks resource)
+          const evoStacks = system.transformationMeta?.specialResources?.evolutionStacks?.value ?? 0;
+          if (evoStacks >= 2) {
+            system.aptitudes.steadfastBonus = (system.aptitudes.steadfastBonus || 0) + 1;
+            entry.bonuses.push(`+1 Steadfast DS (Evolving Beast, ${evoStacks} stacks)`);
+          } else {
+            entry.conditionals.push("2+ Evolution: +1 Steadfast DS (Evolving Beast)");
+          }
+          if (evoStacks >= 4) {
+            // +1(T) Clash DS for Opponent-initiated Clashes using Might or Saving Throws
+            system.aptitudes.evolvingBeastClashBonus = (system.aptitudes.evolvingBeastClashBonus || 0) + tier;
+            entry.bonuses.push(`+${tier} Clash DS (Might/Saves, Evolving Beast)`);
+          } else {
+            entry.conditionals.push(`4 Evolution: +${tier} Clash DS for Might/Saves (Evolving Beast)`);
+          }
         }
-        if (moLower.includes("bloodlust")) {
+        if (moHas("bloodlust")) {
           system.aptitudes.monsterBloodlustActive = true;
-          entry.conditionals.push(`Per Bloodlust: +${tier} Strike & Wound (Bloodlust)`);
+          // L2: per Bloodlust stack, +1(T) Strike and Wound
+          const bloodStacks = system.transformationMeta?.specialResources?.bloodlustStacks?.value ?? 0;
+          if (bloodStacks > 0) {
+            const bonus = bloodStacks * tier;
+            system.aptitudes.strikeBuffTotal = (system.aptitudes.strikeBuffTotal || 0) + bonus;
+            system.aptitudes.woundBuffTotal = (system.aptitudes.woundBuffTotal || 0) + bonus;
+            entry.bonuses.push(`+${bonus} Strike & Wound (Bloodlust, ${bloodStacks} stacks × ${tier})`);
+          } else {
+            entry.conditionals.push(`Per Bloodlust: +${tier} Strike & Wound (Bloodlust)`);
+          }
         }
-        if (moLower.includes("petrification")) {
+        if (moHas("petrification")) {
           system.aptitudes.monsterPetrificationActive = true;
-          entry.conditionals.push(`Per Plate: +${baseTier} DR, -${baseTier} movement (Petrification)`);
+          // L1 Triggered/Transform: gain 3 Plates on entering Monster Form.
+          // Per Plate: +1(bT) DR, -1(bT) movement. Default 3 Plates unless tracked otherwise.
+          const plates = system.transformationMeta?.specialResources?.monsterPlates?.value ?? 3;
+          if (plates > 0) {
+            const platesDR = plates * baseTier;
+            const platesMoveReduction = plates * baseTier;
+            system.status.dr = (system.status.dr || 0) + platesDR;
+            // Apply movement reduction (can't go below 0)
+            const curSpeed = system.status?.normalSpeed ?? 0;
+            const curBoosted = system.status?.boostedSpeed ?? 0;
+            system.status.normalSpeed = Math.max(0, curSpeed - platesMoveReduction);
+            system.status.boostedSpeed = Math.max(0, curBoosted - platesMoveReduction);
+            entry.bonuses.push(`+${platesDR} DR, -${platesMoveReduction} movement (Petrification, ${plates} Plates)`);
+          } else {
+            entry.conditionals.push(`Per Plate: +${baseTier} DR, -${baseTier} movement (Petrification)`);
+          }
         }
-        if (moLower.includes("shedding")) {
+        if (moHas("shedding")) {
           system.aptitudes.monsterSheddingActive = true;
           entry.conditionals.push(`Legend Realized LP +1d6(${tier}) (Shedding Transformation)`);
         }
-        if (moLower.includes("terrifying")) {
+        if (moHas("terrifying")) {
           system.aptitudes.monsterTerrifyingActive = true;
-          entry.conditionals.push("Intimidation Natural Result +1, gain Terrify Maneuver (Terrifying Visage)");
+          // L1: +1 Natural Result on Intimidation Skill Checks
+          system.aptitudes.intimidationNaturalResultBonus = (system.aptitudes.intimidationNaturalResultBonus || 0) + 1;
+          entry.bonuses.push("+1 Intimidation Natural Result (Terrifying Visage)");
+          entry.conditionals.push("Gain Terrify Maneuver (Terrifying Visage)");
         }
-        if (moLower.includes("unique") || moLower.includes("monstrosity")) {
+        if (moHas("unique") || moHas("monstrosity")) {
           system.aptitudes.monsterUniqueMonstrosityActive = true;
-          entry.conditionals.push(`Unique Ability KP cost -${2 * tier} (Unique Monstrosity)`);
+          // L2: Reduce Unique Ability KP Cost by 2(T)
+          system.aptitudes.uniqueAbilityKPReduction = (system.aptitudes.uniqueAbilityKPReduction || 0) + 2 * tier;
+          entry.bonuses.push(`-${2 * tier} KP cost on chosen Unique Ability (Unique Monstrosity)`);
         }
-        if (moLower.includes("weather") || moLower.includes("battle weather") || moLower.includes("light") || moLower.includes("low gravity")) {
+        if (moHas("weather") || moHas("battle weather") || moHas("light")) {
           system.aptitudes.monsterWeatherEnvironmentActive = true;
-          if (moLower.includes("battle weather")) {
+          if (moHas("battle weather")) {
             system.aptitudes.monsterWeatherBattleWeatherActive = true;
-          } else if (moLower.includes("light")) {
-            system.aptitudes.monsterWeatherLightActive = true;
-          } else if (moLower.includes("low gravity")) {
-            system.aptitudes.monsterWeatherLowGravityActive = true;
+            entry.conditionals.push(`In chosen Battle Weather: +${tier} Combat Rolls (Weather Environment — Battle Weather)`);
           }
-          entry.conditionals.push(`In Battle Weather: +${tier} Combat Rolls (Weather Environment)`);
-          entry.conditionals.push("Light option: enemy abnormal Visibility → +1d6(T) Wound");
+          if (moHas("light")) {
+            system.aptitudes.monsterWeatherLightActive = true;
+            entry.conditionals.push("Always Normal Sight; Opponent abnormal Visibility → +1d6(T) Wound (Weather Environment — Light)");
+          }
         }
-        if (moLower.includes("bestial")) {
+        if (moHas("bestial")) {
           system.aptitudes.monsterBestialMonsterActive = true;
           entry.conditionals.push("Gain a Bestial Trait (Bestial Monster)");
         }
+        if (moHas("brood")) {
+          system.aptitudes.monsterBroodParentActive = true;
+        }
+        if (moHas("vile aura") || (moHas("vile") && !moHas("vile technique"))) {
+          system.aptitudes.monsterVileAuraActive = true;
+          entry.conditionals.push("Create Aura (TP ≤20) with Restricted Aura/Monster Form (Vile Aura)");
+        }
+        if (moHas("mutating")) {
+          system.aptitudes.monsterMutatingBeastActive = true;
+          entry.conditionals.push("Select Evolutionary Peak option (Captain/Tactician/Technician/Speedster/Brute/Psychic) (Mutating Beast)");
+        }
       } else {
-        entry.conditionals.push("2 Monster Traits: Ravaging/Unrelenting/Adaptive/Limber/Evolving/Bloodlust/Petrification/Shedding/Terrifying/Unique/Weather/Bestial");
+        entry.conditionals.push("2 Monster Traits: Ravaging/Unrelenting/Adaptive/Limber/Evolving/Bloodlust/Petrification/Shedding/Terrifying/Unique/Weather/Bestial/Brood/Vile Aura/Mutating Beast");
       }
       // Beast of Wrath [Passive]: optional Rampaging LV2 → +1(T) AMB(FO/TE/MA) + Armored
       entry.conditionals.push(`Beast of Wrath (optional): +${tier} AMB(FO/TE/MA) + Armored while Rampaging`);
-      // Mastery (Controlled Monster) [Passive]: +1(T) AMB(IN); Beast of Wrath stable; +1 Monster Trait in Full Power
-      entry.conditionals.push(`Mastery: +${tier} AMB(IN); Beast of Wrath stable; +1 Monster Trait in Full Power`);
+      // Mastery (Controlled Monster): +T AMB(IN) and Enhanced Save (Morale)+Natural already applied
+      // automatically via masteryEffectsCatalog["monster_form"] in actor.mjs (do NOT duplicate here).
+      if (isMastered) {
+        entry.bonuses.push(`Mastery: +${tier} AMB(IN) + Enhanced Save (Morale) + Natural (auto-applied)`);
+        entry.conditionals.push("Mastery: Beast of Wrath no longer adds Rampaging; +1 Monster Trait in Full Power");
+      } else {
+        entry.conditionals.push(`Mastery: +${tier} AMB(IN); Beast of Wrath stable; +1 Monster Trait in Full Power`);
+      }
       // -- Triggered/Limited --
       entry.triggered.push({
         id: "monster_monstrous_ascension_2", name: "Monstrous Ascension (1/Round)",
@@ -1670,38 +1792,37 @@ function applyBonusesForKey(key, system, tier, baseTier, S, G, options, entry, t
         description: `On Transform or by spending 1 Action, add Rampaging LV2 to Monster Form. AMB(FO/TE/MA) +${tier}, gains Armored. Lasts until leaving or Defeated.`,
         usageLimit: "1/Encounter", maxUses: 1
       });
-      // Monster trait-specific triggered entries
-      if (moOpt) {
-        const moLower = moOpt.toLowerCase();
-        if (moLower.includes("adaptive") || moLower.includes("toughness")) {
+      // Monster trait-specific triggered entries — iterate ALL selected Monster Traits
+      if (moOpts.length > 0) {
+        if (moHas("adaptive") || moHas("toughness")) {
           entry.triggered.push({
             id: "monster_adaptive_toughness_2", name: "Adaptive Toughness (1/Round)",
             description: "When targeted by an Attacking Maneuver, double the Soak bonus from Adaptive Toughness for that attack.",
             usageLimit: "1/Round", maxUses: 1
           });
         }
-        if (moLower.includes("bloodlust")) {
+        if (moHas("bloodlust")) {
           entry.triggered.push({
             id: "monster_bloodlust_1", name: "Bloodlust (Resource)",
             description: "When you knock an Opponent through a Health Threshold or Defeat a Minion, gain 1 Bloodlust (max 3). Defeating an Opponent → gain 3 Bloodlust.",
             usageLimit: "Triggered", maxUses: null
           });
         }
-        if (moLower.includes("brood")) {
+        if (moHas("brood")) {
           entry.triggered.push({
             id: "monster_brood_parent_1", name: "Brood Parent (1/Round)",
             description: `Spend 1 Action and ${5 * baseTier} KP to create a Duplicate Minion (1 Size smaller).`,
             usageLimit: "1/Round", maxUses: 1
           });
         }
-        if (moLower.includes("limber")) {
+        if (moHas("limber")) {
           entry.triggered.push({
             id: "monster_limber_2", name: "Limber (1/Round)",
             description: "Use the Movement Maneuver as an Instant Maneuver.",
             usageLimit: "1/Round", maxUses: 1
           });
         }
-        if (moLower.includes("petrification")) {
+        if (moHas("petrification")) {
           entry.triggered.push({
             id: "monster_petrification_2", name: "Petrification Plating (1/Round)",
             description: `If hit by an Attacking Maneuver, spend 1 Plate to increase DR by ${6 * baseTier} for that attack.`,
@@ -1713,34 +1834,35 @@ function applyBonusesForKey(key, system, tier, baseTier, S, G, options, entry, t
             usageLimit: "1/Encounter", maxUses: 1
           });
         }
-        if (moLower.includes("ravaging") || moLower.includes("charger")) {
+        if (moHas("ravaging") || moHas("charger")) {
           entry.triggered.push({
             id: "monster_ravaging_charger_2", name: "Ravaging Charger (1/Round)",
             description: "If you hit an Opponent after moving into their Melee Range this round, make a Morale Clash. Win → +1/2 max Boosted Speed to Wound Roll.",
             usageLimit: "1/Round", maxUses: 1
           });
         }
-        if (moLower.includes("shedding")) {
+        if (moHas("shedding")) {
           entry.triggered.push({
             id: "monster_shedding_3", name: "Shedding Transformation (Defeated)",
             description: "Set LP to 1. If not in Monster Form, enter it as Out-of-Sequence Maneuver.",
             usageLimit: "Triggered", maxUses: null
           });
         }
-        if (moLower.includes("terrifying")) {
+        if (moHas("terrifying")) {
           entry.triggered.push({
             id: "monster_terrifying_3", name: "Terrifying Visage (1/Round)",
             description: "If you win a Terrify Clash, use the Power Up Maneuver as an Out-of-Sequence Maneuver.",
             usageLimit: "1/Round", maxUses: 1
           });
         }
+        if (moHas("vile aura") || (moHas("vile") && !moHas("vile technique"))) {
+          entry.triggered.push({
+            id: "monster_vile_aura_2", name: "Vile Aura (1/Encounter)",
+            description: "While in Vile Aura, use Power Up as Instant Maneuver. Apply Beast of Wrath without spending an Action if able.",
+            usageLimit: "1/Encounter", maxUses: 1
+          });
+        }
       }
-      // Mastery: Vile Aura
-      entry.triggered.push({
-        id: "monster_vile_aura_2", name: "Vile Aura (1/Encounter)",
-        description: "While in Vile Aura, use Power Up as Instant Maneuver. Apply Beast of Wrath without spending an Action if able.",
-        usageLimit: "1/Encounter", maxUses: 1
-      });
       break;
     }
 

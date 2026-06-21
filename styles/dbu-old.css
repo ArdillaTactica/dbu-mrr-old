@@ -13330,3 +13330,175 @@
 .god-maneuver-use-btn:hover {
   background: linear-gradient(180deg, rgba(255,215,0,0.4), rgba(255,165,0,0.4));
 }
+
+/* === Combat Tracker — Attack Roll Panel === */
+.tracker-attack-panel {
+  margin: 4px 0 6px 22px;
+  padding: 8px 10px;
+  background: rgba(40, 40, 50, 0.55);
+  border-left: 3px solid #f5a142;
+  border-radius: 4px;
+  font-size: 0.85em;
+}
+.tap-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 3px 0;
+}
+.tap-label {
+  font-weight: bold;
+  color: #f5d142;
+  min-width: 50px;
+}
+.tap-formula {
+  font-family: monospace;
+  background: rgba(0, 0, 0, 0.35);
+  padding: 1px 6px;
+  border-radius: 3px;
+  color: #e0e0e0;
+}
+.tap-ct, .tap-cat {
+  color: #a0a0a0;
+  font-size: 0.9em;
+}
+.tap-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 3px;
+  font-size: 0.9em;
+}
+.tap-wager-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.tap-wager-input {
+  width: 50px;
+  padding: 1px 4px;
+}
+.tap-buff-chip {
+  background: rgba(255, 180, 60, 0.18);
+  border: 1px solid rgba(255, 180, 60, 0.45);
+  color: #ffd58a;
+  padding: 1px 6px;
+  margin: 1px;
+  border-radius: 3px;
+  font-size: 0.85em;
+}
+.tap-actions-row {
+  margin-top: 6px;
+}
+.tap-roll-btn {
+  background: linear-gradient(180deg, rgba(220, 80, 30, 0.85), rgba(160, 40, 10, 0.85));
+  color: #fff;
+  font-weight: bold;
+  border: 1px solid rgba(255, 120, 60, 0.6);
+  padding: 4px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.tap-roll-btn:hover {
+  background: linear-gradient(180deg, rgba(240, 100, 50, 0.95), rgba(180, 60, 20, 0.95));
+}
+
+/* === Chat-Message — DBU Attack Roll === */
+.dbu-attack-roll {
+  padding: 6px 4px 4px;
+}
+.dbu-attack-title {
+  margin: 0 0 4px;
+  font-size: 1em;
+  color: #f5a142;
+}
+.dbu-attack-meta {
+  color: #888;
+  font-size: 0.85em;
+  margin-bottom: 4px;
+}
+.dbu-attack-buffs {
+  background: rgba(255, 180, 60, 0.10);
+  border-left: 2px solid #f5a142;
+  padding: 3px 6px;
+  margin: 4px 0;
+  font-size: 0.85em;
+}
+.dbu-attack-buff {
+  display: inline-block;
+  padding: 1px 5px;
+  margin: 1px 2px;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 3px;
+}
+.dbu-attack-line {
+  margin: 3px 0;
+  font-size: 0.95em;
+}
+.dbu-attack-line code {
+  background: rgba(0, 0, 0, 0.35);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+.dbu-hit { color: #6ee066; font-weight: bold; }
+.dbu-miss { color: #e06666; font-weight: bold; }
+.dbu-attack-actions {
+  margin-top: 6px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.dbu-pay-btn {
+  flex: 1;
+  min-width: 140px;
+  background: linear-gradient(180deg, rgba(60, 100, 180, 0.85), rgba(30, 60, 120, 0.85));
+  color: #fff;
+  border: 1px solid rgba(100, 140, 220, 0.6);
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9em;
+}
+.dbu-pay-btn:hover:not(:disabled) {
+  background: linear-gradient(180deg, rgba(80, 130, 220, 0.95), rgba(50, 80, 150, 0.95));
+}
+.dbu-pay-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.dbu-pay-btn.dbu-pay-paid {
+  background: linear-gradient(180deg, rgba(60, 140, 60, 0.65), rgba(30, 90, 30, 0.65));
+}
+
+/* + Attack button — distinct color so the player can hit it directly */
+.tracker-controls .action-btn.attack {
+  background: linear-gradient(180deg, rgba(220, 80, 30, 0.85), rgba(160, 40, 10, 0.85));
+  color: #fff;
+  border: 1px solid rgba(255, 120, 60, 0.6);
+}
+.tracker-controls .action-btn.attack:hover {
+  background: linear-gradient(180deg, rgba(240, 100, 50, 0.95), rgba(180, 60, 20, 0.95));
+}
+.dbu-attack-roll.dbu-attack-wound {
+  border-top: 1px dashed rgba(255, 180, 60, 0.35);
+  padding-top: 4px;
+  margin-top: 2px;
+}
+.tap-buff-chip {
+  cursor: help;
+}
+
+/* Pay button — partial payment (insufficient KP) */
+.dbu-pay-btn.dbu-pay-short {
+  background: linear-gradient(180deg, rgba(180, 80, 30, 0.7), rgba(120, 50, 20, 0.7));
+  border-color: rgba(220, 140, 60, 0.6);
+}
+
+/* Pay button — pending state while the queued update is in-flight */
+.dbu-pay-btn.dbu-pay-pending {
+  opacity: 0.7;
+  cursor: progress;
+}

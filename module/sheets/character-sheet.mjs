@@ -370,8 +370,13 @@ export class DBUCharacterSheet extends ActorSheet {
     context.talentGroups = this._groupTalentsByCategory(filtered);
 
     // ---- Bio tab data ----
+    // Z-Soul Alignment scale (z-soul.txt): Pure Good (2), Good (1), Neutral (0), Evil (-1), Pure Evil (-2)
     context.alignmentOptions = {
-      hero: "Hero", villain: "Villain", neutral: "Neutral"
+      pure_good: "Pure Good (+2)",
+      good: "Good (+1)",
+      neutral: "Neutral (0)",
+      evil: "Evil (-1)",
+      pure_evil: "Pure Evil (-2)"
     };
 
     // ---- Adversary tab dropdown options ----
@@ -1937,8 +1942,10 @@ export class DBUCharacterSheet extends ActorSheet {
       // Unified wound buff total (talents, states, maneuvers, custom buffs)
       const woundBuffTotal = system.aptitudes?.woundBuffTotal ?? 0;
       const woundMod = damageAttr + extraDmgAttr + wager + woundPSBonus + auraWoundBonus + stateWoundMod + stateAllMod + woundBuffTotal;
-      // Sig Techs use d8: "1d8(T) if Signature Technique" (attacking.txt)
-      const chargesStr = charges > 0 ? `+${charges * tier}d8` : "";
+      // Attack Refs are Basic Attacking Maneuvers (not Signature Techniques),
+      // so per attacking.txt:31 each Energy Charge adds 1d6(T) to the Wound Roll
+      // (Sig Techs use d8 — handled separately in _calcTechWound).
+      const chargesStr = charges > 0 ? `+${charges * tier}d6` : "";
       // Super Stack Extra Dice: "+1d4(T), increasing dice category per stack after first" (attributes.txt)
       const ssWoundDice = system.aptitudes?.superStackWoundDice || "";
       const ssWoundExtra = (ssWoundDice && (ref.foundation === "Physical" || ref.foundation === "Energy"))
@@ -2622,31 +2629,132 @@ export class DBUCharacterSheet extends ActorSheet {
     const trackerTier = system.tier || 1;
     const trackerSourceGroups = [];
     const configDBU = CONFIG.DBU ?? {};
-    // Attack Refs
+
+    // Build list of "active" descriptors for the player to see what applies.
+    // Each entry is { name, tooltip } so the template can render a hover-detail.
+    const activeBuffs = [];
+    const tierForTip = system.tier || 1;
+    const baseTierForTip = system.baseTier || tierForTip;
+    const peScore = system.attributes?.pe?.score ?? 0;
+    const scScore = system.attributes?.sc?.score ?? 0;
+    for (const cb of (system.customBuffs || [])) {
+      if (!cb.active || !cb.effect) continue;
+      const parts = [];
+      if (cb.flat) parts.push(`${cb.flat >= 0 ? "+" : ""}${cb.flat}`);
+      if (cb.bT) parts.push(`${cb.bT >= 0 ? "+" : ""}${cb.bT}(bT=${cb.bT * baseTierForTip})`);
+      if (cb.T) parts.push(`${cb.T >= 0 ? "+" : ""}${cb.T}(T=${cb.T * tierForTip})`);
+      const detail = parts.length ? parts.join(" ") + ` → ${cb.effect}` : cb.effect;
+      activeBuffs.push({ name: cb.name || cb.effect, tooltip: detail });
+    }
+    for (const t of (system.transformations || [])) {
+      if (!t.active) continue;
+      const bonuses = Object.entries(t.attrBonuses || {})
+        .filter(([, v]) => v && v !== "–" && v !== "-")
+        .map(([k, v]) => `${k.toUpperCase()} ${v}`).join(", ");
+      activeBuffs.push({ name: `Trans: ${t.name}`, tooltip: bonuses ? `AMB: ${bonuses}` : "Transformation active" });
+    }
+    if (system.combatStates?.raging)
+      activeBuffs.push({ name: "Raging", tooltip: "+1(T) Strike & Wound, -1(T) Dodge & DV" });
+    if (system.combatStates?.superior)
+      activeBuffs.push({ name: "Superior", tooltip: "Apply Greater Dice an additional time" });
+    if (system.combatStates?.mindful)
+      activeBuffs.push({ name: "Mindful", tooltip: "Saving Throw CT reduced by 1" });
+    if (system.combatStates?.evasiveStance)
+      activeBuffs.push({ name: "Evasive Stance", tooltip: `+${tierForTip} Dodge (1×T)` });
+    if (system.combatStates?.drunk)
+      activeBuffs.push({ name: "Drunk", tooltip: `-${tierForTip} all Combat Rolls` });
+    if (system.combatStates?.hypeActive) {
+      const hypeVal = Math.floor(peScore / 2);
+      const hypeTip = hypeVal > 0
+        ? `+${hypeVal} Strike/Dodge/Wound (½ PE=${peScore})`
+        : `½ Personality Score (PE=${peScore}) — no bonus while PE<2`;
+      activeBuffs.push({ name: "Hype", tooltip: hypeTip });
+    }
+    if (system.combatStates?.analysisActive) {
+      const aVal = Math.floor(scScore / 2);
+      const aTip = aVal > 0
+        ? `+${aVal} Strike/Dodge/Wound (½ SC=${scScore})`
+        : `½ Scholarship Score (SC=${scScore}) — no bonus while SC<2`;
+      activeBuffs.push({ name: "Analysis", tooltip: aTip });
+    }
+    if ((system.tracking?.powerStacks ?? 0) > 0)
+      activeBuffs.push({ name: `Power x${system.tracking.powerStacks}`, tooltip: "Per-stack effects from active transformations" });
+    if ((system.tracking?.energyCharges ?? 0) > 0)
+      activeBuffs.push({ name: `Energy Charges x${system.tracking.energyCharges}`, tooltip: `+${system.tracking.energyCharges}d8(T) Wound on charged attack` });
+
+    // Attack Refs — include strikeFormula/woundFormula/kiCost from prepared attackRefs
     const arSources = [];
+    const prepRefs = context.attackRefs || [];
     for (let i = 0; i < (system.attackRefs || []).length; i++) {
       const ref = system.attackRefs[i];
       if (!ref.name) continue;
       const profile = (configDBU.profileData || {})[ref.profile] || {};
-      arSources.push({ key: `ref_${i}`, name: ref.name, kiCost: (profile.kpCost || 0) * trackerTier });
+      const kiCost = (profile.kpCost || 0) * trackerTier;
+      const prep = prepRefs[i] || {};
+      arSources.push({
+        key: `ref_${i}`,
+        name: ref.name,
+        kiCost,
+        strikeFormula: prep.strikeFormula || "",
+        woundFormula: prep.woundFormula || "",
+        strikeCT: prep.strikeCT || prep.combatCT || 10,
+        damageCat: prep.damageCat || "Standard",
+        foundation: ref.foundation || "",
+        profile: ref.profile || "",
+        energyCharges: ref.energyCharges || 0,
+        defaultWager: prep.maxWager || 0,
+        activeBuffs
+      });
     }
     if (arSources.length) trackerSourceGroups.push({ label: "Attack Refs", sources: arSources });
     // Signature Techniques
     const stSources = [];
-    for (const tech of (context.signatureTechniques || [])) {
+    const prepTechs = context.signatureTechniques || [];
+    for (const tech of prepTechs) {
       if (!tech.name) continue;
-      stSources.push({ key: `tech_${tech.id}`, name: tech.name, kiCost: (tech.finalKP || 0) * trackerTier });
+      stSources.push({
+        key: `tech_${tech.id}`,
+        name: tech.name,
+        kiCost: (tech.finalKP || 0) * trackerTier,
+        strikeFormula: tech.strikeFormula || "",
+        woundFormula: tech.woundFormula || "",
+        strikeCT: tech.strikeCT || 10,
+        damageCat: tech.damageCat || "Standard",
+        foundation: tech.foundation || "",
+        profile: tech.profile || "",
+        energyCharges: (tech.baseEnergyCharges || 0) + (tech.extraEnergyCharges || 0),
+        defaultWager: 0,
+        activeBuffs
+      });
     }
     if (stSources.length) trackerSourceGroups.push({ label: "Sig. Techniques", sources: stSources });
     // Unique Abilities
     const uaSources = [];
     for (const ua of (context.characterUniques || [])) {
       const name = ua.data?.name || ua.abilityKey;
-      uaSources.push({ key: `unique_${ua.abilityKey}`, name, kiCost: 0 });
+      uaSources.push({ key: `unique_${ua.abilityKey}`, name, kiCost: 0, activeBuffs });
     }
     if (uaSources.length) trackerSourceGroups.push({ label: "Unique Abilities", sources: uaSources });
     // Store for listener access
     this._trackerSourceGroups = trackerSourceGroups;
+
+    // Enrich each tracker action with _attackData when type=attack and source is set
+    const findSource = (key) => {
+      for (const g of trackerSourceGroups) {
+        const s = g.sources.find(x => x.key === key);
+        if (s) return s;
+      }
+      return null;
+    };
+    for (const round of context.combatRounds) {
+      round.actions = (round.actions || []).map(a => {
+        if (a.type === "attack" && a.source) {
+          const sd = findSource(a.source);
+          if (sd) a._attackData = sd;
+        }
+        return a;
+      });
+    }
 
     // Power-Up count — only active power-ups (last 2 rounds, per DBU rules)
     let powerUpCount = 0;
@@ -5025,6 +5133,8 @@ export class DBUCharacterSheet extends ActorSheet {
     html.on("click", "[data-action='delete-tracker-action']", this._onDeleteTrackerAction.bind(this));
     html.on("change", ".action-type, .action-ki, .action-dkp, .action-desc", this._onTrackerActionChange.bind(this));
     html.on("change", ".action-source", this._onTrackerSourceChange.bind(this));
+    html.on("change", ".tap-wager-input", this._onTrackerWagerChange.bind(this));
+    html.on("click", "[data-action='roll-tracker-attack']", this._onRollTrackerAttack.bind(this));
     html.on("click", "[data-action='tb-tab-switch']", this._onTbTabSwitch.bind(this));
     html.on("click", "[data-action='rt-activable-use']", this._onRtActivableUse.bind(this));
 
@@ -12129,11 +12239,12 @@ export class DBUCharacterSheet extends ActorSheet {
 
   async _onTrackerAddAction(event) {
     event.preventDefault();
+    const defaultType = event.currentTarget?.dataset?.defaultType || "standard";
     const cts = foundry.utils.deepClone(this.actor.system.combatTabState || {});
     if (!cts.rounds) cts.rounds = [{ roundNumber: 1, actions: [] }];
     if (cts.rounds.length === 0) cts.rounds.push({ roundNumber: 1, actions: [] });
     const lastRound = cts.rounds[cts.rounds.length - 1];
-    lastRound.actions.push({ type: "standard", source: "", kiCost: 0, dkpCost: 0, kiWager: 0, description: "" });
+    lastRound.actions.push({ type: defaultType, source: "", kiCost: 0, dkpCost: 0, kiWager: 0, description: "" });
     await this.actor.update({ "system.combatTabState": cts });
   }
 
@@ -12331,6 +12442,122 @@ export class DBUCharacterSheet extends ActorSheet {
       action.description = "";
     }
     await this.actor.update({ "system.combatTabState": cts });
+  }
+
+  /**
+   * Handle ki wager change on the tracker attack panel.
+   */
+  async _onTrackerWagerChange(event) {
+    const el = event.currentTarget;
+    const roundNum = Number(el.dataset.round);
+    const actionIndex = Number(el.dataset.actionIndex);
+    const cts = foundry.utils.deepClone(this.actor.system.combatTabState || {});
+    const round = (cts.rounds || []).find(r => r.roundNumber === roundNum);
+    if (!round?.actions?.[actionIndex]) return;
+    round.actions[actionIndex].kiWager = Math.max(0, Number(el.value) || 0);
+    await this.actor.update({ "system.combatTabState": cts });
+  }
+
+  /**
+   * Roll an attack from the tracker — fires Strike + Wound rolls and posts a
+   * single ChatMessage with the breakdown plus "Pay Ki Cost" / "Pay Ki Wager"
+   * buttons the player can manually click after the action resolves.
+   */
+  async _onRollTrackerAttack(event) {
+    event.preventDefault();
+    const btn = event.currentTarget;
+    const roundNum = Number(btn.dataset.round);
+    const actionIndex = Number(btn.dataset.actionIndex);
+    const cts = this.actor.system.combatTabState || {};
+    const round = (cts.rounds || []).find(r => r.roundNumber === roundNum);
+    const action = round?.actions?.[actionIndex];
+    if (!action || action.type !== "attack" || !action.source) {
+      ui.notifications.warn("Select an attack source first.");
+      return;
+    }
+    const groups = this._trackerSourceGroups || [];
+    let sd = null;
+    for (const g of groups) {
+      const s = g.sources.find(x => x.key === action.source);
+      if (s) { sd = s; break; }
+    }
+    if (!sd) {
+      ui.notifications.error("Attack source not found.");
+      return;
+    }
+    const wager = Math.max(0, Number(action.kiWager) || 0);
+    // Compose Strike + Wound formulas. Wager adds flat to wound (already baked
+    // into prep formula if set in attack-ref, but for tracker wager we add now).
+    const strikeFormulaRaw = sd.strikeFormula || "1d10";
+    const woundFormulaBase = sd.woundFormula || "1d10";
+    const woundFormula = wager > 0
+      ? `${woundFormulaBase}${woundFormulaBase.includes("+") ? "+" : "+"}${wager}`
+      : woundFormulaBase;
+
+    // Execute rolls
+    const strikeRoll = new Roll(strikeFormulaRaw);
+    const woundRoll = new Roll(woundFormula);
+    await strikeRoll.evaluate();
+    await woundRoll.evaluate();
+
+    const buffLines = (sd.activeBuffs || []).map(b => {
+      const name = typeof b === "string" ? b : b.name;
+      const tip = typeof b === "string" ? "" : (b.tooltip || "");
+      return `<span class="dbu-attack-buff"${tip ? ` title="${tip.replace(/"/g, "&quot;")}"` : ""}>${name}</span>`;
+    }).join("");
+    const buffsHtml = buffLines
+      ? `<div class="dbu-attack-buffs"><strong>Active when rolled:</strong> ${buffLines}</div>`
+      : "";
+
+    const strikeNat = strikeRoll.dice[0]?.results?.[0]?.result ?? "?";
+    const woundNat = woundRoll.dice[0]?.results?.[0]?.result ?? "?";
+    const strikeCT = sd.strikeCT || 10;
+    const strikeHit = strikeNat !== "?" && strikeNat >= strikeCT;
+    const hitLabel = strikeHit
+      ? `<span class="dbu-hit">HIT</span>`
+      : `<span class="dbu-miss">MISS</span>`;
+
+    const speaker = ChatMessage.getSpeaker({ actor: this.actor });
+
+    // ---- Message 1: Strike (animated) — header, buffs, Strike line ----
+    const strikeFlavor = `<div class="dbu-attack-roll" data-actor-id="${this.actor.id}">
+      <h3 class="dbu-attack-title">${this.actor.name} — ${sd.name}</h3>
+      <div class="dbu-attack-meta">
+        ${sd.foundation || ""}${sd.profile ? " / " + sd.profile : ""}
+        ${sd.damageCat ? " · " + sd.damageCat : ""}
+        ${sd.energyCharges ? " · EC " + sd.energyCharges : ""}
+      </div>
+      ${buffsHtml}
+      <div class="dbu-attack-line">
+        <strong>Strike:</strong> <code>${strikeFormulaRaw}</code> · Nat ${strikeNat} · CT ${strikeCT}+ ${hitLabel}
+      </div>
+    </div>`;
+
+    await strikeRoll.toMessage({ speaker, flavor: strikeFlavor });
+
+    // ---- Message 2: Wound (animated) — Wound line + Pay buttons (most recent
+    // message = easiest for the player to find after the action resolves) ----
+    const woundFlavor = `<div class="dbu-attack-roll dbu-attack-wound" data-actor-id="${this.actor.id}">
+      <div class="dbu-attack-line">
+        <strong>Wound:</strong> <code>${woundFormula}</code> · Nat ${woundNat}${wager > 0 ? ` · Wager +${wager}` : ""}
+      </div>
+      <div class="dbu-attack-actions">
+        <button type="button" class="dbu-pay-btn" data-dbu-pay="ki-cost"
+                data-actor-id="${this.actor.id}"
+                data-amount="${sd.kiCost || 0}"
+                ${(sd.kiCost || 0) > 0 ? "" : "disabled"}>
+          <i class="fas fa-fire"></i> Pay Ki Cost (${sd.kiCost || 0} KP)
+        </button>
+        <button type="button" class="dbu-pay-btn" data-dbu-pay="ki-wager"
+                data-actor-id="${this.actor.id}"
+                data-amount="${wager}"
+                ${wager > 0 ? "" : "disabled"}>
+          <i class="fas fa-coins"></i> Pay Ki Wager (${wager} KP)
+        </button>
+      </div>
+    </div>`;
+
+    await woundRoll.toMessage({ speaker, flavor: woundFlavor });
   }
 
   _onCombatFilter(event) {
