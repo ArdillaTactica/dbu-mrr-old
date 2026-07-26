@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.3] - 2026-07-26
+
+- Nuevo sistema de duelos (`module/helpers/duel.mjs`).
+- Nuevo catálogo de objetos básicos (`basic-items-catalog`) integrado en la
+  pestaña de equipo.
+- Mejoras extensas en la hoja de personaje y en la pestaña de combate.
+- Mejoras en la automatización de talentos raciales.
+- Ajustes de estilos (CSS) y plantillas de combate/equipo.
+
 ## [1.0.2] - 2026-05-14
 
 - Compatibilidad con Foundry VTT v13 declarada (`compatibility.verified` y
