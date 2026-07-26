@@ -51,6 +51,9 @@ export default class DBUEquipmentData extends foundry.abstract.TypeDataModel {
       accessoryKey: new StringField({ initial: "" }),
       effectOverride: new StringField({ initial: "" }),
 
+      // ---- Basic Item-specific ----
+      basicItemKey: new StringField({ initial: "" }),
+
       // ---- Worn slot (for multi-layer system) ----
       wornSlot: new StringField({ initial: "" }),
 

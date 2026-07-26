@@ -271,7 +271,13 @@ function applyBonusesForTalent(id, system, tier, baseTier, talentSet, tempMods, 
       entry.triggered.push({
         id: "berserk_resolve_threshold", name: "Berserk Resolve",
         description: "On threshold crossed: enter Raging until end of next turn. If already Raging, +2(T) Soak instead.",
-        usageLimit: null, maxUses: null
+        usageLimit: null, maxUses: null,
+        automation: {
+          choose: [
+            { label: "Enter Raging", state: { key: "raging", note: "until end of next turn" } },
+            { label: `+${2 * tier} Soak (already Raging)`, buffs: [{ stat: "soak", amount: 2 * tier, duration: "round" }] }
+          ]
+        }
       });
       break;
     }
@@ -568,7 +574,8 @@ function applyBonusesForTalent(id, system, tier, baseTier, talentSet, tempMods, 
       entry.triggered.push({
         id: "frenzy_power", name: "Frenzy (Power Surge)",
         description: `1/Enc, Raging + Power: +${4 * baseTier} KP per threshold below`,
-        usageLimit: "encounter", maxUses: 1
+        usageLimit: "encounter", maxUses: 1,
+        automation: { requires: ["raging"], gain: { kp: 4 * baseTier, per: "thresholdsBelow" } }
       });
       break;
     }
@@ -580,7 +587,8 @@ function applyBonusesForTalent(id, system, tier, baseTier, talentSet, tempMods, 
       entry.triggered.push({
         id: "burning_anger_raging", name: "Burning Anger",
         description: `1/Enc, on entering Raging: +${5 * baseTier} LP per threshold below`,
-        usageLimit: "encounter", maxUses: 1
+        usageLimit: "encounter", maxUses: 1,
+        automation: { requires: ["raging"], gain: { lp: 5 * baseTier, per: "thresholdsBelow" } }
       });
       break;
     }
@@ -669,7 +677,8 @@ function applyBonusesForTalent(id, system, tier, baseTier, talentSet, tempMods, 
         id: "artillery_shot_strike",
         name: "Artillery Shot Accuracy",
         description: `1/Round: spend ${2 * baseTier} KP for +${tier} Strike on a ranged Unarmed Energy/Magic attack`,
-        usageLimit: "round", maxUses: 1
+        usageLimit: "round", maxUses: 1,
+        automation: { cost: { kp: 2 * baseTier }, buffs: [{ stat: "strike", amount: tier, duration: "nextAttack" }] }
       });
       break;
     }
@@ -688,7 +697,8 @@ function applyBonusesForTalent(id, system, tier, baseTier, talentSet, tempMods, 
         id: "blaster_master_wound",
         name: "Blaster Master Wound",
         description: `1/Round: on Unarmed Energy/Magic hit, spend up to ${6 * baseTier} KP for equal Wound bonus`,
-        usageLimit: "round", maxUses: 1
+        usageLimit: "round", maxUses: 1,
+        automation: { spendPrompt: { max: 6 * baseTier, label: "KP for Wound bonus" }, buffs: [{ stat: "wound", amountFrom: "spent", duration: "nextAttack" }] }
       });
       entry.triggered.push({
         id: "blaster_master_prone",
@@ -886,7 +896,8 @@ function applyBonusesForTalent(id, system, tier, baseTier, talentSet, tempMods, 
         id: "fleet_of_foot_entry",
         name: "Fleet Entry",
         description: `1/Round: if Movement enters an Opponent's Melee Range, next attack against them gains +${2 * tier} Strike until end of turn`,
-        usageLimit: "round", maxUses: 1
+        usageLimit: "round", maxUses: 1,
+        automation: { buffs: [{ stat: "strike", amount: 2 * tier, duration: "nextAttack" }] }
       });
       break;
     }
@@ -1099,7 +1110,8 @@ function applyBonusesForTalent(id, system, tier, baseTier, talentSet, tempMods, 
         id: "clear_mind_focus",
         name: "Clear Mind Focus",
         description: `1/Encounter while Mindful: +${tier} Combat Rolls until leaving Mindful`,
-        usageLimit: "encounter", maxUses: 1
+        usageLimit: "encounter", maxUses: 1,
+        automation: { requires: ["mindful"], buffs: [{ stat: "combatRolls", amount: tier, duration: "encounter" }] }
       });
       break;
     }
@@ -1108,13 +1120,15 @@ function applyBonusesForTalent(id, system, tier, baseTier, talentSet, tempMods, 
         id: "combat_zen_charges",
         name: "Combat Zen Charges",
         description: `1/Round while Mindful: spend ${3 * baseTier} KP and 1 Action to add 2 Energy Charges to an attack`,
-        usageLimit: "round", maxUses: 1
+        usageLimit: "round", maxUses: 1,
+        automation: { requires: ["mindful"], cost: { kp: 3 * baseTier }, gain: { energyCharges: 2 } }
       });
       entry.triggered.push({
         id: "combat_zen_mindful",
         name: "Combat Zen Mindful",
         description: "Triggered/Power, 2/Encounter: enter Mindful until end of next turn",
-        usageLimit: "encounter", maxUses: 2
+        usageLimit: "encounter", maxUses: 2,
+        automation: { state: { key: "mindful", note: "until end of next turn" } }
       });
       break;
     }
@@ -1177,7 +1191,8 @@ function applyBonusesForTalent(id, system, tier, baseTier, talentSet, tempMods, 
         id: "dueling_specialist_strike",
         name: "Dueling Specialist",
         description: `1/Round: with only one Standard weapon, +${2 * tier} Strike on attack or Parry`,
-        usageLimit: "round", maxUses: 1
+        usageLimit: "round", maxUses: 1,
+        automation: { buffs: [{ stat: "strike", amount: 2 * tier, duration: "nextAttack" }] }
       });
       break;
     }
@@ -1304,7 +1319,8 @@ function applyBonusesForTalent(id, system, tier, baseTier, talentSet, tempMods, 
         id: "variety_specialist_swap",
         name: "Variety Specialist",
         description: `1/Round: after swapping to another Weapon via No Effort or Weapon Summoner, next Armed Attack gains +${3 * tier} Wound`,
-        usageLimit: "round", maxUses: 1
+        usageLimit: "round", maxUses: 1,
+        automation: { buffs: [{ stat: "wound", amount: 3 * tier, duration: "nextAttack" }] }
       });
       break;
     }
@@ -1349,7 +1365,8 @@ function applyBonusesForTalent(id, system, tier, baseTier, talentSet, tempMods, 
         id: "weapon_master_wound",
         name: "Weapon Master Wound",
         description: `1/Round: on Armed hit, spend up to ${6 * baseTier} KP for equal Wound bonus`,
-        usageLimit: "round", maxUses: 1
+        usageLimit: "round", maxUses: 1,
+        automation: { spendPrompt: { max: 6 * baseTier, label: "KP for Wound bonus" }, buffs: [{ stat: "wound", amountFrom: "spent", duration: "nextAttack" }] }
       });
       break;
     }
@@ -1358,13 +1375,21 @@ function applyBonusesForTalent(id, system, tier, baseTier, talentSet, tempMods, 
         id: "variable_fighter_armed",
         name: "Variable Fighter Armed",
         description: `1/Round: after Armed Attack, boost Unarmed Strike by ${tier} or Wound by ${2 * tier} for the round`,
-        usageLimit: "round", maxUses: 1
+        usageLimit: "round", maxUses: 1,
+        automation: { choose: [
+          { label: `+${tier} Strike`, buffs: [{ stat: "strike", amount: tier, duration: "round" }] },
+          { label: `+${2 * tier} Wound`, buffs: [{ stat: "wound", amount: 2 * tier, duration: "round" }] }
+        ] }
       });
       entry.triggered.push({
         id: "variable_fighter_unarmed",
         name: "Variable Fighter Unarmed",
         description: `1/Round: after Unarmed Attack, boost Armed Strike by ${tier} or Wound by ${2 * tier} for the round`,
-        usageLimit: "round", maxUses: 1
+        usageLimit: "round", maxUses: 1,
+        automation: { choose: [
+          { label: `+${tier} Strike`, buffs: [{ stat: "strike", amount: tier, duration: "round" }] },
+          { label: `+${2 * tier} Wound`, buffs: [{ stat: "wound", amount: 2 * tier, duration: "round" }] }
+        ] }
       });
       break;
     }
@@ -1556,7 +1581,11 @@ function applyBonusesForTalent(id, system, tier, baseTier, talentSet, tempMods, 
         id: "powerful_strike_trade",
         name: "Powerful Strike",
         description: `On an Attacking Maneuver, reduce Strike by ${tier} to increase Wound by ${3 * tier}`,
-        usageLimit: null, maxUses: null
+        usageLimit: null, maxUses: null,
+        automation: { buffs: [
+          { stat: "strike", amount: -tier, duration: "nextAttack" },
+          { stat: "wound", amount: 3 * tier, duration: "nextAttack" }
+        ] }
       });
       entry.bonuses.push("Wound Critical Target -1");
       break;
@@ -1567,13 +1596,15 @@ function applyBonusesForTalent(id, system, tier, baseTier, talentSet, tempMods, 
         id: "jack_of_all_styles_magic",
         name: "Jack of All Styles Magic",
         description: `After using a Magical Unique Ability, your Physical and Energy attacks gain +${2 * tier} Wound until end of turn`,
-        usageLimit: null, maxUses: null
+        usageLimit: null, maxUses: null,
+        automation: { buffs: [{ stat: "wound", amount: 2 * tier, duration: "round" }] }
       });
       entry.triggered.push({
         id: "jack_of_all_styles_technical",
         name: "Jack of All Styles Technical",
         description: `After using a Technical Unique Ability, your Magic attacks gain +${2 * tier} Wound until end of turn`,
-        usageLimit: null, maxUses: null
+        usageLimit: null, maxUses: null,
+        automation: { buffs: [{ stat: "wound", amount: 2 * tier, duration: "round" }] }
       });
       break;
     }
@@ -1781,7 +1812,8 @@ function applyBonusesForTalent(id, system, tier, baseTier, talentSet, tempMods, 
         id: "furious_flex_break",
         name: "Furious Flex Break",
         description: `If Top Layer Apparel is destroyed, gain +${tier} Combat Rolls until end of turn`,
-        usageLimit: null, maxUses: null
+        usageLimit: null, maxUses: null,
+        automation: { buffs: [{ stat: "combatRolls", amount: tier, duration: "round" }] }
       });
       entry.triggered.push({
         id: "furious_flex_signature",
@@ -1890,7 +1922,8 @@ function applyBonusesForTalent(id, system, tier, baseTier, talentSet, tempMods, 
         id: "magic_warrior_chain",
         name: "Magic Warrior",
         description: `On hit with your Mystical Foundation, your Magic Attacks gain +${tier} Wound until end of turn`,
-        usageLimit: null, maxUses: null
+        usageLimit: null, maxUses: null,
+        automation: { buffs: [{ stat: "wound", amount: tier, duration: "round" }] }
       });
       break;
     }
@@ -1970,7 +2003,8 @@ function applyBonusesForTalent(id, system, tier, baseTier, talentSet, tempMods, 
         id: "footwork_rapid",
         name: "Footwork Rapid Movement",
         description: `After Rapid Movement, gain +${tier} Defense until start of your next turn`,
-        usageLimit: null, maxUses: null
+        usageLimit: null, maxUses: null,
+        automation: { buffs: [{ stat: "defense", amount: tier, duration: "round" }] }
       });
       entry.triggered.push({
         id: "footwork_soar",
@@ -1991,13 +2025,21 @@ function applyBonusesForTalent(id, system, tier, baseTier, talentSet, tempMods, 
         id: "multi_type_attacker_physical",
         name: "Multi-Type Attacker Physical",
         description: `After using a Physical Attack, your Energy Attacks gain either +${tier} Strike or +${2 * tier} Wound for the rest of the round`,
-        usageLimit: null, maxUses: null
+        usageLimit: null, maxUses: null,
+        automation: { choose: [
+          { label: `+${tier} Strike`, buffs: [{ stat: "strike", amount: tier, duration: "round" }] },
+          { label: `+${2 * tier} Wound`, buffs: [{ stat: "wound", amount: 2 * tier, duration: "round" }] }
+        ] }
       });
       entry.triggered.push({
         id: "multi_type_attacker_energy",
         name: "Multi-Type Attacker Energy",
         description: `After using an Energy Attack, your Physical Attacks gain either +${tier} Strike or +${2 * tier} Wound for the rest of the round`,
-        usageLimit: null, maxUses: null
+        usageLimit: null, maxUses: null,
+        automation: { choose: [
+          { label: `+${tier} Strike`, buffs: [{ stat: "strike", amount: tier, duration: "round" }] },
+          { label: `+${2 * tier} Wound`, buffs: [{ stat: "wound", amount: 2 * tier, duration: "round" }] }
+        ] }
       });
       break;
     }
@@ -2006,19 +2048,22 @@ function applyBonusesForTalent(id, system, tier, baseTier, talentSet, tempMods, 
         id: "balanced_in_body_and_spirit_magic",
         name: "Balanced in Body and Spirit Magic",
         description: `After using a Magic Attack, your Physical and Energy Attacks gain +${tier} Wound until end of round`,
-        usageLimit: null, maxUses: null
+        usageLimit: null, maxUses: null,
+        automation: { buffs: [{ stat: "wound", amount: tier, duration: "round" }] }
       });
       entry.triggered.push({
         id: "balanced_in_body_and_spirit_other",
         name: "Balanced in Body and Spirit Other",
         description: `After using a Physical or Energy Attack, your Magic Attacks gain +${tier} Wound until end of round`,
-        usageLimit: null, maxUses: null
+        usageLimit: null, maxUses: null,
+        automation: { buffs: [{ stat: "wound", amount: tier, duration: "round" }] }
       });
       entry.triggered.push({
         id: "balanced_in_body_and_spirit_chain",
         name: "Balanced in Body and Spirit Chain",
         description: `Each time you use an Attacking Maneuver of a different Foundation, gain +${tier} Wound until end of turn`,
-        usageLimit: null, maxUses: null
+        usageLimit: null, maxUses: null,
+        automation: { buffs: [{ stat: "wound", amount: tier, duration: "round" }] }
       });
       entry.triggered.push({
         id: "balanced_in_body_and_spirit_equilibrium",
@@ -2064,7 +2109,8 @@ function applyBonusesForTalent(id, system, tier, baseTier, talentSet, tempMods, 
         id: "supreme_fist_spend",
         name: "Supreme Fist Spend",
         description: `On hit with an Unarmed Physical Attack, spend up to ${6 * baseTier} KP for equal Wound`,
-        usageLimit: null, maxUses: null
+        usageLimit: null, maxUses: null,
+        automation: { spendPrompt: { max: 6 * baseTier, label: "KP for Wound bonus" }, buffs: [{ stat: "wound", amountFrom: "spent", duration: "nextAttack" }] }
       });
       entry.triggered.push({
         id: "supreme_fist_prone",
@@ -2193,7 +2239,8 @@ function applyBonusesForTalent(id, system, tier, baseTier, talentSet, tempMods, 
         id: "dynamic_hype_soak",
         name: "Dynamic Hype",
         description: `When using Hype, gain +${tier} Soak until end of your next turn`,
-        usageLimit: "round", maxUses: 1
+        usageLimit: "round", maxUses: 1,
+        automation: { buffs: [{ stat: "soak", amount: tier, duration: "round" }] }
       });
       break;
     }
@@ -2202,7 +2249,8 @@ function applyBonusesForTalent(id, system, tier, baseTier, talentSet, tempMods, 
         id: "team_pose_regen",
         name: "Team Pose Regain",
         description: `If an Ally uses Hype within Sphere AoE of you, regain ${2 * baseTier} KP`,
-        usageLimit: null, maxUses: null
+        usageLimit: null, maxUses: null,
+        automation: { gain: { kp: 2 * baseTier } }
       });
       entry.triggered.push({
         id: "team_pose_chain",
@@ -2250,7 +2298,8 @@ function applyBonusesForTalent(id, system, tier, baseTier, talentSet, tempMods, 
         id: "flexible_planning_regen",
         name: "Flexible Planning",
         description: `When using Analysis, regain ${4 * baseTier} KP`,
-        usageLimit: null, maxUses: null
+        usageLimit: null, maxUses: null,
+        automation: { gain: { kp: 4 * baseTier } }
       });
       break;
     }

@@ -1,3 +1,5 @@
+import { initiateDuel, initiateClash } from "../helpers/duel.mjs";
+
 /**
  * Actor sheet for DBU-OLD character type.
  * @extends {ActorSheet}
@@ -438,7 +440,11 @@ export class DBUCharacterSheet extends ActorSheet {
       const cs = system.combatStates || {};
       const t = system.tier || 1;
       context.combatStateSummary = [];
-      if (cs.raging) context.combatStateSummary.push({ state: "Raging", effect: `+1d4\u00d7${t} Wound, \u2212${t} Defense` });
+      if (cs.raging) {
+        const rageDice = this._ragingWoundDice(system, t).replace(/^\+/, "") || `${t}d4`;
+        const rageCat = system.aptitudes?.ragingExtraDiceCatBonus || 0;
+        context.combatStateSummary.push({ state: "Raging", effect: `+${rageDice} Wound${rageCat ? ` (Aspect LV${rageCat})` : ""}, \u2212${t} Defense` });
+      }
       if (cs.surging) context.combatStateSummary.push({ state: "Surging", effect: `+1d4\u00d7${t} Strike & Wound (vs target)` });
       if (cs.mindful) context.combatStateSummary.push({ state: "Mindful", effect: `\u22121 Crit Target, \u2212${t} Wound` });
       if (cs.superior) context.combatStateSummary.push({ state: "Superior", effect: `Greater Dice, +${2 * t} Dmg Received` });
@@ -1132,7 +1138,12 @@ export class DBUCharacterSheet extends ActorSheet {
     const ssWoundDice = (tech.foundation === "Physical" || tech.foundation === "Energy")
       ? (system.aptitudes?.superStackWoundDice || "") : "";
     const ssExtra = ssWoundDice ? `+${ssWoundDice}` : "";
-    const formula = this._buildFormula(topDice, greaterDice, totalMod, chargesExtra + ssExtra);
+    // Combat State Wound Extra Dice — Signature Techniques are Attacking
+    // Maneuvers, so the Raging (+1d4(T), Aspect-bumped) and Surging (+1d4(T))
+    // states apply to their Wound Rolls just like Basic Attacks.
+    const ragingExtra = this._ragingWoundDice(system, tier);
+    const surgingExtra = combatStates.surging ? `+${tier}d4` : "";
+    const formula = this._buildFormula(topDice, greaterDice, totalMod, chargesExtra + ssExtra + ragingExtra + surgingExtra);
 
     let damageCat = profileInfo.damageCat || "Standard";
     if (tech.profile === "Mega Flare" && charges >= 7) damageCat = "Direct";
@@ -1145,31 +1156,114 @@ export class DBUCharacterSheet extends ActorSheet {
     return (c && c.active) ? (c.stacks || 1) : 0;
   }
 
+  /**
+   * Dice Category chain (core-rules.txt:99):
+   * 1d4, 1d6, 1d8, 1d10, 1d10+1d4, 1d10+1d6, 1d10+1d8, 2d10, 2d10+1d4, ...
+   * Returns the roll formula for a 0-based index into that chain.
+   */
+  _diceCategoryFormula(idx) {
+    const base = ["1d4", "1d6", "1d8"];
+    if (idx < 3) return base[Math.max(0, idx)];
+    const k = idx - 3;
+    const n10 = 1 + Math.floor(k / 4);
+    const rem = k % 4;
+    const extra = rem === 0 ? "" : `+1d${[0, 4, 6, 8][rem]}`;
+    return `${n10}d10${extra}`;
+  }
+
+  /**
+   * Critical Result Extra Dice (core-rules.txt:107): starts at 1d6, Dice
+   * Category +1 per Tier of Power after the first. T1=1d6, T2=1d8, T3=1d10,
+   * T4=1d10+1d4, ... (1d6 sits at chain index 1, so index = tier).
+   * The Mindful Aspect (transformation-aspects.txt:61) bumps this Dice Category
+   * by 1 per aspect level while in the Mindful State (criticalExtraDiceCatBonus,
+   * already gated to Mindful-State-only in actor.mjs).
+   */
+  _critExtraFormula(tier) {
+    const mindfulBonus = this.actor?.system?.aptitudes?.criticalExtraDiceCatBonus || 0;
+    return this._diceCategoryFormula(Math.max(1, Number(tier) || 1) + mindfulBonus);
+  }
+
+  /**
+   * Multiply every die in a dice expression by tier — applies the (T)
+   * multiplier across a Dice Category, including all dice from wrapping
+   * (core-rules.txt:100). e.g. ("1d10+1d4", 2) → "2d10+2d4".
+   */
+  _scaleDiceByTier(diceStr, tier) {
+    return String(diceStr).replace(/(\d+)(d\d+)/g, (_, n, d) => `${Number(n) * (tier || 1)}${d}`);
+  }
+
+  /**
+   * Wound Roll Extra Dice from the Raging Combat State: +1d4(T) (states.txt:23).
+   * The Raging Aspect increases the Dice Category of this Extra Dice by 1 per
+   * level while in the Raging State (transformation-aspects.txt:82); the
+   * "Raging Dice Size" buff adds further category increases. Returns "" when
+   * not in the Raging State.
+   */
+  _ragingWoundDice(system, tier) {
+    if (!system.combatStates?.raging) return "";
+    const catBonus = (system.aptitudes?.ragingExtraDiceCatBonus || 0)
+      + (system.aptitudes?.ragingDiceSize || 0);
+    // Base 1d4 sits at chain index 0; the aspect/buff bumps it up the ladder.
+    return `+${this._scaleDiceByTier(this._diceCategoryFormula(catBonus), tier)}`;
+  }
+
+  /**
+   * Unified Critical Targets for combat rolls. Aggregates:
+   * - Talents: Focused Strike / Powerful Strike / Instinctual Evasion (-1 each),
+   *   Critical Specialist (-1 Strike, Armed Attacks only)
+   * - Mindful combat state (transformation aspect): -1 to all combat CTs
+   * - CT buffs (actor.mjs aptitudes): strikeCTBonus, woundCTBonus + per-foundation,
+   *   dodgeCTBonus, and bestial Return to Heritage (dodge -1)
+   * - Rules clamp: CT can never go below 7 (core-rules.txt:105).
+   * NOTE: the legacy "Cutting → Wound CT 5" override was removed — the Cutting
+   * profile only sets base Damage Category to Lethal and modifies the Strike
+   * (attacking.txt:181); it never touches the Critical Target.
+   */
+  _calcCombatCTs(system, { isWeapon = false, foundation = "", profile = "" } = {}) {
+    const talents = system.talents || [];
+    const apt = system.aptitudes || {};
+    const mindful = system.combatStates?.mindful ? 1 : 0;
+    const clamp = (v) => Math.max(7, Math.min(10, v));
+
+    let strikeCT = 10 - mindful - (Number(apt.strikeCTBonus) || 0);
+    if (talents.includes("focused_strike")) strikeCT -= 1;
+    if (talents.includes("critical_specialist") && isWeapon) strikeCT -= 1;
+
+    let woundCT = 10 - mindful - (Number(apt.woundCTBonus) || 0);
+    if (talents.includes("powerful_strike")) woundCT -= 1;
+    const perFoundation = {
+      Physical: apt.woundCTPhysical, Energy: apt.woundCTEnergy, Magic: apt.woundCTMagic
+    }[foundation];
+    woundCT -= Number(perFoundation) || 0;
+
+    let dodgeCT = 10 - mindful - (Number(apt.dodgeCTBonus) || 0)
+      - (Number(system._bestialDodgeCritReduction) || 0);
+    if (talents.includes("instinctual_evasion")) dodgeCT -= 1;
+
+    strikeCT = clamp(strikeCT);
+    woundCT = clamp(woundCT);
+    dodgeCT = clamp(dodgeCT);
+
+    return { strikeCT, woundCT, dodgeCT };
+  }
+
   _calcTechCT(tech, system) {
-    let strikeCT = 10, woundCT = 10, dodgeCT = 10;
+    const { strikeCT, woundCT, dodgeCT } = this._calcCombatCTs(system, {
+      isWeapon: !!tech.isWeapon,
+      foundation: tech.foundation || "",
+      profile: tech.profile || ""
+    });
     const notes = [];
     const talents = system.talents || [];
 
-    if (talents.includes("focused_strike")) strikeCT -= 1;
-    if (talents.includes("powerful_strike")) woundCT -= 1;
-    if (talents.includes("instinctual_evasion")) dodgeCT -= 1;
-
     if (talents.includes("precision_kata")) notes.push("Precision Kata: Strike CT -1 (Focused only)");
     if (talents.includes("brutal_kata")) notes.push("Brutal Kata: Wound CT -1 (Focused only)");
-    if (talents.includes("critical_specialist")) {
-      if (tech.isWeapon) {
-        strikeCT -= 1;
-      } else {
-        notes.push("Critical Specialist: Strike CT -1 (Armed Attacks only)");
-      }
+    if (talents.includes("critical_specialist") && !tech.isWeapon) {
+      notes.push("Critical Specialist: Strike CT -1 (Armed Attacks only)");
     }
     if (talents.includes("artful_strike")) notes.push("Artful Strike: 1 below CT = Critical (Strike, 1/Rnd)");
     // Note: "1 below CT = Critical (Wound)" is handled by Aggressive/Defensive Style triggered effects
-
-    if (tech.profile === "Cutting") {
-      woundCT = 5;
-      notes.push("Cutting: Wound CT set to 5");
-    }
 
     return { strikeCT, woundCT, dodgeCT, notes };
   }
@@ -1840,8 +1934,8 @@ export class DBUCharacterSheet extends ActorSheet {
     let stateStrikeExtra = ""; // dice expressions for strike
     let stateWoundExtra = "";  // dice expressions for wound
 
-    // Raging: +1d4(T) Wound Rolls
-    if (combatStates.raging) stateWoundExtra += `+${tier}d4`;
+    // Raging: +1d4(T) Wound Rolls, Dice Category bumped by the Raging Aspect.
+    stateWoundExtra += this._ragingWoundDice(system, tier);
     // Surging: +1d4(T) Strike & Wound Rolls (vs targeted opponent)
     if (combatStates.surging) {
       stateStrikeExtra += `+${tier}d4`;
@@ -1851,8 +1945,8 @@ export class DBUCharacterSheet extends ActorSheet {
     if (combatStates.mindful) stateWoundMod -= tier;
     // Undying: -1(T) all Combat Rolls
     if (combatStates.undying) stateAllMod -= tier;
-    // Combat Critical Target (Mindful: -1)
-    context.combatCT = combatStates.mindful ? "9+" : "10+";
+    // Combat Critical Target — unified (talents, Mindful, CT buffs)
+    context.combatCT = `${this._calcCombatCTs(system).strikeCT}+`;
 
     // Build foundation→profiles map for template selects
     const foundationProfiles = { Physical: [], Energy: [], Magic: [] };
@@ -1886,8 +1980,6 @@ export class DBUCharacterSheet extends ActorSheet {
     const isProne = isCondActive("prone");
     const isShaken = isCondActive("shaken");
     const guardDown = isCondActive("guardDown");
-    const dimOffense = system.tracking?.diminishingOffense || 0;
-    const dimDefense = system.tracking?.diminishingDefense || 0;
     const eqPenalty = system.equipment?.combatPenalty || 0;
 
     // Active aura bonuses
@@ -1923,12 +2015,14 @@ export class DBUCharacterSheet extends ActorSheet {
       }
       const strikePenShaken = isShaken ? 2 * tier : 0;
       const strikePenLR = (targetRange >= 9) ? 2 * baseTier : 0;
-      const strikePenDim = dimOffense * baseTier;
+      // Diminishing Offense is NOT baked into the prep formula — it's applied
+      // dynamically at roll time from the auto attack counter (see
+      // _onRollTrackerAttack), so the same formula stays valid all round.
       // Super Stack Strike penalty: -1(T) per stack (attributes.txt)
       const ssPenStrike = system.aptitudes?.superStackStrikePenalty ?? 0;
       // Unified strike buff total (talents, states, maneuvers, custom buffs)
       const strikeBuffTotal = system.aptitudes?.strikeBuffTotal ?? 0;
-      const strikeMod = haste + awareness + sparkingBonus - strikePenShaken - strikePenLR - strikePenDim - eqPenalty - ssPenStrike + strikeBuffTotal + stateAllMod;
+      const strikeMod = haste + awareness + sparkingBonus - strikePenShaken - strikePenLR - eqPenalty - ssPenStrike + strikeBuffTotal + stateAllMod;
       const strikeFormula = this._buildFormula(strikeTopDice, strikeGreaterDice, strikeMod, stateStrikeExtra);
 
       // --- WOUND ---
@@ -1962,12 +2056,13 @@ export class DBUCharacterSheet extends ActorSheet {
       // Rule: "Add your Defense Value to all Dodge Rolls" (attributes.txt)
       // DV already includes size, aura, equipment, raging, guard down, prone.
       const dv = system.aptitudes?.defenseValue ?? 0;
-      const dodgePenDim = dimDefense * baseTier;
+      // Diminishing Defense is applied dynamically at roll time from the auto
+      // dodge counter (see _onRollTrackerDodge) — not baked into the formula.
       // Super Stack Dodge penalty: -1(T) per stack (attributes.txt)
       const ssPenDodge = system.aptitudes?.superStackDodgePenalty ?? 0;
       // Unified dodge buff total (talents, states, maneuvers, custom buffs)
       const dodgeBuffTotal = system.aptitudes?.dodgeBuffTotal ?? 0;
-      const dodgeMod = dv - dodgePenDim - ssPenDodge + dodgeBuffTotal + stateAllMod;
+      const dodgeMod = dv - ssPenDodge + dodgeBuffTotal + stateAllMod;
       const dodgeFormula = this._buildFormula(dodgeTopDice, dodgeGreaterDice, dodgeMod);
 
       // --- DUEL CLASH ---
@@ -2056,7 +2151,13 @@ export class DBUCharacterSheet extends ActorSheet {
     const woundBuffTotal = system.aptitudes?.woundBuffTotal ?? 0;
     const foTotal = system.attributes?.fo?.totalScore ?? 0;
     const maTotal = system.attributes?.ma?.totalScore ?? 0;
-    const crit = system.combatStates?.mindful ? "9+" : "10+";
+    // Unified CTs (talents, Mindful, CT buffs). Per-foundation wound CTs for
+    // the wound row; unarmed baseline for strike (Critical Specialist only
+    // applies to armed attacks, surfaced per-ref in the tracker/attack refs).
+    const baseCTs = this._calcCombatCTs(system);
+    const woundCTPhys = this._calcCombatCTs(system, { foundation: "Physical" }).woundCT;
+    const woundCTEnergy = this._calcCombatCTs(system, { foundation: "Energy" }).woundCT;
+    const woundCTMagic = this._calcCombatCTs(system, { foundation: "Magic" }).woundCT;
 
     const strikeDerived = haste + awareness;
     const strikeTotal = strikeDerived + strikeBuffTotal;
@@ -2069,19 +2170,19 @@ export class DBUCharacterSheet extends ActorSheet {
         derivedValue: fmt(strikeDerived),
         additionalMods: fmt(strikeBuffTotal),
         total: fmt(strikeTotal),
-        crit
+        crit: `${baseCTs.strikeCT}+`
       },
       dodge: {
         derivedValue: fmt(defenseValue),
         additionalMods: fmt(dodgeBuffTotal),
         total: fmt(dodgeTotal),
-        crit
+        crit: `${baseCTs.dodgeCT}+`
       },
-      strikeForType: `${fmt(strikeTotal)} (${crit})`,
+      strikeForType: `${fmt(strikeTotal)} (${baseCTs.strikeCT}+)`,
       wound: {
-        physical: { total: fmt(foTotal + woundBuffTotal), crit },
-        energy:   { total: fmt(foTotal + woundBuffTotal), crit },
-        magic:    { total: fmt(maTotal + woundBuffTotal), crit }
+        physical: { total: fmt(foTotal + woundBuffTotal), crit: `${woundCTPhys}+` },
+        energy:   { total: fmt(foTotal + woundBuffTotal), crit: `${woundCTEnergy}+` },
+        magic:    { total: fmt(maTotal + woundBuffTotal), crit: `${woundCTMagic}+` }
       }
     };
   }
@@ -2691,17 +2792,26 @@ export class DBUCharacterSheet extends ActorSheet {
       const profile = (configDBU.profileData || {})[ref.profile] || {};
       const kiCost = (profile.kpCost || 0) * trackerTier;
       const prep = prepRefs[i] || {};
+      // Unified CTs — includes talents (Focused Strike, Critical Specialist for
+      // armed attacks), Mindful state, and CT buffs. Fixes the old fallback that
+      // always landed on 10 because prep.strikeCT/combatCT never existed here.
+      const isArmed = !!ref.weaponEquipped && String(ref.weaponEquipped).toLowerCase() !== "unarmed";
+      const refCTs = this._calcCombatCTs(system, {
+        isWeapon: isArmed, foundation: ref.foundation || "", profile: ref.profile || ""
+      });
       arSources.push({
         key: `ref_${i}`,
         name: ref.name,
         kiCost,
         strikeFormula: prep.strikeFormula || "",
         woundFormula: prep.woundFormula || "",
-        strikeCT: prep.strikeCT || prep.combatCT || 10,
+        strikeCT: refCTs.strikeCT,
+        woundCT: refCTs.woundCT,
         damageCat: prep.damageCat || "Standard",
         foundation: ref.foundation || "",
         profile: ref.profile || "",
         energyCharges: ref.energyCharges || 0,
+        powerShot: ref.powerShot || 0,
         defaultWager: prep.maxWager || 0,
         activeBuffs
       });
@@ -2719,10 +2829,12 @@ export class DBUCharacterSheet extends ActorSheet {
         strikeFormula: tech.strikeFormula || "",
         woundFormula: tech.woundFormula || "",
         strikeCT: tech.strikeCT || 10,
+        woundCT: tech.woundCT || 10,
         damageCat: tech.damageCat || "Standard",
         foundation: tech.foundation || "",
         profile: tech.profile || "",
         energyCharges: (tech.baseEnergyCharges || 0) + (tech.extraEnergyCharges || 0),
+        powerShot: (tech.advantages || []).find(a => a.name === "Power Shot")?.ranks || 0,
         defaultWager: 0,
         activeBuffs
       });
@@ -2737,6 +2849,44 @@ export class DBUCharacterSheet extends ActorSheet {
     if (uaSources.length) trackerSourceGroups.push({ label: "Unique Abilities", sources: uaSources });
     // Store for listener access
     this._trackerSourceGroups = trackerSourceGroups;
+    // Duel panel needs the attack sources rendered in the template directly
+    context.duelSourceGroups = [
+      ...(arSources.length ? [{ label: "Attack Refs", sources: arSources }] : []),
+      ...(stSources.length ? [{ label: "Sig. Techniques", sources: stSources }] : [])
+    ];
+
+    // Dodge quick-roll data for the tracker "Roll Dodge" button. The dodge
+    // formula is ref-independent (DV + buffs + tier dice), so reuse the first
+    // prepared attack ref; fall back to a bare 1d10+DV when no refs exist.
+    const dodgePrep = prepRefs[0] || {};
+    const dvFallback = (system.aptitudes?.defenseValue ?? 0) + (system.aptitudes?.dodgeBuffTotal ?? 0);
+    this._trackerDodge = {
+      formula: dodgePrep.dodgeFormula || `1d10${dvFallback >= 0 ? "+" : ""}${dvFallback}`,
+      ct: this._calcCombatCTs(system).dodgeCT
+    };
+    context.trackerDodge = this._trackerDodge;
+
+    // --- Defend Maneuver options (actions-combat.txt:485-506). Counter Action;
+    // does NOT trigger Diminishing Defense (attacking.txt / Defend rule). ---
+    const defendCatalog = [
+      { key: "parry", name: "Parry", costT: 0, rollBased: true,
+        desc: "Use your Strike Roll instead of Dodge for the Clash. −1(T) Dice Score per Energy Charge or Power Shot rank on the incoming attack." },
+      { key: "directHit", name: "Direct Hit", costT: 0, rollBased: false,
+        desc: "Forgo Dodge. +1/2 your Soak vs this attack. Attacker is Shaken if they deal 0 damage with a Sig Tech or a 5(T)+ wager attack." },
+      { key: "powerFlare", name: "Power Flare", costT: 2, rollBased: true,
+        desc: "Clash your Wound Roll vs the attacker's Wound Roll. Win: no damage. Lose: take their Wound. Wager up to 1/5 Max Capacity." },
+      { key: "crossCounter", name: "Cross Counter", costT: 2, rollBased: false,
+        desc: "Attacker rolls vs your HALVED Defense Value. After the Clash resolves, make a Basic Attack as an Out-of-Sequence Maneuver." },
+      { key: "guard", name: "Guard", costT: 8, rollBased: false,
+        desc: "Forgo Dodge. Incoming Wound Roll halved and Damage Category −1. +1(T) KP per Energy Charge on the attack (max +4(T))." }
+    ];
+    context.defendOptions = defendCatalog.map(d => ({ ...d, costLabel: d.costT ? `${d.costT}(T) KP` : "0 KP" }));
+    this._defendCatalog = defendCatalog;
+    this._trackerDefend = {
+      strikeFormula: dodgePrep.strikeFormula || "1d10",
+      woundFormula: dodgePrep.woundFormula || "1d10",
+      maxFlareWager: Math.floor((system.status?.maxCapacity || 0) / 5)
+    };
 
     // Enrich each tracker action with _attackData when type=attack and source is set
     const findSource = (key) => {
@@ -2751,6 +2901,59 @@ export class DBUCharacterSheet extends ActorSheet {
         if (a.type === "attack" && a.source) {
           const sd = findSource(a.source);
           if (sd) a._attackData = sd;
+        }
+        if (a.type === "transform") {
+          // Transformation Maneuver: pick an inactive form you meet the ToP
+          // requirement for; stress test ignores Health Threshold Penalties.
+          const allTrans = system.transformations || [];
+          const options = allTrans
+            .map((t, idx) => ({ t, idx }))
+            .filter(({ t }) => {
+              if (t.active) return false;
+              const req = parseInt(String(t.tierRequirement || "").match(/(\d+)/)?.[1] || "0");
+              return req <= (system.tier || 1);
+            })
+            .map(({ t, idx }) => ({
+              index: idx,
+              name: t.name || `Transformation ${idx + 1}`,
+              stressTest: Number(t.stressTest) || 0,
+              selected: Number(a.transformIndex) === idx
+            }));
+          const chosen = options.find(o => o.selected) || null;
+          const calc = chosen ? this._computeTransformManeuver(chosen.index, a) : null;
+          a._transformData = {
+            options,
+            chosen,
+            projectedST: calc?.required ?? 0,
+            ignoredPenalty: calc?.ignoredPenalty ?? (system.thresholds?.stressPenalty || 0),
+            stepByStep: calc?.stepByStep || null,
+            crimson: calc?.crimson || false,
+            willSkipTest: calc?.willSkipTest || false
+          };
+        }
+        if (a.type === "defend" && a.defendOption) {
+          const opt = defendCatalog.find(d => d.key === a.defendOption);
+          if (opt) {
+            const dTier = system.tier || 1;
+            let dKiCost = opt.costT * dTier;
+            if (opt.key === "guard") {
+              const ec = Math.min(Math.max(0, Number(a.defendEC) || 0), 4);
+              dKiCost = (8 + ec) * dTier;
+              if (this.actor._isConditionActive?.(system, "guardDown")) dKiCost = Math.ceil(dKiCost * 1.5);
+            }
+            if (opt.key === "powerFlare") {
+              dKiCost += Math.max(0, Math.min(Number(a.defendWager) || 0, this._trackerDefend.maxFlareWager));
+            }
+            a._defendData = {
+              ...opt,
+              isParry: opt.key === "parry",
+              isPowerFlare: opt.key === "powerFlare",
+              isGuard: opt.key === "guard",
+              penaltyTotal: opt.key === "parry" ? Math.max(0, Number(a.defendPenalty) || 0) * dTier : 0,
+              maxFlareWager: this._trackerDefend.maxFlareWager,
+              kiCost: dKiCost
+            };
+          }
         }
         return a;
       });
@@ -4652,6 +4855,7 @@ export class DBUCharacterSheet extends ActorSheet {
     const apparel = [];
     const weapons = [];
     const accessories = [];
+    const basicItems = [];
     const worn = [];
 
     for (const item of this.actor.items) {
@@ -4659,6 +4863,7 @@ export class DBUCharacterSheet extends ActorSheet {
       const eqType = item.system.equipmentType || "apparel";
       if (eqType === "weapon") weapons.push(item);
       else if (eqType === "accessory") accessories.push(item);
+      else if (eqType === "basicItem") basicItems.push(item);
       else apparel.push(item);
 
       if (item.system.worn) worn.push(item);
@@ -4667,18 +4872,47 @@ export class DBUCharacterSheet extends ActorSheet {
     apparel.sort((a, b) => a.name.localeCompare(b.name));
     weapons.sort((a, b) => a.name.localeCompare(b.name));
     accessories.sort((a, b) => a.name.localeCompare(b.name));
+    basicItems.sort((a, b) => a.name.localeCompare(b.name));
 
     // Enrich apparel + weapon items with qualities CRUD data
     if (!this._expandedQualityCards) this._expandedQualityCards = new Set();
     for (const item of [...apparel, ...weapons]) {
       this._enrichItemQualities(item);
     }
+    // Expose dynamic Break Value max to apparel cards (used by inventory input).
+    for (const item of apparel) {
+      item.bvMax = this._calcBreakValueMax(item);
+    }
+
+    // Enrich Basic Items with catalog entry data (catalogName, isTech, isSpecial,
+    // craftDC label, catalogDescription, catalogEffects). Unknown key → custom item.
+    const basicCatalog = CONFIG.DBU?.basicItemsCatalog || {};
+    const dcLabels = CONFIG.DBU?.craftDCLabels || {};
+    for (const item of basicItems) {
+      const key = item.system.basicItemKey || "";
+      const entry = key ? basicCatalog[key] : null;
+      item._catalogEntry = entry || null;
+      item._isCustomBasic = !entry;
+      item._catalogName = entry ? entry.name : "";
+      item._isTech = entry ? !!entry.isTech : false;
+      item._isSpecial = entry ? !!entry.isSpecial : false;
+      item._craftDCLabel = entry ? (dcLabels[entry.craftDC] || entry.craftDC) : "";
+      item._catalogDescription = entry ? entry.description : "";
+      item._catalogEffects = entry ? entry.effects : "";
+    }
+    // Catalog options for the dropdown selector (grouped: standard then special).
+    const allCatalogEntries = Object.values(basicCatalog);
+    context.basicItemCatalogOptions = {
+      standard: allCatalogEntries.filter(e => !e.isSpecial).sort((a, b) => a.name.localeCompare(b.name)),
+      special: allCatalogEntries.filter(e => e.isSpecial).sort((a, b) => a.name.localeCompare(b.name))
+    };
 
     context.apparelItems = apparel;
     context.weaponItems = weapons;
     context.accessoryItems = accessories;
+    context.basicItems = basicItems;
     context.wornApparel = worn;
-    context.equipmentItems = [...apparel, ...weapons, ...accessories];
+    context.equipmentItems = [...apparel, ...weapons, ...accessories, ...basicItems];
 
     // Layer System data preparation
     const system = this.actor.system;
@@ -4853,9 +5087,11 @@ export class DBUCharacterSheet extends ActorSheet {
   }
 
   _calcBreakValueMax(item) {
-    const grade = item.system.craftsmanshipGrade || 1;
+    // apparel.txt:13 — "All pieces of Apparel by default have a Break Value of 3"
+    // apparel.txt:82 (Durable quality) — "Increase the maximum Break Value for this piece of Apparel by 3"
+    // Craftsmanship Grade affects Craft DC, NOT Break Value.
     const quals = item.system.qualities || [];
-    let bv = 3 + grade * 2;
+    let bv = 3;
     if (quals.some(q => q.qualityKey === "durable")) bv += 3;
     return bv;
   }
@@ -4973,6 +5209,7 @@ export class DBUCharacterSheet extends ActorSheet {
     html.on("change", ".eq-worn-toggle", this._onEquipmentWornToggle.bind(this));
     html.on("change", ".eq-inline-input", this._onEquipmentInlineEdit.bind(this));
     html.on("change", ".eq-inline-check", this._onEquipmentInlineCheck.bind(this));
+    html.on("change", ".eq-basic-catalog-select", this._onBasicItemCatalogChange.bind(this));
 
     // Equipment Layer system
     html.on("change", "[data-action='assign-layer']", this._onAssignLayer.bind(this));
@@ -4991,9 +5228,6 @@ export class DBUCharacterSheet extends ActorSheet {
 
     // Skill roll button
     html.on("click", "[data-action='roll-skill']", this._onRollSkill.bind(this));
-
-    // Counter +/- buttons
-    html.on("click", ".counter-btn", this._onCounterButton.bind(this));
 
     // Custom Buff CRUD
     html.on("click", "[data-action='add-custom-buff']", this._onAddCustomBuff.bind(this));
@@ -5135,6 +5369,22 @@ export class DBUCharacterSheet extends ActorSheet {
     html.on("change", ".action-source", this._onTrackerSourceChange.bind(this));
     html.on("change", ".tap-wager-input", this._onTrackerWagerChange.bind(this));
     html.on("click", "[data-action='roll-tracker-attack']", this._onRollTrackerAttack.bind(this));
+    html.on("click", "[data-action='roll-tracker-dodge']", this._onRollTrackerDodge.bind(this));
+    html.on("change", ".tdp-option-select", this._onTrackerDefendOptionChange.bind(this));
+    html.on("change", ".tdp-input", this._onTrackerDefendInput.bind(this));
+    html.on("click", "[data-action='roll-tracker-defend']", this._onRollTrackerDefend.bind(this));
+    html.on("change", ".tdl-mode-select", this._onTrackerDuelModeChange.bind(this));
+    html.on("change", ".tdl-source-select", this._onTrackerDuelSourceChange.bind(this));
+    html.on("click", "[data-action='initiate-duel']", this._onInitiateDuel.bind(this));
+    html.on("change", ".ttf-source-select", this._onTrackerTransformChange.bind(this));
+    html.on("change", ".ttf-checkbox", this._onTrackerTransformCheckbox.bind(this));
+    html.on("click", "[data-action='roll-tracker-transform']", this._onRollTrackerTransform.bind(this));
+    html.on("change", ".tgp-option-select", this._onTrackerGrappleOptionChange.bind(this));
+    html.on("click", "[data-action='use-tracker-grapple']", this._onUseTrackerGrapple.bind(this));
+    html.on("click", "[data-action='use-tracker-thrust']", this._onUseTrackerThrust.bind(this));
+    html.on("click", "[data-action='use-tracker-terrify']", this._onUseTrackerTerrify.bind(this));
+    html.on("click", "[data-action='use-tracker-feint']", this._onUseTrackerFeint.bind(this));
+    html.on("click", "[data-action='use-tracker-dirty-trick']", this._onUseTrackerDirtyTrick.bind(this));
     html.on("click", "[data-action='tb-tab-switch']", this._onTbTabSwitch.bind(this));
     html.on("click", "[data-action='rt-activable-use']", this._onRtActivableUse.bind(this));
 
@@ -5149,9 +5399,6 @@ export class DBUCharacterSheet extends ActorSheet {
     html.on("click", "[data-action='add-god-maneuver']", this._onAddGodManeuver.bind(this));
     html.on("click", "[data-action='remove-god-maneuver']", this._onRemoveGodManeuver.bind(this));
     html.on("change", ".god-strike-profile", this._onGodStrikeProfile.bind(this));
-
-    // Perfect KI Control
-    html.on("change", ".perfect-ki-control", this._onTogglePerfectKi.bind(this));
 
     // Clear damage log
     html.on("click", "[data-action='clear-damage-log']", this._onClearDamageLog.bind(this));
@@ -5299,29 +5546,38 @@ export class DBUCharacterSheet extends ActorSheet {
     const roll = new Roll(`1d10 + ${bonus}`);
     await roll.evaluate();
 
+    // Critical Result / Botch apply to ANY roll (core-rules.txt:103-109).
+    // Skill checks use the default CT of 10 (no known skill-CT reducers).
+    const nat = roll.dice[0]?.results?.[0]?.result ?? "?";
+    const sysTier = this.actor.system.tier || 1;
+    const sysBaseTier = this.actor.system.baseTier || 1;
+    const isCrit = nat === 10;
+    const isBotch = nat === 1;
+    let critRoll = null;
+    if (isCrit) { critRoll = new Roll(this._critExtraFormula(sysTier)); await critRoll.evaluate(); }
+    const botchPenalty = 2 * sysBaseTier;
+    const finalTotal = roll.total + (critRoll?.total || 0) - (isBotch ? botchPenalty : 0);
+
     // Create chat message
     let label = `${skillName} (${attrKey.toUpperCase()})`;
     if (viaName) label += ` (via ${viaName})`;
+    if (critRoll) {
+      label += `<br><span class="dbu-crit">CRIT! +${critRoll.formula}: ${critRoll.total}</span> → Total <b>${finalTotal}</b>`;
+    } else if (isBotch) {
+      label += `<br><span class="dbu-botch">BOTCH -${botchPenalty}</span> → Total <b>${finalTotal}</b>`;
+    }
     await roll.toMessage({
       speaker: ChatMessage.getSpeaker({ actor: this.actor }),
       flavor: label
     });
+    if (critRoll && game.dice3d) {
+      try { game.dice3d.showForRoll(critRoll, game.user, true); } catch (e) { /* best-effort */ }
+    }
   }
 
   // -------------------------------------------------------
   // Counter Buttons
   // -------------------------------------------------------
-
-  async _onCounterButton(event) {
-    event.preventDefault();
-    const btn = event.currentTarget;
-    const field = btn.dataset.field;
-    const action = btn.dataset.action;
-    if (!field) return;
-    const current = foundry.utils.getProperty(this.actor, field) ?? 0;
-    const newVal = action === "increase" ? current + 1 : Math.max(0, current - 1);
-    await this.actor.update({ [field]: newVal });
-  }
 
   // -------------------------------------------------------
   // Custom Buff CRUD
@@ -6633,7 +6889,8 @@ export class DBUCharacterSheet extends ActorSheet {
       const tracked = await this._trackCombatUsage(
         quarterCapacityTrigger.trackingId,
         quarterCapacityTrigger.trigger.usageLimit,
-        quarterCapacityTrigger.trigger.maxUses || 0
+        quarterCapacityTrigger.trigger.maxUses || 0,
+        quarterCapacityTrigger.trigger.name
       );
       if (tracked) {
         const currentKP = this.actor.system.kiPool?.value ?? 0;
@@ -6650,7 +6907,8 @@ export class DBUCharacterSheet extends ActorSheet {
       const tracked = await this._trackCombatUsage(
         singleBattleBornTrigger.trackingId,
         singleBattleBornTrigger.trigger.usageLimit,
-        singleBattleBornTrigger.trigger.maxUses || 0
+        singleBattleBornTrigger.trigger.maxUses || 0,
+        singleBattleBornTrigger.trigger.name
       );
       if (tracked) {
         await this._battleBornGrantStack(`${singleBattleBornTrigger.trigger.name} (${transformation.name})`);
@@ -6662,7 +6920,7 @@ export class DBUCharacterSheet extends ActorSheet {
       const trigger = this._findFormTrigger("lf", key, trig =>
         /regain life points equal to 1\/2 of your maximum life points prior to entering this transformation/i.test(trig.description || ""));
       if (trigger) {
-        const tracked = await this._trackCombatUsage(trigger.trackingId, trigger.trigger.usageLimit, trigger.trigger.maxUses || 0);
+        const tracked = await this._trackCombatUsage(trigger.trackingId, trigger.trigger.usageLimit, trigger.trigger.maxUses || 0, trigger.trigger.name);
         if (tracked) {
           const maxLPBeforeEntry = entrySnapshot?.maxLP ?? this.actor.system.lifePoints?.max ?? 0;
           const recoveredLP = Math.floor(maxLPBeforeEntry / 2);
@@ -6678,7 +6936,7 @@ export class DBUCharacterSheet extends ActorSheet {
       const trigger = this._findFormTrigger("lf", "destroyer_form", trig =>
         /regain divine ki points equal to triple your power level/i.test(trig.description || ""));
       if (trigger) {
-        const tracked = await this._trackCombatUsage(trigger.trackingId, trigger.trigger.usageLimit, trigger.trigger.maxUses || 0);
+        const tracked = await this._trackCombatUsage(trigger.trackingId, trigger.trigger.usageLimit, trigger.trigger.maxUses || 0, trigger.trigger.name);
         if (tracked) {
           const dkpGain = 3 * (this.actor.system.level || 1);
           const currentDKP = this.actor.system.divineKiPoints?.value ?? 0;
@@ -6694,7 +6952,7 @@ export class DBUCharacterSheet extends ActorSheet {
         /gain a stack of battle born for each health threshold you were below before entering this transformation/i.test(trig.description || ""));
       const stackCount = entrySnapshot?.thresholdsBelow || 0;
       if (trigger && stackCount > 0) {
-        const tracked = await this._trackCombatUsage(trigger.trackingId, trigger.trigger.usageLimit, trigger.trigger.maxUses || 0);
+        const tracked = await this._trackCombatUsage(trigger.trackingId, trigger.trigger.usageLimit, trigger.trigger.maxUses || 0, trigger.trigger.name);
         if (tracked) {
           for (let i = 0; i < stackCount; i++) {
             await this._battleBornGrantStack(`Superior Pain, Superior Power (${transformation.name})`);
@@ -8560,12 +8818,13 @@ export class DBUCharacterSheet extends ActorSheet {
           const effectId = btn.dataset.effectId;
           const limit = btn.dataset.limit || "round";
           const maxUses = Number(btn.dataset.maxUses || 0);
+          const item = btn.closest(".combat-resource-item");
+          const name = item?.querySelector(".resource-name")?.textContent
+            || btn.dataset.sourceName || "Resource";
           if (effectId) {
-            const tracked = await this._trackCombatUsage(effectId, limit, maxUses);
+            const tracked = await this._trackCombatUsage(effectId, limit, maxUses, name);
             if (!tracked) return;
           }
-          const item = btn.closest(".combat-resource-item");
-          const name = item?.querySelector(".resource-name")?.textContent || "Resource";
           const text = item?.querySelector(".resource-text")?.innerHTML || "";
           ChatMessage.create({
             speaker: ChatMessage.getSpeaker({ actor: this.actor }),
@@ -8696,45 +8955,261 @@ export class DBUCharacterSheet extends ActorSheet {
       return;
     }
 
+    return this._runTriggerAutomationAndChat(triggerData, iconClass);
+  }
+
+  /**
+   * Shared trigger finisher: tracks the limited use, runs the automation
+   * descriptor (if the trigger has one), and posts the chat card with an
+   * "applied" summary. Cancelling any automation dialog undoes the tracked use.
+   */
+  async _runTriggerAutomationAndChat(triggerData, iconClass = "fas fa-gem") {
     if (triggerData.usageLimit || triggerData.maxUses) {
-      const tracked = await this._trackCombatUsage(triggerData.trackingId, triggerData.usageLimit, triggerData.maxUses || 0);
+      const tracked = await this._trackCombatUsage(triggerData.trackingId, triggerData.usageLimit, triggerData.maxUses || 0, triggerData.name);
       if (!tracked) return;
     }
 
+    let summaryLines = [];
+    if (triggerData.automation) {
+      const applied = await this._applyTriggerAutomation(triggerData);
+      if (applied === null) {
+        if (triggerData.usageLimit || triggerData.maxUses) {
+          await this._undoCombatUsage(triggerData.trackingId, triggerData.usageLimit || "round");
+        }
+        // Signal _onRtActivableUse that this click was cancelled — no fallback log row
+        this._usageJustUndone = true;
+        return;
+      }
+      summaryLines = applied.lines;
+    }
+
+    const summaryHtml = summaryLines.length
+      ? `<div class="dbu-auto-applied">${summaryLines.map(l => `<div>${l}</div>`).join("")}</div>`
+      : "";
     ChatMessage.create({
       speaker: ChatMessage.getSpeaker({ actor: this.actor }),
-      content: `<div style="font-size:0.9rem"><b><i class="${iconClass}"></i> ${triggerData.name}</b>${triggerData.sourceName ? ` <small>(${triggerData.sourceName})</small>` : ""}<br>${triggerData.description}</div>`
+      content: `<div style="font-size:0.9rem"><b><i class="${iconClass}"></i> ${triggerData.name}</b>${triggerData.sourceName ? ` <small>(${triggerData.sourceName})</small>` : ""}<br>${triggerData.description}${summaryHtml}</div>`
     });
+  }
+
+  /**
+   * Generic activable-effect executor. Reads the trigger's `automation`
+   * descriptor and applies real changes: KP costs, resource gains, temporary
+   * stat buffs (via combatTabState.activeTempEffects → derived buffs), and
+   * combat-state switches. Everything applied is recorded on the trigger's
+   * "use" row in the Round Tracker log (autoApplied) so deleting/undoing the
+   * row reverses it.
+   *
+   * Descriptor shape (all fields optional):
+   *   requires: ["raging"]                          — combatStates gates (confirm if missing)
+   *   choose: [{ label, buffs?, gain?, state? }]    — player picks one branch
+   *   cost: { kp: N }                               — fixed KP cost
+   *   spendPrompt: { max: N, label }                — prompt KP amount; exposed as `spent`
+   *   gain: { kp, lp, energyCharges, per: "thresholdsBelow" }
+   *   buffs: [{ stat, amount | amountFrom: "spent", duration: "round"|"encounter"|"nextAttack" }]
+   *   state: { key: "raging"|"mindful"|..., note }
+   *
+   * Returns { lines } for the chat summary, or null if cancelled/blocked.
+   */
+  async _applyTriggerAutomation(triggerData) {
+    const auto = triggerData.automation;
+    if (!auto) return { lines: [] };
+    const system = this.actor.system;
+    const lines = [];
+    const statLabels = {
+      strike: "Strike", dodge: "Dodge", wound: "Wound",
+      combatRolls: "Combat Rolls", soak: "Soak", defense: "Defense"
+    };
+    const durLabels = { round: "this round", encounter: "this encounter", nextAttack: "next attack" };
+
+    // 1. Required combat states — warn and let the player decide
+    for (const st of (auto.requires || [])) {
+      if (!system.combatStates?.[st]) {
+        const ok = await Dialog.confirm({
+          title: triggerData.name,
+          content: `<p>The <b>${st}</b> state is not active. Apply the effect anyway?</p>`,
+          defaultYes: false
+        });
+        if (!ok) return null;
+      }
+    }
+
+    // 2. Choice branch
+    let spec = auto;
+    if (Array.isArray(auto.choose) && auto.choose.length) {
+      const buttons = {};
+      auto.choose.forEach((opt, i) => {
+        buttons[`opt${i}`] = { label: opt.label, callback: () => i };
+      });
+      let idx;
+      try {
+        idx = await Dialog.wait({ title: triggerData.name, content: `<p>${triggerData.description}</p>`, buttons });
+      } catch (e) { return null; }
+      if (idx === undefined || idx === null) return null;
+      spec = { ...auto, ...auto.choose[idx], choose: null };
+    }
+
+    // 3. KP spend prompt / fixed cost
+    let spent = 0;
+    const kpCur = system.kiPool?.value ?? 0;
+    if (spec.spendPrompt) {
+      const maxSpend = Math.min(spec.spendPrompt.max, kpCur);
+      if (maxSpend <= 0) { ui.notifications.warn("Not enough Ki Points."); return null; }
+      const raw = await Dialog.prompt({
+        title: triggerData.name,
+        content: `<form><div class="form-group"><label>${spec.spendPrompt.label || "KP to spend"} (max ${maxSpend})</label><input type="number" name="amt" min="0" max="${maxSpend}" value="${maxSpend}" /></div></form>`,
+        callback: html => Number(html.find("[name='amt']").val()) || 0,
+        rejectClose: false
+      });
+      if (raw === null || raw === undefined) return null;
+      spent = Math.max(0, Math.min(maxSpend, Number(raw) || 0));
+      if (spent <= 0) return null;
+    }
+    const kpCost = (spec.cost?.kp || 0) + spent;
+    if (kpCost > kpCur) { ui.notifications.warn("Not enough Ki Points."); return null; }
+
+    // 4. Compute resource deltas
+    const applied = { kp: 0, lp: 0, energyCharges: 0, capacity: 0, buffIds: [], stateKey: null };
+    const updates = {};
+    const mult = spec.gain?.per === "thresholdsBelow" ? (system.thresholds?.crossedCount ?? 0) : 1;
+    const gainKp = (spec.gain?.kp || 0) * (spec.gain?.kp ? mult : 1);
+    const gainLp = (spec.gain?.lp || 0) * (spec.gain?.lp ? mult : 1);
+    const gainEc = spec.gain?.energyCharges || 0;
+    if (spec.gain?.per === "thresholdsBelow" && mult === 0 && (spec.gain.kp || spec.gain.lp)) {
+      ui.notifications.warn("No Health Thresholds crossed — nothing to gain.");
+      return null;
+    }
+
+    if (kpCost > 0 || gainKp > 0) {
+      const kpMax = system.kiPool?.max ?? 0;
+      const newKp = Math.max(0, Math.min(kpMax, kpCur - kpCost + gainKp));
+      applied.kp = newKp - kpCur;
+      updates["system.kiPool.value"] = newKp;
+      if (kpCost > 0) {
+        applied.capacity = kpCost;
+        updates["system.status.capacitySpent"] = (system.status?.capacitySpent ?? 0) + kpCost;
+        lines.push(`&minus;${kpCost} KP`);
+      }
+      if (gainKp > 0) lines.push(`+${gainKp} KP`);
+    }
+    if (gainLp > 0) {
+      const lpCur = system.lifePoints?.value ?? 0;
+      const lpMax = system.lifePoints?.max ?? 0;
+      const newLp = Math.min(lpMax, lpCur + gainLp);
+      applied.lp = newLp - lpCur;
+      updates["system.lifePoints.value"] = newLp;
+      lines.push(`+${applied.lp} LP`);
+    }
+    if (gainEc > 0) {
+      applied.energyCharges = gainEc;
+      updates["system.tracking.energyCharges"] = (system.tracking?.energyCharges ?? 0) + gainEc;
+      lines.push(`+${gainEc} Energy Charge${gainEc > 1 ? "s" : ""}`);
+    }
+
+    // 5. Temp buffs + log-row linkage (single combatTabState clone)
+    const cts = foundry.utils.deepClone(system.combatTabState || {});
+    if (!Array.isArray(cts.activeTempEffects)) cts.activeTempEffects = [];
+    for (const b of (spec.buffs || [])) {
+      const amount = b.amountFrom === "spent" ? Math.floor(spent * (b.ratio || 1)) : (b.amount || 0);
+      if (!amount) continue;
+      const id = foundry.utils.randomID(8);
+      applied.buffIds.push(id);
+      cts.activeTempEffects.push({
+        id, stat: b.stat, amount,
+        duration: b.duration || "round",
+        source: triggerData.name
+      });
+      lines.push(`${amount > 0 ? "+" : ""}${amount} ${statLabels[b.stat] || b.stat} (${durLabels[b.duration || "round"] || b.duration})`);
+    }
+
+    // 6. Combat state switch
+    if (spec.state?.key) {
+      applied.stateKey = spec.state.key;
+      updates[`system.combatStates.${spec.state.key}`] = true;
+      lines.push(`${spec.state.key.charAt(0).toUpperCase() + spec.state.key.slice(1)} state ON${spec.state.note ? ` — ${spec.state.note}` : ""}`);
+    }
+
+    // 7. Record on the tracker log: attach to the "use" row the tracking just
+    //    created, or append one for unlimited triggers (log stays authoritative)
+    if (!Array.isArray(cts.rounds) || cts.rounds.length === 0) {
+      cts.rounds = [{ roundNumber: 1, actions: [] }];
+      cts.currentRound = 1;
+    }
+    const lastRound = cts.rounds[cts.rounds.length - 1];
+    if (!Array.isArray(lastRound.actions)) lastRound.actions = [];
+    let logRow = null;
+    for (let i = lastRound.actions.length - 1; i >= 0; i--) {
+      const a = lastRound.actions[i];
+      if (a.type === "use" && a.effectId === triggerData.trackingId) { logRow = a; break; }
+    }
+    if (!logRow) {
+      logRow = {
+        type: "use", source: "", kiCost: 0, kiWager: 0,
+        description: triggerData.name, effectId: triggerData.trackingId || "",
+        limit: "", useCount: 0, maxUses: 0
+      };
+      lastRound.actions.push(logRow);
+      this._usageJustLogged = true;
+    }
+    logRow.autoApplied = applied;
+    updates["system.combatTabState"] = cts;
+
+    await this.actor.update(updates);
+    return { lines };
+  }
+
+  /**
+   * Reverse an autoApplied record from a deleted/undone "use" log row.
+   * Mutates `updates` with the resource reversals and strips the linked temp
+   * effects from `cts.activeTempEffects` (cts is the clone being saved).
+   */
+  _reverseAutoApplied(applied, cts, updates) {
+    if (!applied) return;
+    if (applied.kp) {
+      const cur = updates["system.kiPool.value"] ?? this.actor.system.kiPool?.value ?? 0;
+      const max = this.actor.system.kiPool?.max ?? 0;
+      updates["system.kiPool.value"] = Math.max(0, Math.min(max, cur - applied.kp));
+    }
+    if (applied.capacity) {
+      const cur = updates["system.status.capacitySpent"] ?? this.actor.system.status?.capacitySpent ?? 0;
+      updates["system.status.capacitySpent"] = Math.max(0, cur - applied.capacity);
+    }
+    if (applied.lp) {
+      const cur = updates["system.lifePoints.value"] ?? this.actor.system.lifePoints?.value ?? 0;
+      const max = this.actor.system.lifePoints?.max ?? 0;
+      updates["system.lifePoints.value"] = Math.max(0, Math.min(max, cur - applied.lp));
+    }
+    if (applied.energyCharges) {
+      const cur = updates["system.tracking.energyCharges"] ?? this.actor.system.tracking?.energyCharges ?? 0;
+      updates["system.tracking.energyCharges"] = Math.max(0, cur - applied.energyCharges);
+    }
+    if (applied.buffIds?.length && Array.isArray(cts.activeTempEffects)) {
+      const ids = new Set(applied.buffIds);
+      cts.activeTempEffects = cts.activeTempEffects.filter(fx => !ids.has(fx.id));
+    }
+    if (applied.stateKey) {
+      updates[`system.combatStates.${applied.stateKey}`] = false;
+    }
   }
 
   async _onUndoResource(event) {
     event.preventDefault();
     const effectId = event.currentTarget.dataset.effectId;
     const limit = event.currentTarget.dataset.limit || "round";
-    const key = limit === "round" ? "round" : "encounter";
-    const cts = foundry.utils.deepClone(this.actor.system.combatTabState || {});
-    if (!cts.resourceUsage) return;
-    if (cts.resourceUsage[key]?.[effectId]) {
-      cts.resourceUsage[key][effectId] = Math.max(0, cts.resourceUsage[key][effectId] - 1);
-      if (cts.resourceUsage[key][effectId] === 0) delete cts.resourceUsage[key][effectId];
-    }
-    // Sync effect tracking
-    const et = foundry.utils.deepClone(this.actor.system.effectTracking || {});
-    if (et.usedEffects?.[key]?.[effectId]) {
-      et.usedEffects[key][effectId] = Math.max(0, et.usedEffects[key][effectId] - 1);
-      if (et.usedEffects[key][effectId] === 0) delete et.usedEffects[key][effectId];
-    }
-    await this.actor.update({ "system.combatTabState": cts, "system.effectTracking": et });
+    // Shared undo path: decrements both stores AND removes the matching
+    // "use" entry from the Round Tracker log.
+    await this._undoCombatUsage(effectId, limit);
   }
 
   async _onAddResourceUse(event) {
     event.preventDefault();
     const effectId = event.currentTarget.dataset.effectId;
     const limit = event.currentTarget.dataset.limit || "round";
-    await this._trackCombatUsage(effectId, limit);
+    const label = event.currentTarget.dataset.effectName || "";
+    await this._trackCombatUsage(effectId, limit, 0, label);
   }
 
-  async _trackCombatUsage(effectId, limit = "round", maxUses = 0) {
+  async _trackCombatUsage(effectId, limit = "round", maxUses = 0, label = "") {
     const key = limit === "encounter" ? "encounter" : "round";
     const currentCount = this.actor.system.combatTabState?.resourceUsage?.[key]?.[effectId] || 0;
     if (maxUses > 0 && currentCount >= maxUses) {
@@ -8750,8 +9225,37 @@ export class DBUCharacterSheet extends ActorSheet {
     if (!et.usedEffects) et.usedEffects = { round: {}, encounter: {} };
     et.usedEffects[key][effectId] = (et.usedEffects[key][effectId] || 0) + 1;
 
+    // The Round Tracker is the combat log: every limited use appends a
+    // read-only "use" entry to the current round (created if none exists).
+    if (!Array.isArray(cts.rounds) || cts.rounds.length === 0) {
+      cts.rounds = [{ roundNumber: 1, actions: [] }];
+      cts.currentRound = 1;
+    }
+    const logRound = cts.rounds[cts.rounds.length - 1];
+    if (!Array.isArray(logRound.actions)) logRound.actions = [];
+    logRound.actions.push({
+      type: "use",
+      source: "",
+      kiCost: 0,
+      kiWager: 0,
+      description: label || this._prettifyEffectLabel(effectId),
+      effectId,
+      limit: key,
+      useCount: cts.resourceUsage[key][effectId],
+      maxUses: maxUses || 0
+    });
+    this._usageJustLogged = true;
+
     await this.actor.update({ "system.combatTabState": cts, "system.effectTracking": et });
     return true;
+  }
+
+  /**
+   * Fallback readable label for a tracking id (e.g. "tf:auto_ki_guard" → "Ki Guard").
+   */
+  _prettifyEffectLabel(effectId) {
+    const raw = String(effectId || "").split(":").pop().replace(/^auto_/, "");
+    return raw.replace(/[_-]+/g, " ").replace(/\b\w/g, c => c.toUpperCase()).trim() || "Ability";
   }
 
   async _onCombatNewRound(event) {
@@ -8771,9 +9275,16 @@ export class DBUCharacterSheet extends ActorSheet {
       }
     }
 
+    // Capture pre-reset counters for the round-change chat summary
+    const prevAttackCount = Number(this.actor.system.combatTabState?.roundAttackCount) || 0;
+    const prevDodgeCount = Number(this.actor.system.combatTabState?.roundDodgeCount) || 0;
+
     const updates = {
       "system.combatTabState.rounds": cts.rounds,
       "system.combatTabState.currentRound": cts.currentRound,
+      "system.combatTabState.roundAttackCount": 0,
+      "system.combatTabState.roundDodgeCount": 0,
+      "system.combatTabState.roundCounterCount": 0,
       "system.tracking.powerStacks": activePowerUps,
       "system.tracking.energyCharges": 0,
       "system.tracking.diminishingDefense": 0,
@@ -8786,7 +9297,10 @@ export class DBUCharacterSheet extends ActorSheet {
       // Evil Aura: techniques access ends at end of turn (≈ next round in this engine)
       "system.transformationMeta.evilTechsActive": false,
       // Reset Capacity to Max Capacity at start of each round (core-rules.txt:140)
-      "system.status.capacitySpent": 0
+      "system.status.capacitySpent": 0,
+      // Expire round-scoped temp effects from activable automation ("encounter" ones persist)
+      "system.combatTabState.activeTempEffects":
+        (this.actor.system.combatTabState?.activeTempEffects || []).filter(fx => fx.duration === "encounter")
     };
 
     // Explicitly delete round-scoped resourceUsage keys (Foundry deep merge workaround)
@@ -8959,27 +9473,56 @@ export class DBUCharacterSheet extends ActorSheet {
     // --- Aspect per-round notifications ---
     const aspectEffects = this.actor.system.aspectEffects || {};
 
-    // Power High: reminder to roll 1d10 each turn
+    // Power High (transformation-aspects.txt:167): roll 1d10 at start of turn.
+    // ≤5 → must use Direct Hit vs the next attack OR gain Slowed; then LV −1.
     if (aspectEffects.powerHighLevel > 0) {
+      const roll = new Roll("1d10");
+      await roll.evaluate();
+      const triggered = roll.total <= 5;
+      if (triggered) await this._addSelfConditions(["slowed"]);
       ChatMessage.create({
         speaker: ChatMessage.getSpeaker({ actor: this.actor }),
-        content: `<div style="font-size:0.85rem; border-left:3px solid #e74c3c; padding-left:8px;">
-          <b><i class="fas fa-exclamation-triangle"></i> Power High LV${aspectEffects.powerHighLevel} (Round ${cts.currentRound})</b><br>
-          Roll <b>1d10</b>. If ≤5: choose <b>Direct Hit</b> against the next attack, or gain <b>Slowed</b> until next turn.
+        content: `<div class="dbu-attack-roll ${triggered ? "dbu-draining-card" : ""}" data-actor-id="${this.actor.id}">
+          <h3 class="dbu-attack-title"><span class="dbu-card-title-text"><i class="fas fa-exclamation-triangle"></i> Power High LV${aspectEffects.powerHighLevel}</span><span class="dbu-action-count">R${cts.currentRound}</span></h3>
+          <div class="dbu-card-body">
+            <div class="dbu-roll-row">
+              <span class="dbu-roll-label">Check</span>
+              <span class="dbu-roll-main"><code class="dbu-roll-formula">1d10</code><span class="dbu-roll-sub">≤5 triggers</span></span>
+              <span class="dbu-roll-total">${roll.total}</span>
+            </div>
+            <div class="dbu-defend-guide">${triggered
+              ? `<b>TRIGGERED (${roll.total}≤5).</b> <b>Slowed</b> applied until your next turn — OR instead use the <b>Direct Hit</b> option of the Defend Maneuver against the next attack (then remove Slowed). After resolving, reduce Power High by <b>1</b> until you leave this Transformation.`
+              : `Safe (${roll.total} > 5). No effect this turn.`}</div>
+          </div>
         </div>`
       });
     }
 
-    // Rampaging: reminder to roll 1d10 each turn
+    // Rampaging (transformation-aspects.txt:172): roll 1d10 at start of turn.
+    // ≤5 → Compelled vs nearest Opponent (LV1) / Character (LV2) + Guard Down,
+    // Stress Tests become Urgent, until the start of your next turn.
     if (aspectEffects.rampagingLevel > 0) {
       const targetText = aspectEffects.rampagingLevel >= 2
         ? "nearest <b>Character</b> (ally or enemy)"
         : "nearest <b>Opponent</b>";
+      const roll = new Roll("1d10");
+      await roll.evaluate();
+      const triggered = roll.total <= 5;
+      if (triggered) await this._addSelfConditions(["compelled", "guardDown"]);
       ChatMessage.create({
         speaker: ChatMessage.getSpeaker({ actor: this.actor }),
-        content: `<div style="font-size:0.85rem; border-left:3px solid #9b59b6; padding-left:8px;">
-          <b><i class="fas fa-skull-crossbones"></i> Rampaging LV${aspectEffects.rampagingLevel} (Round ${cts.currentRound})</b><br>
-          Roll <b>1d10</b>. If ≤5: gain <b>Compelled</b> against ${targetText} + <b>Guard Down</b>. Cannot leave transformation. Stress Tests become <b>Urgent</b>. Lasts until start of next turn.
+        content: `<div class="dbu-attack-roll ${triggered ? "dbu-duel-card" : ""}" data-actor-id="${this.actor.id}">
+          <h3 class="dbu-attack-title"><span class="dbu-card-title-text"><i class="fas fa-skull-crossbones"></i> Rampaging LV${aspectEffects.rampagingLevel}</span><span class="dbu-action-count">R${cts.currentRound}</span></h3>
+          <div class="dbu-card-body">
+            <div class="dbu-roll-row">
+              <span class="dbu-roll-label">Check</span>
+              <span class="dbu-roll-main"><code class="dbu-roll-formula">1d10</code><span class="dbu-roll-sub">≤5 triggers</span></span>
+              <span class="dbu-roll-total">${roll.total}</span>
+            </div>
+            <div class="dbu-defend-guide">${triggered
+              ? `<b>TRIGGERED (${roll.total}≤5).</b> <b>Compelled</b> (assign to the ${targetText}) + <b>Guard Down</b> applied until the start of your next turn. You cannot Voluntarily Revert and your Stress Tests become <b>Urgent</b> while Compelled this way.`
+              : `Controlled (${roll.total} > 5). No effect this turn.`}</div>
+          </div>
         </div>`
       });
     }
@@ -9042,17 +9585,52 @@ export class DBUCharacterSheet extends ActorSheet {
       await this.actor.update({ "system.transformationMeta.temporaryCountdowns": countdowns });
     }
 
-    // --- Draining Aspect: subtract Ki at start of turn ---
-    // "Reduce your Ki Points by 3(T) for each level. Use highest Tier Requirement." (transformation-aspects.txt)
+    // --- Round-change summary: Diminishing stacks cleared ---
+    // (attacking.txt:34/38 — both Diminishing Offense and Defense reset each round)
+    ChatMessage.create({
+      speaker: ChatMessage.getSpeaker({ actor: this.actor }),
+      content: `<div class="dbu-round-card">
+        <div class="dbu-round-num"><i class="fas fa-sync-alt"></i> R${cts.currentRound}</div>
+        <div class="dbu-round-info">
+          <span class="dbu-round-title">${this.actor.name} — New Round</span>
+          <span class="dbu-round-detail">Diminishing cleared · was ${prevAttackCount} atk / ${prevDodgeCount} dge</span>
+        </div>
+      </div>`
+    });
+
+    // --- Draining Aspect: KP upkeep at start of turn — posted as a PAY BUTTON
+    // (like attack costs) instead of auto-deducting, so the player confirms it.
+    // "Reduce your Ki Points by 3(T) for each level. Use highest Tier Requirement." (transformation-aspects.txt:128)
     const drainingKi = this.actor.system.aspectEffects?.drainingKiPerTurn || 0;
     if (drainingKi > 0) {
-      const currentKP = this.actor.system.kiPool?.value ?? 0;
-      const newKP = Math.max(0, currentKP - drainingKi);
-      await this.actor.update({ "system.kiPool.value": newKP });
+      const drLevel = this.actor.system.aspectEffects?.drainingLevel || 0;
+      const drTier = this.actor.system.aspectEffects?.drainingTier || 0;
       ChatMessage.create({
         speaker: ChatMessage.getSpeaker({ actor: this.actor }),
-        content: `<div style="font-size:0.85rem"><b><i class="fas fa-fire-alt"></i> Draining (Round ${cts.currentRound})</b><br>Lost ${currentKP - newKP} Ki Points (${this.actor.system.aspectEffects?.drainingLevel || 0} level${this.actor.system.aspectEffects?.drainingLevel > 1 ? "s" : ""} × 3(T${this.actor.system.aspectEffects?.drainingTier || 0}))</div>`
+        content: `<div class="dbu-attack-roll dbu-draining-card" data-actor-id="${this.actor.id}">
+          <h3 class="dbu-attack-title"><span class="dbu-card-title-text"><i class="fas fa-fire-alt"></i> Draining Upkeep</span><span class="dbu-action-count">R${cts.currentRound}</span></h3>
+          <div class="dbu-card-body">
+            <div class="dbu-attack-meta">
+              <span class="dbu-meta-chip">${drLevel} level${drLevel !== 1 ? "s" : ""} × 3(T${drTier})</span>
+              <span class="dbu-meta-chip dbu-chip-hot">${drainingKi} KP upkeep</span>
+            </div>
+            <div class="dbu-attack-actions">
+              <button type="button" class="dbu-pay-btn" data-dbu-pay="draining"
+                      data-actor-id="${this.actor.id}" data-amount="${drainingKi}">
+                <i class="fas fa-fire-alt"></i> Pay Draining (${drainingKi} KP)
+              </button>
+            </div>
+          </div>
+        </div>`
       });
+    }
+
+    // --- Turbulent Power: auto Stress Test at the start of the turn when in
+    // transformations without effective Strainless/Natural (actor.mjs computes
+    // turbulentPowerActive honoring the Strainless mixing rule). ---
+    const tfRules = this.actor.system.transformationRules || {};
+    if (tfRules.turbulentPowerActive && (tfRules.combinedStressTest || 0) > 0) {
+      await this._onTfTurbulentRoll(event);
     }
 
     // Battle Born: grant a stack on even-numbered rounds (Saiyan with Battle Born trait)
@@ -9194,6 +9772,9 @@ export class DBUCharacterSheet extends ActorSheet {
       "system.combatTabState.rounds": [],
       "system.combatTabState.currentRound": 0,
       "system.combatTabState.damageLog": [],
+      "system.combatTabState.roundAttackCount": 0,
+      "system.combatTabState.roundDodgeCount": 0,
+      "system.combatTabState.roundCounterCount": 0,
       "system.tracking.energyCharges": 0,
       "system.tracking.powerStacks": 0,
       "system.tracking.diminishingDefense": 0,
@@ -9232,7 +9813,9 @@ export class DBUCharacterSheet extends ActorSheet {
       "system.equipmentFlags.hiddenUsedThisEncounter": false,
       // Reset Evil Aura state at encounter start
       "system.transformationMeta.evilTechsActive": false,
-      "system.transformationMeta.evilPoints": 0
+      "system.transformationMeta.evilPoints": 0,
+      // Clear all temp effects from activable automation
+      "system.combatTabState.activeTempEffects": []
     };
 
     // Reset Possession host LP tracking if in possession mode
@@ -9861,19 +10444,7 @@ export class DBUCharacterSheet extends ActorSheet {
     }
     if (!triggerData) return;
 
-    if (triggerData.usageLimit || triggerData.maxUses) {
-      const tracked = await this._trackCombatUsage(triggerData.trackingId, triggerData.usageLimit, triggerData.maxUses || 0);
-      if (!tracked) return;
-    }
-
-    const flavor = `<div style="font-size:0.9rem">` +
-      `<b><i class="fas fa-crown"></i> ${triggerData.name}</b> <small>(${triggerData.sourceName})</small><br>` +
-      `${triggerData.description}</div>`;
-
-    ChatMessage.create({
-      speaker: ChatMessage.getSpeaker({ actor: this.actor }),
-      content: flavor
-    });
+    return this._runTriggerAutomationAndChat(triggerData, "fas fa-crown");
   }
 
   /**
@@ -9893,19 +10464,7 @@ export class DBUCharacterSheet extends ActorSheet {
     }
     if (!triggerData) return;
 
-    if (triggerData.usageLimit || triggerData.maxUses) {
-      const tracked = await this._trackCombatUsage(triggerData.trackingId, triggerData.usageLimit, triggerData.maxUses || 0);
-      if (!tracked) return;
-    }
-
-    const flavor = `<div style="font-size:0.9rem">` +
-      `<b><i class="fas fa-star-of-life"></i> ${triggerData.name}</b> <small>(${triggerData.sourceName})</small><br>` +
-      `${triggerData.description}</div>`;
-
-    ChatMessage.create({
-      speaker: ChatMessage.getSpeaker({ actor: this.actor }),
-      content: flavor
-    });
+    return this._runTriggerAutomationAndChat(triggerData, "fas fa-star-of-life");
   }
 
   /**
@@ -9936,19 +10495,7 @@ export class DBUCharacterSheet extends ActorSheet {
     }
     if (!triggerData) return;
 
-    if (triggerData.usageLimit || triggerData.maxUses) {
-      const tracked = await this._trackCombatUsage(triggerData.trackingId, triggerData.usageLimit, triggerData.maxUses || 0);
-      if (!tracked) return;
-    }
-
-    const flavor = `<div style="font-size:0.9rem">` +
-      `<b><i class="fas fa-dna"></i> ${triggerData.name}</b><br>` +
-      `${triggerData.description}</div>`;
-
-    ChatMessage.create({
-      speaker: ChatMessage.getSpeaker({ actor: this.actor }),
-      content: flavor
-    });
+    return this._runTriggerAutomationAndChat(triggerData, "fas fa-dna");
   }
 
   _getJusticeChargeContext(transformations = null) {
@@ -10057,17 +10604,34 @@ export class DBUCharacterSheet extends ActorSheet {
 
   async _undoCombatUsage(trackingId, usageLimit) {
     if (!trackingId || !usageLimit) return;
+    const key = usageLimit === "encounter" ? "encounter" : "round";
     const ctsUndo = foundry.utils.deepClone(this.actor.system.combatTabState || {});
     const etUndo = foundry.utils.deepClone(this.actor.system.effectTracking || {});
-    if (ctsUndo.resourceUsage?.[usageLimit]?.[trackingId]) {
-      ctsUndo.resourceUsage[usageLimit][trackingId] = Math.max(0, ctsUndo.resourceUsage[usageLimit][trackingId] - 1);
-      if (ctsUndo.resourceUsage[usageLimit][trackingId] === 0) delete ctsUndo.resourceUsage[usageLimit][trackingId];
+    // Keep 0 instead of deleting: removed keys are silently ignored by
+    // Foundry's merge-based update, leaving stale counts in the DB.
+    if (ctsUndo.resourceUsage?.[key]?.[trackingId]) {
+      ctsUndo.resourceUsage[key][trackingId] = Math.max(0, ctsUndo.resourceUsage[key][trackingId] - 1);
     }
-    if (etUndo.usedEffects?.[usageLimit]?.[trackingId]) {
-      etUndo.usedEffects[usageLimit][trackingId] = Math.max(0, etUndo.usedEffects[usageLimit][trackingId] - 1);
-      if (etUndo.usedEffects[usageLimit][trackingId] === 0) delete etUndo.usedEffects[usageLimit][trackingId];
+    if (etUndo.usedEffects?.[key]?.[trackingId]) {
+      etUndo.usedEffects[key][trackingId] = Math.max(0, etUndo.usedEffects[key][trackingId] - 1);
     }
-    await this.actor.update({ "system.combatTabState": ctsUndo, "system.effectTracking": etUndo });
+    // Remove the most recent matching "use" entry from the Round Tracker log
+    let removedRow = null;
+    if (Array.isArray(ctsUndo.rounds)) {
+      outer: for (let r = ctsUndo.rounds.length - 1; r >= 0; r--) {
+        const acts = ctsUndo.rounds[r].actions || [];
+        for (let a = acts.length - 1; a >= 0; a--) {
+          if (acts[a].type === "use" && acts[a].effectId === trackingId && acts[a].limit === key) {
+            removedRow = acts.splice(a, 1)[0];
+            break outer;
+          }
+        }
+      }
+    }
+    this._usageJustUndone = true;
+    const undoUpdates = { "system.combatTabState": ctsUndo, "system.effectTracking": etUndo };
+    if (removedRow?.autoApplied) this._reverseAutoApplied(removedRow.autoApplied, ctsUndo, undoUpdates);
+    await this.actor.update(undoUpdates);
   }
 
   async _handleJusticeChargeKiConversion(triggerData) {
@@ -10961,7 +11525,7 @@ export class DBUCharacterSheet extends ActorSheet {
     if (!triggerData) return;
 
     if (triggerData.usageLimit || triggerData.maxUses) {
-      const tracked = await this._trackCombatUsage(triggerData.trackingId, triggerData.usageLimit, triggerData.maxUses || 0);
+      const tracked = await this._trackCombatUsage(triggerData.trackingId, triggerData.usageLimit, triggerData.maxUses || 0, triggerData.name);
       if (!tracked) return;
     }
 
@@ -11024,7 +11588,7 @@ export class DBUCharacterSheet extends ActorSheet {
     if (!triggerData) return;
 
     if (triggerData.usageLimit || triggerData.maxUses) {
-      const tracked = await this._trackCombatUsage(triggerData.trackingId, triggerData.usageLimit, triggerData.maxUses || 0);
+      const tracked = await this._trackCombatUsage(triggerData.trackingId, triggerData.usageLimit, triggerData.maxUses || 0, triggerData.name);
       if (!tracked) return;
     }
 
@@ -11078,7 +11642,7 @@ export class DBUCharacterSheet extends ActorSheet {
     if (handledAdvantageSuperiorPrecheck === "blocked") return;
 
     if (triggerData.usageLimit || triggerData.maxUses) {
-      const tracked = await this._trackCombatUsage(triggerData.trackingId, triggerData.usageLimit, triggerData.maxUses || 0);
+      const tracked = await this._trackCombatUsage(triggerData.trackingId, triggerData.usageLimit, triggerData.maxUses || 0, triggerData.name);
       if (!tracked) return;
     }
 
@@ -11252,19 +11816,7 @@ export class DBUCharacterSheet extends ActorSheet {
     }
     if (!triggerData) return;
 
-    if (triggerData.usageLimit || triggerData.maxUses) {
-      const tracked = await this._trackCombatUsage(triggerData.trackingId, triggerData.usageLimit, triggerData.maxUses || 0);
-      if (!tracked) return;
-    }
-
-    const flavor = `<div style="font-size:0.9rem">` +
-      `<b><i class="fas fa-gem"></i> ${triggerData.name}</b> <small>(${triggerData.sourceName})</small><br>` +
-      `${triggerData.description}</div>`;
-
-    ChatMessage.create({
-      speaker: ChatMessage.getSpeaker({ actor: this.actor }),
-      content: flavor
-    });
+    return this._runTriggerAutomationAndChat(triggerData, "fas fa-gem");
   }
 
   /**
@@ -11410,12 +11962,61 @@ export class DBUCharacterSheet extends ActorSheet {
     await this.actor.update({ [`system.damageCalc.${field}`]: val });
   }
 
+  /**
+   * Guard option KP cost: 8(T) + 1(T) per Energy Charge on the incoming attack
+   * (max +4(T)); Guard Down condition raises the final cost by 1/2 (rounded up).
+   * (actions-combat.txt: Defend Maneuver / Guard; damage-conditions.txt: Guard Down)
+   */
+  _calcGuardKiCost(system) {
+    const tier = system.tier || 1;
+    const ecSurcharge = Math.min(Math.max(0, Number(system.damageCalc?.incomingEC) || 0), 4);
+    let cost = (8 + ecSurcharge) * tier;
+    if (this.actor._isConditionActive?.(system, "guardDown")) cost = Math.ceil(cost * 1.5);
+    return cost;
+  }
+
+  /** Deduct the Guard KP cost and whisper the remaining KP to GM + owners. */
+  async _payGuardKi(system, updates) {
+    const cost = this._calcGuardKiCost(system);
+    const kiNow = updates["system.kiPool.value"] ?? (system.kiPool?.value ?? 0);
+    const newKi = Math.max(0, kiNow - cost);
+    updates["system.kiPool.value"] = newKi;
+    const shortBy = cost - kiNow;
+    const whisperIds = game.users
+      .filter(u => u.isGM || this.actor.testUserPermission(u, "OWNER"))
+      .map(u => u.id);
+    const note = shortBy > 0
+      ? `<b>${this.actor.name}</b>: Guard — insufficient KP, paid ${kiNow}/${cost}. Remaining KP: <b>0</b>`
+      : `<b>${this.actor.name}</b>: Guard cost -${cost} KP. Remaining KP: <b>${newKi}</b>`;
+    ChatMessage.create({
+      content: `<div class="dbu-ki-deduct"><i class="fas fa-shield-alt"></i> ${note}</div>`,
+      whisper: whisperIds,
+      speaker: ChatMessage.getSpeaker({ actor: this.actor })
+    });
+    if (shortBy > 0) ui.notifications.warn(`${this.actor.name}: insufficient KP for Guard. Paid ${kiNow}/${cost}.`);
+    return cost;
+  }
+
   async _onApplyDamage(event) {
     event.preventDefault();
     const system = this.actor.system;
     const dc = system.damageCalc;
     let damage = dc?.healthReduction || 0;
-    if (damage <= 0) return;
+    if (damage <= 0) {
+      // Guard is paid even when it reduces the final damage to 0 — the Defend
+      // Maneuver's cost is spent on use, not on damage taken. Skip if already
+      // paid through the Defend Maneuver chat card.
+      if ((dc?.defense || "none") === "guard") {
+        const updates = {
+          "system.damageCalc.defense": "none",
+          "system.damageCalc.incomingEC": 0,
+          "system.damageCalc.guardPaidViaCard": false
+        };
+        if (!dc?.guardPaidViaCard) await this._payGuardKi(system, updates);
+        await this.actor.update(updates);
+      }
+      return;
+    }
     const baseTier = system.baseTier || 1;
     const specialResourcesAtStart = foundry.utils.deepClone(system.transformationMeta?.specialResources || {});
     const justiceContext = this._getJusticeChargeContext(system.transformations || []);
@@ -11509,7 +12110,7 @@ export class DBUCharacterSheet extends ActorSheet {
 
         if (nullifyTransform) {
           const trackingId = `tf:auto_small_hit_nullify:${nullifyTransform.trans.id ?? nullifyTransform.trans.catalogKey ?? "unknown"}`;
-          const canUseNullify = await this._trackCombatUsage(trackingId, "encounter", 1);
+          const canUseNullify = await this._trackCombatUsage(trackingId, "encounter", 1, `Burst Limit Guard (${nullifyTransform.trans.name})`);
           if (canUseNullify) {
             const useNullify = await Dialog.wait({
               title: "Burst Limit Guard",
@@ -11552,7 +12153,7 @@ export class DBUCharacterSheet extends ActorSheet {
 
       if (mightGuardTransform) {
         const trackingId = `tf:auto_might_guard:${mightGuardTransform.trans.id ?? mightGuardTransform.trans.catalogKey ?? "unknown"}`;
-        const canUseMightGuard = await this._trackCombatUsage(trackingId, "round", 1);
+        const canUseMightGuard = await this._trackCombatUsage(trackingId, "round", 1, `Might Guard (${mightGuardTransform.trans.name})`);
         if (canUseMightGuard) {
           const might = system.status?.might ?? 0;
           const useMightGuard = await Dialog.wait({
@@ -12049,7 +12650,7 @@ export class DBUCharacterSheet extends ActorSheet {
     const activeUltraEgo = (system.transformations || []).find(t => t?.active && t.catalogKey === "ultra_ego");
     if (activeUltraEgo) {
       const specialResources = foundry.utils.deepClone(updates["system.transformationMeta.specialResources"] || system.transformationMeta?.specialResources || {});
-      const tracked = await this._trackCombatUsage("lf:auto_ultra_ego_ego_on_hit", "round", 2);
+      const tracked = await this._trackCombatUsage("lf:auto_ultra_ego_ego_on_hit", "round", 2, "Ultra Ego — Ego on Hit");
       if (tracked) {
         const currentEgo = specialResources.ego?.value ?? 0;
         const nextEgo = Math.min(6, currentEgo + 1);
@@ -12156,7 +12757,51 @@ export class DBUCharacterSheet extends ActorSheet {
       }
     }
 
+    // --- Defend Maneuver (Guard): auto-pay KP cost. Runs AFTER the Ultra Ego
+    // block so both effects compose on the same updates["system.kiPool.value"].
+    // Skipped when Guard was already paid through the Defend Maneuver card. ---
+    if ((dc?.defense || "none") === "guard" && !dc?.guardPaidViaCard) {
+      await this._payGuardKi(system, updates);
+    }
+    // Defense choice + incoming EC are per-attack — reset so the next Apply
+    // doesn't silently re-charge Guard or re-apply Direct Hit soak.
+    if ((dc?.defense || "none") !== "none") {
+      updates["system.damageCalc.defense"] = "none";
+      updates["system.damageCalc.incomingEC"] = 0;
+      updates["system.damageCalc.guardPaidViaCard"] = false;
+    }
+
     await this.actor.update(updates);
+
+    // --- Damage applied: public chat card + LP remaining whisper (GM/owner) ---
+    {
+      const defenseLabel = { none: "", directHit: "Direct Hit", guard: "Guard" }[dc?.defense || "none"] || "";
+      const catLabel = (dc?.category || "standard");
+      const chips = [
+        `<span class="dbu-meta-chip">${catLabel}</span>`,
+        defenseLabel ? `<span class="dbu-meta-chip">${defenseLabel}</span>` : "",
+        `<span class="dbu-meta-chip">Soak+DR −${dc?.totalReduction ?? 0}</span>`
+      ].filter(Boolean).join("");
+      ChatMessage.create({
+        speaker: ChatMessage.getSpeaker({ actor: this.actor }),
+        content: `<div class="dbu-round-card dbu-damage-card">
+          <div class="dbu-round-num dbu-damage-num"><i class="fas fa-heart-broken"></i> −${damage}</div>
+          <div class="dbu-round-info">
+            <span class="dbu-round-title">${this.actor.name} takes damage</span>
+            <span class="dbu-round-detail">${chips}</span>
+          </div>
+        </div>`
+      });
+      const lpWhisperIds = game.users
+        .filter(u => u.isGM || this.actor.testUserPermission(u, "OWNER"))
+        .map(u => u.id);
+      ChatMessage.create({
+        content: `<div class="dbu-ki-deduct"><i class="fas fa-heart"></i> <b>${this.actor.name}</b>: LP ${currentLP} → <b>${newLP}</b> / ${system.lifePoints?.max ?? 0}</div>`,
+        whisper: lpWhisperIds,
+        speaker: ChatMessage.getSpeaker({ actor: this.actor })
+      });
+    }
+
     if (sapExitTransformId) {
       const transformations = foundry.utils.deepClone(this.actor.system.transformations || []);
       const idx = transformations.findIndex(t => t?.id === sapExitTransformId);
@@ -12219,6 +12864,17 @@ export class DBUCharacterSheet extends ActorSheet {
     await this.actor.update({ "system.conditions": conditions });
   }
 
+  /** Activate one or more Combat Conditions on this actor (batched update). */
+  async _addSelfConditions(condIds = []) {
+    const conditions = foundry.utils.deepClone(this.actor.system.conditions || []);
+    for (const id of condIds) {
+      const c = conditions.find(x => x.id === id);
+      if (c) c.active = true;
+      else conditions.push({ id, active: true, stacks: 0 });
+    }
+    await this.actor.update({ "system.conditions": conditions });
+  }
+
   async _onConditionStack(event) {
     const conditionId = event.currentTarget.dataset.conditionId;
     const conditions = foundry.utils.deepClone(this.actor.system.conditions || []);
@@ -12267,6 +12923,22 @@ export class DBUCharacterSheet extends ActorSheet {
     if (actionIndex >= 0 && actionIndex < lastRound.actions.length) {
       const deleted = lastRound.actions.splice(actionIndex, 1)[0];
       const updates = { "system.combatTabState": cts };
+      // Deleting a "use" log entry refunds the usage counters (log is authoritative)
+      if (deleted.type === "use" && deleted.effectId) {
+        const uKey = deleted.limit === "encounter" ? "encounter" : "round";
+        if (cts.resourceUsage?.[uKey]?.[deleted.effectId]) {
+          cts.resourceUsage[uKey][deleted.effectId] = Math.max(0, cts.resourceUsage[uKey][deleted.effectId] - 1);
+        }
+        const etDel = foundry.utils.deepClone(this.actor.system.effectTracking || {});
+        if (etDel.usedEffects?.[uKey]?.[deleted.effectId]) {
+          etDel.usedEffects[uKey][deleted.effectId] = Math.max(0, etDel.usedEffects[uKey][deleted.effectId] - 1);
+          updates["system.effectTracking"] = etDel;
+        }
+      }
+      // Reverse any automation the deleted row applied (buffs, KP/LP, states)
+      if (deleted.type === "use" && deleted.autoApplied) {
+        this._reverseAutoApplied(deleted.autoApplied, cts, updates);
+      }
       // Refund KP / DKP / capacity that the deleted action consumed
       const refundKi  = deleted.kiCost  || 0;
       const refundDkp = deleted.dkpCost || 0;
@@ -12375,23 +13047,37 @@ export class DBUCharacterSheet extends ActorSheet {
     // 1. Consume the resource by reusing the unified-action flow.
     //    The button already carries the same dataset attrs _onUnifiedAction expects
     //    (data-action-type, data-trigger-id, data-stance, data-effect-id, data-limit, data-max-uses).
+    //    Limited-use effects log themselves into the Round Tracker via _trackCombatUsage.
+    this._usageJustLogged = false;
+    this._usageJustUndone = false;
     await this._onUnifiedAction({
       preventDefault: () => {},
       currentTarget: button
     });
 
-    // 2. Add an action entry to the current (last) round in the tracker.
+    // 2. Fallback log entry for UNLIMITED effects so the tracker stays a complete
+    //    combat log. Skipped when the use was already logged (or logged-then-undone
+    //    because the dialog was cancelled). Stance shifts post their own chat card.
+    if (this._usageJustLogged || this._usageJustUndone) return;
+    if ((button.dataset.actionType || "") === "talent-stance") return;
     const sourceName = button.dataset.sourceName || "Ability";
     const cts = foundry.utils.deepClone(this.actor.system.combatTabState || {});
-    if (!cts.rounds) cts.rounds = [{ roundNumber: 1, actions: [] }];
-    if (cts.rounds.length === 0) cts.rounds.push({ roundNumber: 1, actions: [] });
+    if (!Array.isArray(cts.rounds) || cts.rounds.length === 0) {
+      cts.rounds = [{ roundNumber: 1, actions: [] }];
+      cts.currentRound = 1;
+    }
     const lastRound = cts.rounds[cts.rounds.length - 1];
+    if (!Array.isArray(lastRound.actions)) lastRound.actions = [];
     lastRound.actions.push({
-      type: "standard",
+      type: "use",
       source: "",
       kiCost: 0,
       kiWager: 0,
-      description: sourceName
+      description: sourceName,
+      effectId: "",
+      limit: "",
+      useCount: 0,
+      maxUses: 0
     });
     await this.actor.update({ "system.combatTabState": cts });
   }
@@ -12459,9 +13145,11 @@ export class DBUCharacterSheet extends ActorSheet {
   }
 
   /**
-   * Roll an attack from the tracker — fires Strike + Wound rolls and posts a
-   * single ChatMessage with the breakdown plus "Pay Ki Cost" / "Pay Ki Wager"
-   * buttons the player can manually click after the action resolves.
+   * Roll an attack from the tracker — evaluates Strike + Wound rolls and posts
+   * ONE ChatMessage with the attack info visible but the roll values and buffs
+   * HIDDEN. A "Reveal" button (owner/GM only) swaps in the revealed content,
+   * auto-deducts Ki (cost + wager), and whispers the remaining KP to the GM
+   * and the actor's owner. Reveal logic lives in dbu-old.mjs (renderChatMessage).
    */
   async _onRollTrackerAttack(event) {
     event.preventDefault();
@@ -12486,9 +13174,24 @@ export class DBUCharacterSheet extends ActorSheet {
       return;
     }
     const wager = Math.max(0, Number(action.kiWager) || 0);
+
+    // --- Diminishing Offense (attacking.txt:33-34): each Attacking Maneuver
+    // after the 3rd this Combat Round suffers -1(bT) Strike per attack beyond
+    // the 3rd. Counter auto-increments here and resets on Next Round. ---
+    const attackNum = (Number(cts.roundAttackCount) || 0) + 1;
+    const dimBaseTier = this.actor.system.baseTier || 1;
+    const dimOffensePen = Math.max(0, attackNum - 3) * dimBaseTier;
+    await this.actor.update({
+      "system.combatTabState.roundAttackCount": attackNum,
+      "system.tracking.diminishingOffense": Math.max(0, attackNum - 3)
+    });
+
     // Compose Strike + Wound formulas. Wager adds flat to wound (already baked
     // into prep formula if set in attack-ref, but for tracker wager we add now).
-    const strikeFormulaRaw = sd.strikeFormula || "1d10";
+    const strikeFormulaBase = sd.strikeFormula || "1d10";
+    const strikeFormulaRaw = dimOffensePen > 0
+      ? `${strikeFormulaBase}-${dimOffensePen}`
+      : strikeFormulaBase;
     const woundFormulaBase = sd.woundFormula || "1d10";
     const woundFormula = wager > 0
       ? `${woundFormulaBase}${woundFormulaBase.includes("+") ? "+" : "+"}${wager}`
@@ -12499,6 +13202,15 @@ export class DBUCharacterSheet extends ActorSheet {
     const woundRoll = new Roll(woundFormula);
     await strikeRoll.evaluate();
     await woundRoll.evaluate();
+
+    // Consume "next attack" temp effects — their bonuses were already baked
+    // into the prepared Strike/Wound formulas used above.
+    const fxAll = this.actor.system.combatTabState?.activeTempEffects || [];
+    if (fxAll.some(fx => fx.duration === "nextAttack")) {
+      await this.actor.update({
+        "system.combatTabState.activeTempEffects": fxAll.filter(fx => fx.duration !== "nextAttack")
+      });
+    }
 
     const buffLines = (sd.activeBuffs || []).map(b => {
       const name = typeof b === "string" ? b : b.name;
@@ -12512,52 +13224,814 @@ export class DBUCharacterSheet extends ActorSheet {
     const strikeNat = strikeRoll.dice[0]?.results?.[0]?.result ?? "?";
     const woundNat = woundRoll.dice[0]?.results?.[0]?.result ?? "?";
     const strikeCT = sd.strikeCT || 10;
-    const strikeHit = strikeNat !== "?" && strikeNat >= strikeCT;
-    const hitLabel = strikeHit
-      ? `<span class="dbu-hit">HIT</span>`
-      : `<span class="dbu-miss">MISS</span>`;
+    const woundCT = sd.woundCT || 10;
+    const sysTier = this.actor.system.tier || 1;
+    const sysBaseTier = this.actor.system.baseTier || 1;
+
+    // Critical Result (Nat >= CT): +Extra Dice, 1d6 scaled by tier (core-rules.txt:107).
+    // Botch (Nat 1): -2(bT) to the Dice Score (core-rules.txt:109).
+    const critFormula = this._critExtraFormula(sysTier);
+    const botchPenalty = 2 * sysBaseTier;
+
+    const strikeCrit = strikeNat !== "?" && strikeNat >= strikeCT;
+    const strikeBotch = strikeNat === 1;
+    const woundCrit = woundNat !== "?" && woundNat >= woundCT;
+    const woundBotch = woundNat === 1;
+
+    let strikeCritRoll = null, woundCritRoll = null;
+    if (strikeCrit) { strikeCritRoll = new Roll(critFormula); await strikeCritRoll.evaluate(); }
+    if (woundCrit) { woundCritRoll = new Roll(critFormula); await woundCritRoll.evaluate(); }
+
+    const strikeTotal = strikeRoll.total
+      + (strikeCritRoll?.total || 0) - (strikeBotch ? botchPenalty : 0);
+    const woundTotal = woundRoll.total
+      + (woundCritRoll?.total || 0) - (woundBotch ? botchPenalty : 0);
+
+    const critTag = (critRoll) =>
+      `<span class="dbu-crit">CRIT! +${critFormula}: ${critRoll.total}</span>`;
+    const botchTag = () =>
+      `<span class="dbu-botch">BOTCH -${botchPenalty}</span>`;
+    const strikeTag = strikeCritRoll ? ` ${critTag(strikeCritRoll)}` : (strikeBotch ? ` ${botchTag()}` : "");
+    const woundTag = woundCritRoll ? ` ${critTag(woundCritRoll)}` : (woundBotch ? ` ${botchTag()}` : "");
 
     const speaker = ChatMessage.getSpeaker({ actor: this.actor });
+    const kiCost = sd.kiCost || 0;
 
-    // ---- Message 1: Strike (animated) — header, buffs, Strike line ----
-    const strikeFlavor = `<div class="dbu-attack-roll" data-actor-id="${this.actor.id}">
-      <h3 class="dbu-attack-title">${this.actor.name} — ${sd.name}</h3>
-      <div class="dbu-attack-meta">
-        ${sd.foundation || ""}${sd.profile ? " / " + sd.profile : ""}
-        ${sd.damageCat ? " · " + sd.damageCat : ""}
-        ${sd.energyCharges ? " · EC " + sd.energyCharges : ""}
-      </div>
-      ${buffsHtml}
-      <div class="dbu-attack-line">
-        <strong>Strike:</strong> <code>${strikeFormulaRaw}</code> · Nat ${strikeNat} · CT ${strikeCT}+ ${hitLabel}
-      </div>
-    </div>`;
-
-    await strikeRoll.toMessage({ speaker, flavor: strikeFlavor });
-
-    // ---- Message 2: Wound (animated) — Wound line + Pay buttons (most recent
-    // message = easiest for the player to find after the action resolves) ----
-    const woundFlavor = `<div class="dbu-attack-roll dbu-attack-wound" data-actor-id="${this.actor.id}">
-      <div class="dbu-attack-line">
-        <strong>Wound:</strong> <code>${woundFormula}</code> · Nat ${woundNat}${wager > 0 ? ` · Wager +${wager}` : ""}
-      </div>
-      <div class="dbu-attack-actions">
-        <button type="button" class="dbu-pay-btn" data-dbu-pay="ki-cost"
-                data-actor-id="${this.actor.id}"
-                data-amount="${sd.kiCost || 0}"
-                ${(sd.kiCost || 0) > 0 ? "" : "disabled"}>
-          <i class="fas fa-fire"></i> Pay Ki Cost (${sd.kiCost || 0} KP)
-        </button>
-        <button type="button" class="dbu-pay-btn" data-dbu-pay="ki-wager"
-                data-actor-id="${this.actor.id}"
-                data-amount="${wager}"
-                ${wager > 0 ? "" : "disabled"}>
-          <i class="fas fa-coins"></i> Pay Ki Wager (${wager} KP)
-        </button>
+    // ---- HIDDEN content: EVERYTHING except the attack name is masked —
+    // profile/foundation, damage category, EC, cost, wager, buffs, CTs
+    // (CTs leak talent/state info) and roll values all wait for the reveal.
+    // The attack number IS public — it drives Diminishing Offense tracking. ----
+    const attackNumBadge = `<span class="dbu-action-count" title="Attacking Maneuvers this round — Diminishing Offense from the 4th onward">ATK ${attackNum}</span>`;
+    const hiddenHtml = `<div class="dbu-attack-roll dbu-attack-unrevealed" data-actor-id="${this.actor.id}">
+      <h3 class="dbu-attack-title"><span class="dbu-card-title-text">${this.actor.name} — ${sd.name}</span>${attackNumBadge}</h3>
+      <div class="dbu-card-body">
+        <div class="dbu-roll-row">
+          <span class="dbu-roll-label">Strike</span>
+          <span class="dbu-hidden-val"><i class="fas fa-eye-slash"></i>&nbsp;???</span>
+        </div>
+        <div class="dbu-roll-row">
+          <span class="dbu-roll-label">Wound</span>
+          <span class="dbu-hidden-val"><i class="fas fa-eye-slash"></i>&nbsp;???</span>
+        </div>
+        <div class="dbu-attack-actions">
+          <button type="button" class="dbu-reveal-btn" data-dbu-reveal data-actor-id="${this.actor.id}">
+            <i class="fas fa-eye"></i> REVEAL
+          </button>
+        </div>
       </div>
     </div>`;
 
-    await woundRoll.toMessage({ speaker, flavor: woundFlavor });
+    // ---- REVEALED content: full details + ONE combined pay button ----
+    const totalPay = kiCost + wager;
+    const payParts = [];
+    if (kiCost > 0) payParts.push(`Ki Cost (${kiCost} KP)`);
+    if (wager > 0) payParts.push(`Ki Wager (${wager} KP)`);
+    const payBtnHtml = totalPay > 0
+      ? `<div class="dbu-attack-actions">
+          <button type="button" class="dbu-pay-btn" data-dbu-pay="combined"
+                  data-actor-id="${this.actor.id}" data-amount="${totalPay}">
+            <i class="fas fa-fire"></i> Pay ${payParts.join(" + ")}
+          </button>
+        </div>`
+      : "";
+    const dimOffenseLine = dimOffensePen > 0
+      ? `<div class="dbu-penalty-line"><i class="fas fa-angle-double-down"></i> Diminishing Offense −${dimOffensePen} Strike <span class="dbu-penalty-why">attack #${attackNum} this round</span></div>`
+      : "";
+    const metaChips = [
+      `${sd.foundation || ""}${sd.profile ? " / " + sd.profile : ""}`.trim(),
+      sd.damageCat || "",
+      sd.energyCharges ? `EC ${sd.energyCharges}` : "",
+      `Cost ${kiCost} KP`,
+      wager > 0 ? `Wager ${wager} KP` : ""
+    ].filter(Boolean).map(c => `<span class="dbu-meta-chip">${c}</span>`).join("");
+    const revealedHtml = `<div class="dbu-attack-roll" data-actor-id="${this.actor.id}">
+      <h3 class="dbu-attack-title"><span class="dbu-card-title-text">${this.actor.name} — ${sd.name}</span>${attackNumBadge}</h3>
+      <div class="dbu-card-body">
+        <div class="dbu-attack-meta">${metaChips}</div>
+        ${buffsHtml}
+        ${dimOffenseLine}
+        <div class="dbu-roll-row">
+          <span class="dbu-roll-label">Strike</span>
+          <span class="dbu-roll-main">
+            <code class="dbu-roll-formula">${strikeFormulaRaw}</code>
+            <span class="dbu-roll-sub">Nat ${strikeNat} · CT ${strikeCT}+</span>${strikeTag}
+          </span>
+          <span class="dbu-roll-total">${strikeTotal}</span>
+        </div>
+        <div class="dbu-roll-row">
+          <span class="dbu-roll-label">Wound</span>
+          <span class="dbu-roll-main">
+            <code class="dbu-roll-formula">${woundFormula}</code>
+            <span class="dbu-roll-sub">Nat ${woundNat} · CT ${woundCT}+${wager > 0 ? ` · Wager +${wager}` : ""}</span>${woundTag}
+          </span>
+          <span class="dbu-roll-total">${woundTotal}</span>
+        </div>
+        ${payBtnHtml}
+      </div>
+    </div>`;
+
+    await ChatMessage.create({
+      speaker,
+      content: hiddenHtml,
+      flags: {
+        "DBU-MRR-OLD": {
+          attackReveal: {
+            revealed: false,
+            actorId: this.actor.id,
+            kiCost,
+            wager,
+            revealedHtml,
+            // Data for the United Attack Maneuver (allies joining this attack)
+            foundation: sd.foundation || "",
+            profile: sd.profile || "",
+            attackName: sd.name || "",
+            strikeTotal,
+            woundTotal,
+            strikeRollData: strikeRoll.toJSON(),
+            woundRollData: woundRoll.toJSON(),
+            strikeCritRollData: strikeCritRoll ? strikeCritRoll.toJSON() : null,
+            woundCritRollData: woundCritRoll ? woundCritRoll.toJSON() : null
+          }
+        }
+      }
+    });
+  }
+
+  /** Store the chosen transformation index on the tracker "transform" action. */
+  async _onTrackerTransformChange(event) {
+    const el = event.currentTarget;
+    const roundNum = Number(el.dataset.round);
+    const actionIndex = Number(el.dataset.actionIndex);
+    const cts = foundry.utils.deepClone(this.actor.system.combatTabState || {});
+    const round = (cts.rounds || []).find(r => r.roundNumber === roundNum);
+    if (!round?.actions?.[actionIndex]) return;
+    round.actions[actionIndex].transformIndex = el.value === "" ? null : Number(el.value);
+    const trans = (this.actor.system.transformations || [])[Number(el.value)];
+    round.actions[actionIndex].description = trans ? `Transform: ${trans.name}` : "";
+    await this.actor.update({ "system.combatTabState": cts });
+  }
+
+  /** Store the Transform panel checkboxes (Same Line / skip Stress Test). */
+  async _onTrackerTransformCheckbox(event) {
+    const el = event.currentTarget;
+    const field = el.dataset.field;
+    if (!["transformSameLine", "transformSkipTest"].includes(field)) return;
+    const roundNum = Number(el.dataset.round);
+    const actionIndex = Number(el.dataset.actionIndex);
+    const cts = foundry.utils.deepClone(this.actor.system.combatTabState || {});
+    const round = (cts.rounds || []).find(r => r.roundNumber === roundNum);
+    if (!round?.actions?.[actionIndex]) return;
+    round.actions[actionIndex][field] = el.checked;
+    await this.actor.update({ "system.combatTabState": cts });
+  }
+
+  /** Activate a transformation with full entry machinery (snapshot + syncs + entry effects). */
+  async _activateTransformationAtIndex(transIndex) {
+    const trans = foundry.utils.deepClone(this.actor.system.transformations || []);
+    if (!trans[transIndex] || trans[transIndex].active) return;
+    trans[transIndex].active = true;
+    const snapshots = foundry.utils.deepClone(this.actor.system.transformationMeta?.entrySnapshots || {});
+    const transId = String(trans[transIndex].id ?? transIndex);
+    const entrySnapshot = this._buildTransformationEntrySnapshot(transIndex, trans);
+    snapshots[transId] = entrySnapshot;
+    await this.actor.update({
+      "system.transformations": trans,
+      "system.transformationMeta.entrySnapshots": snapshots
+    });
+    await this._syncPersistentTransformationCombatStates(trans);
+    await this._syncPersistentTransformationResources(trans);
+    await this._syncPersistentTransformationFlags(trans);
+    await this._applyTransformationEntryEffects(trans[transIndex], entrySnapshot);
+  }
+
+  /**
+   * Compute the Transformation Maneuver's projected Combined Stress Test and
+   * modifiers for an inactive transformation. Mirrors the actor's
+   * combinedStressTest logic (Prelude −5, Crimson +2) and adds Step-by-Step
+   * (Alternate Form → another Form) reduction. Returns null if the form is
+   * missing or already active.
+   */
+  _computeTransformManeuver(chosenIndex, action = {}) {
+    const system = this.actor.system;
+    const all = system.transformations || [];
+    const chosen = all[chosenIndex];
+    if (!chosen || chosen.active) return null;
+
+    // Effective ST after Prelude (transformation-aspects.txt:77): −5 when the
+    // form has the Prelude aspect and it's currently active.
+    const effST = (t) => {
+      let st = Number(t.stressTest) || 0;
+      const prelude = (t.aspects || []).some(a => String(a).trim() === "Prelude") && t.preludeActive;
+      if (prelude) st = Math.max(0, st - 5);
+      return st;
+    };
+
+    // Step-by-Step (transformation-rules.txt:118): while in an Alternate Form,
+    // transforming into another Alternate/Legendary Form reduces the new form's
+    // ST by the current Alternate Form's Tier of Power Requirement (+1 if the
+    // new form is of the SAME Transformation Line).
+    let stepByStep = null;
+    const activeAltForm = all.find(t => t.active && t.transformationType === "form_alternate");
+    const newIsForm = ["form_alternate", "form_legendary"].includes(chosen.transformationType);
+    if (activeAltForm && newIsForm) {
+      const topReq = parseInt(String(activeAltForm.tierRequirement || "").match(/(\d+)/)?.[1] || "0");
+      const sameLine = !!action.transformSameLine;
+      const reduction = topReq + (sameLine ? 1 : 0);
+      if (reduction > 0) stepByStep = { formName: activeAltForm.name || "Alternate Form", reduction, sameLine };
+    }
+
+    let newST = effST(chosen);
+    if (stepByStep) newST = Math.max(0, newST - stepByStep.reduction);
+
+    // Combined ST = highest + 1/2 of each other (active forms + the new form)
+    const sts = all.filter(t => t.active).map(effST);
+    sts.push(newST);
+    sts.sort((x, y) => y - x);
+    let required = (sts[0] || 0) + sts.slice(1).reduce((acc, s) => acc + Math.floor(s / 2), 0);
+
+    // Crimson Acclimation: +2 Combined Stress Test
+    const crimson = !!system.aspectEffects?.crimsonAcclimationActive;
+    if (crimson) required += 2;
+
+    // New Level of Power (transformation-rules.txt:62): re-entering a form you
+    // already entered this encounter needs no Stress Test — but ONLY on a solo
+    // entry (no other active forms). Marked manually via the panel checkbox.
+    const soloEntry = all.filter(t => t.active).length === 0;
+    const willSkipTest = !!action.transformSkipTest && soloEntry;
+
+    return {
+      required,
+      stepByStep,
+      crimson,
+      willSkipTest,
+      soloRequested: !!action.transformSkipTest,
+      ignoredPenalty: system.thresholds?.stressPenalty || 0
+    };
+  }
+
+  /**
+   * Transformation Maneuver (actions-combat.txt): roll the Stress Test for a
+   * selected transformation IGNORING Health Threshold Penalties; on success,
+   * enter it (entry effects like Legend Realized / Burst Limit fire via the
+   * normal activation machinery). New Level of Power can skip the test on a
+   * solo re-entry. Combined ST includes Prelude / Crimson / Step-by-Step.
+   */
+  async _onRollTrackerTransform(event) {
+    event.preventDefault();
+    const btn = event.currentTarget;
+    const roundNum = Number(btn.dataset.round);
+    const actionIndex = Number(btn.dataset.actionIndex);
+    const cts = this.actor.system.combatTabState || {};
+    const round = (cts.rounds || []).find(r => r.roundNumber === roundNum);
+    const action = round?.actions?.[actionIndex];
+    const idx = Number(action?.transformIndex);
+    const trans = (this.actor.system.transformations || [])[idx];
+    if (!trans || trans.active) {
+      ui.notifications.warn("Select an inactive transformation first.");
+      return;
+    }
+    const system = this.actor.system;
+    const calc = this._computeTransformManeuver(idx, action || {});
+    if (!calc) return;
+    const required = calc.required;
+
+    // Chips describing the Combined Stress Test breakdown.
+    const modChips = [];
+    if (calc.stepByStep) modChips.push(`<span class="dbu-meta-chip">Step-by-Step −${calc.stepByStep.reduction} (${calc.stepByStep.formName}${calc.stepByStep.sameLine ? ", same line" : ""})</span>`);
+    if (calc.crimson) modChips.push(`<span class="dbu-meta-chip">Crimson +2</span>`);
+
+    // New Level of Power skip: solo re-entry needs no Stress Test.
+    if (calc.willSkipTest) {
+      await this._activateTransformationAtIndex(idx);
+      await ChatMessage.create({
+        speaker: ChatMessage.getSpeaker({ actor: this.actor }),
+        content: `<div class="dbu-attack-roll dbu-defend-card" data-actor-id="${this.actor.id}">
+          <h3 class="dbu-attack-title"><span class="dbu-card-title-text"><i class="fas fa-bolt"></i> Transformation — ${trans.name}</span></h3>
+          <div class="dbu-card-body">
+            <div class="dbu-attack-meta"><span class="dbu-meta-chip">New Level of Power</span></div>
+            <div class="dbu-defend-guide"><b>TRANSFORMED!</b> ${this.actor.name} re-enters <b>${trans.name}</b> — already entered this encounter, so no Stress Test was required. Entry effects applied.</div>
+          </div>
+        </div>`
+      });
+      return;
+    }
+    if (calc.soloRequested && !calc.willSkipTest) {
+      ui.notifications.info("Entering in conjunction with another active form — a Stress Test is still required (New Level of Power skip ignored).");
+    }
+
+    // "ignoring any Health Threshold Penalties" — add back the stress penalty
+    // that _calculateCombatStats subtracted from the Stress Bonus.
+    const ignoredPen = calc.ignoredPenalty;
+    const stressBonus = this._getStressBonus() + ignoredPen;
+    const equipDiceBonus = Number(system.equipmentFlags?.stressTestDiceBonus) || 0;
+    // The 1d10 for a Stress Test cannot Botch or Crit (transformation-rules.txt:41);
+    // the roll is a plain 1d10 + 1 + Stress Bonus with no crit/botch handling.
+    const roll = new Roll(`1d10 + 1 + ${stressBonus + equipDiceBonus}`);
+    await roll.evaluate();
+    const success = roll.total >= required;
+
+    if (success) await this._activateTransformationAtIndex(idx);
+    await roll.toMessage({
+      speaker: ChatMessage.getSpeaker({ actor: this.actor }),
+      flavor: `<div class="dbu-attack-roll ${success ? "dbu-defend-card" : ""}" data-actor-id="${this.actor.id}">
+        <h3 class="dbu-attack-title"><span class="dbu-card-title-text"><i class="fas fa-bolt"></i> Transformation — ${trans.name}</span></h3>
+        <div class="dbu-card-body">
+          <div class="dbu-attack-meta">
+            <span class="dbu-meta-chip">ST Required ${required}</span>
+            <span class="dbu-meta-chip">Stress Bonus ${stressBonus}${ignoredPen ? ` (thresh. pen. +${ignoredPen} ignored)` : ""}</span>
+            ${equipDiceBonus ? `<span class="dbu-meta-chip">Equip +${equipDiceBonus}</span>` : ""}
+            ${modChips.join("")}
+          </div>
+          <div class="dbu-roll-row">
+            <span class="dbu-roll-label">Stress</span>
+            <span class="dbu-roll-main"><code class="dbu-roll-formula">1d10+1+${stressBonus + equipDiceBonus}</code><span class="dbu-roll-sub">vs ${required}</span></span>
+            <span class="dbu-roll-total">${roll.total}</span>
+          </div>
+          <div class="dbu-defend-guide">${success
+            ? `<b>TRANSFORMED!</b> ${this.actor.name} enters <b>${trans.name}</b> — entry effects applied.`
+            : `<b>FAILED.</b> ${this.actor.name} does not transform and suffers <b>Stress Exhaustion</b> until the end of their next turn.`}</div>
+        </div>
+      </div>`
+    });
+  }
+
+  /** Store the chosen Grapple option on the tracker action. */
+  async _onTrackerGrappleOptionChange(event) {
+    const el = event.currentTarget;
+    const roundNum = Number(el.dataset.round);
+    const actionIndex = Number(el.dataset.actionIndex);
+    const cts = foundry.utils.deepClone(this.actor.system.combatTabState || {});
+    const round = (cts.rounds || []).find(r => r.roundNumber === roundNum);
+    if (!round?.actions?.[actionIndex]) return;
+    round.actions[actionIndex].grappleOption = el.value;
+    round.actions[actionIndex].description = el.value ? `Grapple: ${el.value}` : "";
+    await this.actor.update({ "system.combatTabState": cts });
+  }
+
+  /**
+   * Grapple Maneuver (actions-combat.txt:216-243) — interactive clash card.
+   * The opponent responds from the chat (Strike/Dodge, or Might for Pulled In).
+   */
+  async _onUseTrackerGrapple(event) {
+    event.preventDefault();
+    const btn = event.currentTarget;
+    const roundNum = Number(btn.dataset.round);
+    const actionIndex = Number(btn.dataset.actionIndex);
+    const cts = this.actor.system.combatTabState || {};
+    const round = (cts.rounds || []).find(r => r.roundNumber === roundNum);
+    const option = round?.actions?.[actionIndex]?.grappleOption;
+    if (!option) {
+      ui.notifications.warn("Select a Grapple option first.");
+      return;
+    }
+    const tier = this.actor.system.tier || 1;
+    const strikeF = this._trackerDefend?.strikeFormula || "1d10";
+    const strikeCT = this._calcCombatCTs(this.actor.system).strikeCT;
+    const might = this.actor.system.status?.mightForClashes ?? this.actor.system.status?.might ?? 0;
+    const defs = {
+      init: { label: "Grapple Check", formula: strikeF, ct: strikeCT, responderKind: "strike-or-dodge",
+        note: "[1/Round] Win: Grapple established (both Guard Down). Lose: provoke the Exploit Maneuver." },
+      tail: { label: "Grapple — Tail Restraint", formula: `${strikeF}-${2 * tier}`, ct: strikeCT, responderKind: "strike-or-dodge",
+        note: `−${2 * tier} penalty to grab the tail — win: target cannot use Tail Attack in this Grapple.` },
+      escape: { label: "Escape Grapple", formula: strikeF, ct: strikeCT, responderKind: "strike-or-dodge",
+        note: "Grapple Check at the start of your turn — win to escape the Grapple." },
+      pulledIn: { label: "Pulled In", formula: `1d10+${might}`, ct: 10, responderKind: "might",
+        note: "Instant Maneuver (Grappler): Might Clash — win to pull the Grappled adjacent." },
+      launch: { label: "Launch", formula: strikeF, ct: strikeCT, responderKind: "strike-or-dodge",
+        note: "[1/Round] Grapple Check — win: end Grapple, move target up to your Might. Lose: they escape." }
+    };
+    const d = defs[option];
+    if (!d) return;
+    await initiateClash(this.actor, { type: "grapple", option, ...d });
+  }
+
+  /**
+   * Thrust Maneuver (actions-combat.txt:328-333) — interactive clash card;
+   * on win the initiator picks Push Back or Knock Prone in the chat.
+   */
+  async _onUseTrackerThrust(event) {
+    event.preventDefault();
+    const strikeF = this._trackerDefend?.strikeFormula || "1d10";
+    const strikeCT = this._calcCombatCTs(this.actor.system).strikeCT;
+    await initiateClash(this.actor, {
+      type: "thrust", option: "thrust",
+      label: "Thrust", formula: strikeF, ct: strikeCT, responderKind: "strike-or-dodge",
+      note: "[1/Round] Melee Clash (Strike vs Strike/Dodge). Win: choose Push Back (½ Might, double Collision, −1(bT) their Acrobatics) or Knock Prone (Might Clash)."
+    });
+  }
+
+  /**
+   * Terrify Maneuver (actions-combat.txt) — Skill Clash card
+   * (Intimidation vs Intuition/Intimidation). Win: Shaken; already Shaken → Prone.
+   */
+  async _onUseTrackerTerrify(event) {
+    event.preventDefault();
+    const { computeSkillBonus } = await import("../helpers/duel.mjs");
+    const bonus = computeSkillBonus(this.actor, "intimidation");
+    await initiateClash(this.actor, {
+      type: "terrify", option: "terrify",
+      label: "Terrify", formula: `1d10+${bonus}`, ct: 10,
+      responderKind: "skill", responderSkills: ["empathy", "intimidation"],
+      note: "[1/Round] Target within 4 Squares. Skill Clash (Intimidation vs Intuition/Intimidation). Win: Shaken until end of your next turn — if already Shaken, knocked Prone."
+    });
+  }
+
+  /**
+   * Feint Maneuver (actions-combat.txt) — Instant, 2(T) KP, in response to
+   * declaring a Basic Attack (no AoE). Skill Clash (Bluff vs Intuition/Perception).
+   */
+  async _onUseTrackerFeint(event) {
+    event.preventDefault();
+    const btn = event.currentTarget;
+    const roundNum = Number(btn.dataset.round);
+    const actionIndex = Number(btn.dataset.actionIndex);
+    const cts = this.actor.system.combatTabState || {};
+    const round = (cts.rounds || []).find(r => r.roundNumber === roundNum);
+    const action = round?.actions?.[actionIndex];
+    const initAttackCost = Math.max(0, Number(action?.feintAttackCost) || 0);
+    const tier = this.actor.system.tier || 1;
+    const feintCost = 2 * tier;
+    // Pay the Feint's 2(T) KP now (whisper remaining to GM + owners)
+    const ki = this.actor.system.kiPool?.value ?? 0;
+    await this.actor.update({ "system.kiPool.value": Math.max(0, ki - feintCost) });
+    const whisperIds = game.users
+      .filter(u => u.isGM || this.actor.testUserPermission(u, "OWNER"))
+      .map(u => u.id);
+    ChatMessage.create({
+      content: `<div class="dbu-ki-deduct"><i class="fas fa-theater-masks"></i> <b>${this.actor.name}</b>: Feint -${feintCost} KP. Remaining KP: <b>${Math.max(0, ki - feintCost)}</b></div>`,
+      whisper: whisperIds,
+      speaker: ChatMessage.getSpeaker({ actor: this.actor })
+    });
+    const { computeSkillBonus } = await import("../helpers/duel.mjs");
+    const bonus = computeSkillBonus(this.actor, "bluff");
+    await initiateClash(this.actor, {
+      type: "feint", option: "feint",
+      label: "Feint", formula: `1d10+${bonus}`, ct: 10,
+      responderKind: "skill", responderSkills: ["empathy", "perception"],
+      extra: { initAttackCost },
+      note: `[1/Round · Instant · ${feintCost} KP] In response to declaring a Basic Attack (no AoE). Skill Clash (Bluff vs Intuition/Perception).`
+    });
+  }
+
+  /**
+   * Dirty Trick Maneuver (special-maneuvers) — Clash (Bluff vs Intuition).
+   * Win: choose Pocket Sand (Blinded) / Made ya look! (Guard Down) /
+   * It's Such a Tragedy! (Compelled, 1/Encounter, crit/botch rider).
+   */
+  async _onUseTrackerDirtyTrick(event) {
+    event.preventDefault();
+    const { computeSkillBonus } = await import("../helpers/duel.mjs");
+    const bonus = computeSkillBonus(this.actor, "bluff");
+    await initiateClash(this.actor, {
+      type: "dirtyTrick", option: "dirtyTrick",
+      label: "Dirty Trick", formula: `1d10+${bonus}`, ct: 10,
+      responderKind: "skill", responderSkills: ["empathy"],
+      note: "[1/Round] Target within a Sphere AoE (centered on you). Clash (Bluff vs Intuition)."
+    });
+  }
+
+  /** Store the chosen Duel mode (power / clash) on the tracker action. */
+  async _onTrackerDuelModeChange(event) {
+    const el = event.currentTarget;
+    const roundNum = Number(el.dataset.round);
+    const actionIndex = Number(el.dataset.actionIndex);
+    const cts = foundry.utils.deepClone(this.actor.system.combatTabState || {});
+    const round = (cts.rounds || []).find(r => r.roundNumber === roundNum);
+    if (!round?.actions?.[actionIndex]) return;
+    round.actions[actionIndex].duelMode = el.value;
+    round.actions[actionIndex].description = el.value ? `Duel: ${el.value === "power" ? "Power Duel" : "Duel Clash"}` : "";
+    await this.actor.update({ "system.combatTabState": cts });
+  }
+
+  /** Store the chosen Initiating Attack for a Duel Clash. */
+  async _onTrackerDuelSourceChange(event) {
+    const el = event.currentTarget;
+    const roundNum = Number(el.dataset.round);
+    const actionIndex = Number(el.dataset.actionIndex);
+    const cts = foundry.utils.deepClone(this.actor.system.combatTabState || {});
+    const round = (cts.rounds || []).find(r => r.roundNumber === roundNum);
+    if (!round?.actions?.[actionIndex]) return;
+    const action = round.actions[actionIndex];
+    action.duelSource = el.value;
+    // Bookkeep the Initiating Attack's KP cost on the tracker row (rules:
+    // "by spending the Ki Points to make an Attacking Maneuver")
+    let sd = null;
+    for (const g of (this._trackerSourceGroups || [])) {
+      const s = g.sources.find(x => x.key === el.value);
+      if (s) { sd = s; break; }
+    }
+    action.kiCost = sd?.kiCost || 0;
+    await this.actor.update({ "system.combatTabState": cts });
+  }
+
+  /**
+   * Initiate a Duel Maneuver (actions-combat.txt:507-533). Posts the
+   * interactive duel card to chat; the flow continues there (accept/escape,
+   * secret wagers, dual reveal, resolution). Spends a Counter Action.
+   */
+  async _onInitiateDuel(event) {
+    event.preventDefault();
+    const btn = event.currentTarget;
+    const roundNum = Number(btn.dataset.round);
+    const actionIndex = Number(btn.dataset.actionIndex);
+    const cts = this.actor.system.combatTabState || {};
+    const round = (cts.rounds || []).find(r => r.roundNumber === roundNum);
+    const action = round?.actions?.[actionIndex];
+    const mode = action?.duelMode;
+    if (!mode) {
+      ui.notifications.warn("Select a Duel mode first.");
+      return;
+    }
+    let opts = { mode: "power" };
+    if (mode === "clash") {
+      let sd = null;
+      for (const g of (this._trackerSourceGroups || [])) {
+        const s = g.sources.find(x => x.key === action.duelSource);
+        if (s) { sd = s; break; }
+      }
+      if (!sd) {
+        ui.notifications.warn("Select the Initiating Attack for the Duel Clash.");
+        return;
+      }
+      opts = {
+        mode: "clash",
+        sourceName: sd.name,
+        foundation: sd.foundation || "",
+        ec: sd.energyCharges || 0,
+        ps: sd.powerShot || 0,
+        woundFormula: sd.woundFormula || "1d10",
+        damageCat: sd.damageCat || "Standard"
+      };
+    }
+    // Counter Action tracking (same pool as Defend; no Diminishing Defense)
+    const counterNum = (Number(cts.roundCounterCount) || 0) + 1;
+    await this.actor.update({ "system.combatTabState.roundCounterCount": counterNum });
+    await initiateDuel(this.actor, opts);
+  }
+
+  /** Store the chosen Defend Maneuver option on the tracker action. */
+  async _onTrackerDefendOptionChange(event) {
+    const el = event.currentTarget;
+    const roundNum = Number(el.dataset.round);
+    const actionIndex = Number(el.dataset.actionIndex);
+    const cts = foundry.utils.deepClone(this.actor.system.combatTabState || {});
+    const round = (cts.rounds || []).find(r => r.roundNumber === roundNum);
+    if (!round?.actions?.[actionIndex]) return;
+    const action = round.actions[actionIndex];
+    action.defendOption = el.value;
+    const opt = (this._defendCatalog || []).find(d => d.key === el.value);
+    action.kiCost = opt ? opt.costT * (this.actor.system.tier || 1) : 0;
+    action.description = opt ? `Defend: ${opt.name}` : "";
+    await this.actor.update({ "system.combatTabState": cts });
+  }
+
+  /** Store Defend/Feint panel numeric inputs. */
+  async _onTrackerDefendInput(event) {
+    const el = event.currentTarget;
+    const field = el.dataset.field;
+    if (!["defendPenalty", "defendWager", "defendEC", "feintAttackCost"].includes(field)) return;
+    const roundNum = Number(el.dataset.round);
+    const actionIndex = Number(el.dataset.actionIndex);
+    const cts = foundry.utils.deepClone(this.actor.system.combatTabState || {});
+    const round = (cts.rounds || []).find(r => r.roundNumber === roundNum);
+    if (!round?.actions?.[actionIndex]) return;
+    round.actions[actionIndex][field] = Math.max(0, Number(el.value) || 0);
+    await this.actor.update({ "system.combatTabState": cts });
+  }
+
+  /**
+   * Use a Defend Maneuver from the tracker (actions-combat.txt:485-506).
+   * - Parry / Power Flare: hidden roll -> Reveal (same machinery as attacks),
+   *   with the option's modifiers baked into the formula.
+   * - Guard / Direct Hit / Cross Counter: immediate chat card with a Pay button
+   *   (when it costs KP) and guidance to run the incoming Wound through the
+   *   Damage Tracker. Guard/Direct Hit pre-configure the Damage Tracker's
+   *   Defense select; Guard paid here is NOT re-charged by Apply Damage.
+   * Spends a Counter Action (badge) but does NOT touch Diminishing Defense.
+   */
+  async _onRollTrackerDefend(event) {
+    event.preventDefault();
+    const btn = event.currentTarget;
+    const roundNum = Number(btn.dataset.round);
+    const actionIndex = Number(btn.dataset.actionIndex);
+    const cts = this.actor.system.combatTabState || {};
+    const round = (cts.rounds || []).find(r => r.roundNumber === roundNum);
+    const action = round?.actions?.[actionIndex];
+    const opt = (this._defendCatalog || []).find(d => d.key === action?.defendOption);
+    if (!opt) {
+      ui.notifications.warn("Select a Defend option first.");
+      return;
+    }
+    const tier = this.actor.system.tier || 1;
+    const baseTier = this.actor.system.baseTier || 1;
+    const speaker = ChatMessage.getSpeaker({ actor: this.actor });
+
+    // Counter Action tracking (NOT Diminishing Defense — Defend is exempt).
+    const counterNum = (Number(cts.roundCounterCount) || 0) + 1;
+    const ctrBadge = `<span class="dbu-action-count" title="Counter Actions used this round — Defend does not trigger Diminishing Defense">CTR ${counterNum}</span>`;
+    const updates = { "system.combatTabState.roundCounterCount": counterNum };
+
+    // ---- Roll-based options: Parry (Strike roll) / Power Flare (Wound roll) ----
+    if (opt.rollBased) {
+      const isParry = opt.key === "parry";
+      const cts2 = this._calcCombatCTs(this.actor.system);
+      const rollCT = isParry ? cts2.strikeCT : cts2.woundCT;
+      const penalty = isParry ? Math.max(0, Number(action.defendPenalty) || 0) * tier : 0;
+      const wager = !isParry
+        ? Math.max(0, Math.min(Number(action.defendWager) || 0, this._trackerDefend?.maxFlareWager || 0))
+        : 0;
+      const base = isParry ? (this._trackerDefend?.strikeFormula || "1d10") : (this._trackerDefend?.woundFormula || "1d10");
+      let formula = base;
+      if (penalty > 0) formula += `-${penalty}`;
+      if (wager > 0) formula += `+${wager}`;
+      const kiCost = opt.costT * tier;
+      const totalPay = kiCost + wager;
+
+      const roll = new Roll(formula);
+      await roll.evaluate();
+      const nat = roll.dice[0]?.results?.[0]?.result ?? "?";
+      const isCrit = nat !== "?" && nat >= rollCT;
+      const isBotch = nat === 1;
+      let critRoll = null;
+      if (isCrit) { critRoll = new Roll(this._critExtraFormula(tier)); await critRoll.evaluate(); }
+      const botchPenalty = 2 * baseTier;
+      const total = roll.total + (critRoll?.total || 0) - (isBotch ? botchPenalty : 0);
+      const tag = critRoll
+        ? ` <span class="dbu-crit">CRIT! +${critRoll.formula}: ${critRoll.total}</span>`
+        : (isBotch ? ` <span class="dbu-botch">BOTCH -${botchPenalty}</span>` : "");
+
+      const metaChips = [
+        "Defend Maneuver",
+        isParry && penalty > 0 ? `−${penalty} (EC/PS ×1(T))` : "",
+        !isParry && wager > 0 ? `Wager ${wager} KP` : "",
+        `Cost ${kiCost} KP`
+      ].filter(Boolean).map(c => `<span class="dbu-meta-chip">${c}</span>`).join("");
+      const payParts = [];
+      if (kiCost > 0) payParts.push(`Ki Cost (${kiCost} KP)`);
+      if (wager > 0) payParts.push(`Ki Wager (${wager} KP)`);
+      const payBtnHtml = totalPay > 0
+        ? `<div class="dbu-attack-actions">
+            <button type="button" class="dbu-pay-btn" data-dbu-pay="defend"
+                    data-actor-id="${this.actor.id}" data-amount="${totalPay}">
+              <i class="fas fa-fire"></i> Pay ${payParts.join(" + ")}
+            </button>
+          </div>`
+        : "";
+
+      const hiddenHtml = `<div class="dbu-attack-roll dbu-attack-unrevealed dbu-defend-card" data-actor-id="${this.actor.id}">
+        <h3 class="dbu-attack-title"><span class="dbu-card-title-text">${this.actor.name} — ${opt.name}</span>${ctrBadge}</h3>
+        <div class="dbu-card-body">
+          <div class="dbu-roll-row">
+            <span class="dbu-roll-label">${opt.name}</span>
+            <span class="dbu-hidden-val"><i class="fas fa-eye-slash"></i>&nbsp;???</span>
+          </div>
+          <div class="dbu-attack-actions">
+            <button type="button" class="dbu-reveal-btn" data-dbu-reveal data-actor-id="${this.actor.id}">
+              <i class="fas fa-eye"></i> REVEAL
+            </button>
+          </div>
+        </div>
+      </div>`;
+      const revealedHtml = `<div class="dbu-attack-roll dbu-defend-card" data-actor-id="${this.actor.id}">
+        <h3 class="dbu-attack-title"><span class="dbu-card-title-text">${this.actor.name} — ${opt.name}</span>${ctrBadge}</h3>
+        <div class="dbu-card-body">
+          <div class="dbu-attack-meta">${metaChips}</div>
+          <div class="dbu-roll-row">
+            <span class="dbu-roll-label">${opt.name}</span>
+            <span class="dbu-roll-main">
+              <code class="dbu-roll-formula">${formula}</code>
+              <span class="dbu-roll-sub">Nat ${nat} · CT ${rollCT}+</span>${tag}
+            </span>
+            <span class="dbu-roll-total">${total}</span>
+          </div>
+          ${payBtnHtml}
+        </div>
+      </div>`;
+
+      await this.actor.update(updates);
+      await ChatMessage.create({
+        speaker,
+        content: hiddenHtml,
+        flags: {
+          "DBU-MRR-OLD": {
+            attackReveal: {
+              revealed: false,
+              actorId: this.actor.id,
+              kiCost,
+              wager,
+              revealedHtml,
+              strikeRollData: roll.toJSON(),
+              woundRollData: null,
+              strikeCritRollData: critRoll ? critRoll.toJSON() : null,
+              woundCritRollData: null
+            }
+          }
+        }
+      });
+      return;
+    }
+
+    // ---- Non-roll options: Guard / Direct Hit / Cross Counter ----
+    let kiCost = opt.costT * tier;
+    if (opt.key === "guard") {
+      const ec = Math.min(Math.max(0, Number(action.defendEC) || 0), 4);
+      kiCost = (8 + ec) * tier;
+      if (this.actor._isConditionActive?.(this.actor.system, "guardDown")) kiCost = Math.ceil(kiCost * 1.5);
+      // Pre-configure the Damage Tracker; Apply Damage will NOT charge again.
+      updates["system.damageCalc.defense"] = "guard";
+      updates["system.damageCalc.incomingEC"] = Math.min(Math.max(0, Number(action.defendEC) || 0), 4);
+      updates["system.damageCalc.guardPaidViaCard"] = true;
+    } else if (opt.key === "directHit") {
+      updates["system.damageCalc.defense"] = "directHit";
+    }
+    const payBtnHtml = kiCost > 0
+      ? `<div class="dbu-attack-actions">
+          <button type="button" class="dbu-pay-btn" data-dbu-pay="defend"
+                  data-actor-id="${this.actor.id}" data-amount="${kiCost}">
+            <i class="fas fa-fire"></i> Pay ${opt.name} (${kiCost} KP)
+          </button>
+        </div>`
+      : "";
+    const setupNote = (opt.key === "guard" || opt.key === "directHit")
+      ? `Damage Tracker Defense pre-set to <b>${opt.name}</b>. `
+      : "";
+    await this.actor.update(updates);
+    await ChatMessage.create({
+      speaker,
+      content: `<div class="dbu-attack-roll dbu-defend-card" data-actor-id="${this.actor.id}">
+        <h3 class="dbu-attack-title"><span class="dbu-card-title-text">${this.actor.name} — ${opt.name}</span>${ctrBadge}</h3>
+        <div class="dbu-card-body">
+          <div class="dbu-attack-meta">
+            <span class="dbu-meta-chip">Defend Maneuver</span>
+            ${kiCost > 0 ? `<span class="dbu-meta-chip dbu-chip-hot">${kiCost} KP</span>` : `<span class="dbu-meta-chip">0 KP</span>`}
+          </div>
+          <div class="dbu-defend-desc">${opt.desc}</div>
+          ${payBtnHtml}
+          <div class="dbu-defend-guide"><i class="fas fa-arrow-right"></i> ${setupNote}Enter the attacker's Wound Roll in the <b>Damage Tracker</b> and press <b>Apply Damage</b>.</div>
+        </div>
+      </div>`
+    });
+  }
+
+  /**
+   * Roll Dodge from the tracker — public animated roll with CRIT (dodgeCT:
+   * Instinctual Evasion, Mindful, buffs, bestial Return to Heritage) and
+   * BOTCH handling, matching core-rules.txt:103-109.
+   *
+   * Diminishing Defense (attacking.txt:35-49): each dodge after the first this
+   * round suffers a stacking DV penalty of ceil(bT/2) per prior incoming attack
+   * (bT 1-2: -1, 3-4: -2, 5-6: -3, 7: -4). Counter resets on Next Round.
+   */
+  async _onRollTrackerDodge(event) {
+    event.preventDefault();
+    const td = this._trackerDodge || { formula: "1d10", ct: 10 };
+    const sysTier = this.actor.system.tier || 1;
+    const sysBaseTier = this.actor.system.baseTier || 1;
+
+    const cts = this.actor.system.combatTabState || {};
+    const dodgeNum = (Number(cts.roundDodgeCount) || 0) + 1;
+    const perStack = Math.ceil(sysBaseTier / 2);
+    const dimDefensePen = (dodgeNum - 1) * perStack;
+    await this.actor.update({
+      "system.combatTabState.roundDodgeCount": dodgeNum,
+      "system.tracking.diminishingDefense": dodgeNum - 1
+    });
+
+    const formula = dimDefensePen > 0 ? `${td.formula}-${dimDefensePen}` : td.formula;
+    const roll = new Roll(formula);
+    await roll.evaluate();
+    const nat = roll.dice[0]?.results?.[0]?.result ?? "?";
+    const isCrit = nat !== "?" && nat >= td.ct;
+    const isBotch = nat === 1;
+    let critRoll = null;
+    if (isCrit) { critRoll = new Roll(this._critExtraFormula(sysTier)); await critRoll.evaluate(); }
+    const botchPenalty = 2 * sysBaseTier;
+    const total = roll.total + (critRoll?.total || 0) - (isBotch ? botchPenalty : 0);
+    const tag = critRoll
+      ? ` <span class="dbu-crit">CRIT! +${critRoll.formula}: ${critRoll.total}</span>`
+      : (isBotch ? ` <span class="dbu-botch">BOTCH -${botchPenalty}</span>` : "");
+    const dodgeNumBadge = `<span class="dbu-action-count" title="Dodges this round — Diminishing Defense from the 2nd onward">DGE ${dodgeNum}</span>`;
+    const dimLine = dimDefensePen > 0
+      ? `<div class="dbu-penalty-line"><i class="fas fa-angle-double-down"></i> Diminishing Defense −${dimDefensePen} DV <span class="dbu-penalty-why">${dodgeNum - 1} prior attack${dodgeNum - 1 !== 1 ? "s" : ""} × ${perStack}</span></div>`
+      : "";
+    const flavor = `<div class="dbu-attack-roll dbu-dodge-card" data-actor-id="${this.actor.id}">
+      <h3 class="dbu-attack-title"><span class="dbu-card-title-text">${this.actor.name} — Dodge</span>${dodgeNumBadge}</h3>
+      <div class="dbu-card-body">
+        ${dimLine}
+        <div class="dbu-roll-row">
+          <span class="dbu-roll-label">Dodge</span>
+          <span class="dbu-roll-main">
+            <code class="dbu-roll-formula">${formula}</code>
+            <span class="dbu-roll-sub">Nat ${nat} · CT ${td.ct}+</span>${tag}
+          </span>
+          <span class="dbu-roll-total">${total}</span>
+        </div>
+      </div>
+    </div>`;
+    await roll.toMessage({ speaker: ChatMessage.getSpeaker({ actor: this.actor }), flavor });
+    if (critRoll && game.dice3d) {
+      try { game.dice3d.showForRoll(critRoll, game.user, true); } catch (e) { /* best-effort */ }
+    }
   }
 
   _onCombatFilter(event) {
@@ -12571,12 +14045,6 @@ export class DBUCharacterSheet extends ActorSheet {
     for (const item of items) {
       item.style.display = checked ? "" : "none";
     }
-  }
-
-  async _onTogglePerfectKi(event) {
-    const cts = foundry.utils.deepClone(this.actor.system.combatTabState || {});
-    cts.perfectKiControl = event.currentTarget.checked;
-    await this.actor.update({ "system.combatTabState": cts });
   }
 
   async _onClearDamageLog(event) {
@@ -12594,8 +14062,33 @@ export class DBUCharacterSheet extends ActorSheet {
     const element = event.currentTarget;
     const type = element.dataset.type || "equipment";
     const eqType = element.dataset.eqType || "apparel";
-    const name = `New ${eqType}`;
+    const friendly = { apparel: "Apparel", weapon: "Weapon", accessory: "Accessory", basicItem: "Basic Item" }[eqType] || eqType;
+    const name = `New ${friendly}`;
     return this.actor.createEmbeddedDocuments("Item", [{ name, type, system: { equipmentType: eqType } }]);
+  }
+
+  /**
+   * Apply a Basic Items catalog entry to an item — sets the key, renames the item,
+   * and copies the catalog's description into system.description so the UI can show it.
+   * Triggered by the Basic Item catalog dropdown on each card.
+   */
+  async _onBasicItemCatalogChange(event) {
+    const sel = event.currentTarget;
+    const itemId = sel.dataset.itemId;
+    const item = this.actor.items.get(itemId);
+    if (!item) return;
+    const key = sel.value;
+    if (!key) {
+      await item.update({ "system.basicItemKey": "" });
+      return;
+    }
+    const entry = CONFIG.DBU?.basicItemsCatalog?.[key];
+    if (!entry) return;
+    await item.update({
+      name: entry.name,
+      "system.basicItemKey": key,
+      "system.description": entry.effects || entry.description || ""
+    });
   }
 
   _onItemEdit(event) {

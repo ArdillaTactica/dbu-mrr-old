@@ -430,7 +430,13 @@ export default class DBUCharacterData extends foundry.abstract.TypeDataModel {
         category: new StringField({ initial: "standard" }),
         defense: new StringField({ initial: "none" }),
         damageReduction: new NumberField({ required: true, nullable: false, initial: 0, integer: true }),
-        woundRoll: new NumberField({ required: true, nullable: false, initial: 0, integer: true })
+        woundRoll: new NumberField({ required: true, nullable: false, initial: 0, integer: true }),
+        // Energy Charges on the INCOMING attack — raises the Guard option's KP
+        // cost by 1(T) each, max +4(T) (actions-combat.txt: Defend Maneuver)
+        incomingEC: new NumberField({ required: true, nullable: false, initial: 0, integer: true, min: 0 }),
+        // Set when Guard was already paid through the Defend Maneuver chat card,
+        // so Apply Damage doesn't charge the 8(T) again.
+        guardPaidViaCard: new BooleanField({ initial: false })
       }),
 
       // ---- Z-Soul ----

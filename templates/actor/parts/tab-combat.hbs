@@ -50,11 +50,17 @@
         <label>Capacity</label>
         <span class="ki-display">{{system.status.capacityLeft}} / {{system.status.maxCapacity}}</span>
       </div>
-      <div class="ki-stat ki-control">
-        <label>
-          <input type="checkbox" class="perfect-ki-control" data-action="toggle-perfect-ki" {{#if system.combatTabState.perfectKiControl}}checked{{/if}} />
-          Perfect KI Control
-        </label>
+      <div class="ki-stat ki-status">
+        <label>Perfect Ki Control</label>
+        <span class="ki-status-badge {{#if system.aspectEffects.perfectKiControlActive}}on{{else}}off{{/if}}" title="Granted by a Transformation with the Perfect Ki Control Aspect. While active, Maneuvers only reduce your Capacity Rate by 1/2 of the Ki Points spent.">
+          {{#if system.aspectEffects.perfectKiControlActive}}<i class="fas fa-check-circle"></i> Active{{else}}<i class="fas fa-times-circle"></i> Off{{/if}}
+        </span>
+      </div>
+      <div class="ki-stat ki-status">
+        <label>Divine Ki</label>
+        <span class="ki-status-badge {{#if system.godKi.active}}on divine{{else}}off{{/if}}" title="Granted by a Transformation with the God Ki Aspect. While active you gain access to Divine Ki Points and God Ki Maneuvers.">
+          {{#if system.godKi.active}}<i class="fas fa-sun"></i> Active{{else}}<i class="fas fa-times-circle"></i> Off{{/if}}
+        </span>
       </div>
     </div>
 
@@ -95,6 +101,19 @@
         </div>
       </div>
     </div>
+
+    {{!-- Transformation Resources — live strip inside the Round Tracker --}}
+    {{#if hasSpecialTransformationResources}}
+    <div class="tracker-resources-bar">
+      <span class="trb-title"><i class="fas fa-vial"></i> Resources</span>
+      {{#each specialTransformationResources}}
+      <span class="trb-chip" {{#if sourceName}}title="{{sourceName}}"{{/if}}>
+        <span class="trb-name">{{label}}</span>
+        <span class="trb-value">{{value}}{{#if max}}<span class="trb-max">/{{max}}</span>{{/if}}</span>
+      </span>
+      {{/each}}
+    </div>
+    {{/if}}
 
     {{!-- Split layout: Activables sidebar + Rounds --}}
     <div class="rt-split">
@@ -151,6 +170,17 @@
             </div>
             <div class="tracker-round-content">
               {{#each actions}}
+              {{#if (eq type "use")}}
+              <div class="tracker-action use-log-action" data-action-index="{{@index}}">
+                <span class="use-log-desc">{{description}}</span>
+                {{#if limit}}
+                <span class="use-log-badge {{limit}}">{{useCount}}{{#if maxUses}}/{{maxUses}}{{/if}} {{#if (eq limit "encounter")}}ENC{{else}}RND{{/if}}</span>
+                {{/if}}
+                {{#if ../isActive}}
+                <button type="button" class="action-delete-btn" data-action="delete-tracker-action" data-round="{{../roundNumber}}" data-action-index="{{@index}}" title="Undo this use"><i class="fas fa-times"></i></button>
+                {{/if}}
+              </div>
+              {{else}}
               {{#if ../isActive}}
               <div class="tracker-action" data-action-index="{{@index}}">
                 <select class="action-type" data-round="{{../roundNumber}}" data-action-index="{{@index}}">
@@ -160,6 +190,14 @@
                   <option value="power-up" {{#if (eq type "power-up")}}selected{{/if}}>Power-Up</option>
                   <option value="ki" {{#if (eq type "ki")}}selected{{/if}}>Ki</option>
                   <option value="attack" {{#if (eq type "attack")}}selected{{/if}}>Attack</option>
+                  <option value="defend" {{#if (eq type "defend")}}selected{{/if}}>Defend</option>
+                  <option value="duel" {{#if (eq type "duel")}}selected{{/if}}>Duel</option>
+                  <option value="transform" {{#if (eq type "transform")}}selected{{/if}}>Transform</option>
+                  <option value="grapple" {{#if (eq type "grapple")}}selected{{/if}}>Grapple</option>
+                  <option value="thrust" {{#if (eq type "thrust")}}selected{{/if}}>Thrust</option>
+                  <option value="terrify" {{#if (eq type "terrify")}}selected{{/if}}>Terrify</option>
+                  <option value="feint" {{#if (eq type "feint")}}selected{{/if}}>Feint</option>
+                  <option value="dirtyTrick" {{#if (eq type "dirtyTrick")}}selected{{/if}}>Dirty Trick</option>
                 </select>
                 {{#if (eq type "attack")}}
                 <select class="action-source" data-round="{{../roundNumber}}" data-action-index="{{@index}}" data-current-source="{{source}}">
@@ -183,6 +221,7 @@
                 <div class="tap-row tap-formula-row">
                   <span class="tap-label">Wound:</span>
                   <span class="tap-formula">{{_attackData.woundFormula}}</span>
+                  <span class="tap-ct">CT {{_attackData.woundCT}}+</span>
                   <span class="tap-cat">{{_attackData.damageCat}}</span>
                 </div>
                 <div class="tap-row tap-meta-row">
@@ -207,12 +246,207 @@
                 </div>
               </div>
               {{/if}}
+              {{#if (eq type "defend")}}
+              <div class="tracker-attack-panel tracker-defend-panel" data-round="{{../roundNumber}}" data-action-index="{{@index}}">
+                <div class="tap-row">
+                  <span class="tap-label">Option:</span>
+                  <select class="tdp-option-select" data-round="{{../roundNumber}}" data-action-index="{{@index}}">
+                    <option value="">-- Select --</option>
+                    {{#each @root.defendOptions}}
+                    <option value="{{key}}" {{#if (eq key ../defendOption)}}selected{{/if}}>{{name}} ({{costLabel}})</option>
+                    {{/each}}
+                  </select>
+                </div>
+                {{#if _defendData}}
+                <div class="tap-row"><span class="tdp-desc">{{_defendData.desc}}</span></div>
+                {{#if _defendData.isParry}}
+                <div class="tap-row">
+                  <label class="tap-wager-label" title="Each Energy Charge or rank of Power Shot on the incoming attack reduces your Dice Score by 1(T)">
+                    <i class="fas fa-bolt"></i> Enemy EC + PS:
+                    <input type="number" class="tdp-input" data-field="defendPenalty" data-round="{{../roundNumber}}" data-action-index="{{@index}}" value="{{defendPenalty}}" min="0" />
+                  </label>
+                  {{#if _defendData.penaltyTotal}}<span class="tap-ct">−{{_defendData.penaltyTotal}} Dice Score</span>{{/if}}
+                </div>
+                {{/if}}
+                {{#if _defendData.isPowerFlare}}
+                <div class="tap-row">
+                  <label class="tap-wager-label" title="Ki Wager up to 1/5 of your Max Capacity (actions-combat.txt)">
+                    <i class="fas fa-coins"></i> Ki Wager (max {{_defendData.maxFlareWager}}):
+                    <input type="number" class="tdp-input" data-field="defendWager" data-round="{{../roundNumber}}" data-action-index="{{@index}}" value="{{defendWager}}" min="0" max="{{_defendData.maxFlareWager}}" />
+                  </label>
+                </div>
+                {{/if}}
+                {{#if _defendData.isGuard}}
+                <div class="tap-row">
+                  <label class="tap-wager-label" title="Energy Charges on the incoming attack: +1(T) KP each, max +4(T)">
+                    <i class="fas fa-burst"></i> Attack EC:
+                    <input type="number" class="tdp-input" data-field="defendEC" data-round="{{../roundNumber}}" data-action-index="{{@index}}" value="{{defendEC}}" min="0" />
+                  </label>
+                </div>
+                {{/if}}
+                <div class="tap-row tap-meta-row">
+                  <span class="tap-meta-item"><i class="fas fa-fire"></i> Cost: {{_defendData.kiCost}} KP</span>
+                  <span class="tap-meta-item" title="Defend Maneuvers spend a Counter Action but do NOT trigger Diminishing Defense"><i class="fas fa-shield-alt"></i> Counter Action</span>
+                </div>
+                <div class="tap-row tap-actions-row">
+                  <button type="button" class="tap-roll-btn tdp-use-btn" data-action="roll-tracker-defend" data-round="{{../roundNumber}}" data-action-index="{{@index}}">
+                    {{#if _defendData.rollBased}}<i class="fas fa-dice-d20"></i> Roll {{_defendData.name}}{{else}}<i class="fas fa-shield-alt"></i> Use {{_defendData.name}}{{/if}}
+                  </button>
+                </div>
+                {{/if}}
+              </div>
+              {{/if}}
+              {{#if (eq type "duel")}}
+              <div class="tracker-attack-panel tracker-duel-panel" data-round="{{../roundNumber}}" data-action-index="{{@index}}">
+                <div class="tap-row">
+                  <span class="tap-label">Mode:</span>
+                  <select class="tdl-mode-select" data-round="{{../roundNumber}}" data-action-index="{{@index}}">
+                    <option value="">-- Select --</option>
+                    <option value="power" {{#if (eq duelMode "power")}}selected{{/if}}>Power Duel (Might Clash, 0 KP)</option>
+                    <option value="clash" {{#if (eq duelMode "clash")}}selected{{/if}}>Duel Clash (Initiating Attack)</option>
+                  </select>
+                </div>
+                {{#if (eq duelMode "clash")}}
+                <div class="tap-row">
+                  <span class="tap-label">Attack:</span>
+                  <select class="tdl-source-select" data-round="{{../roundNumber}}" data-action-index="{{@index}}">
+                    <option value="">-- Select --</option>
+                    {{#each @root.duelSourceGroups}}
+                    <optgroup label="{{label}}">
+                      {{#each sources}}
+                      <option value="{{key}}" {{#if (eq key ../../duelSource)}}selected{{/if}}>{{name}}</option>
+                      {{/each}}
+                    </optgroup>
+                    {{/each}}
+                  </select>
+                </div>
+                {{/if}}
+                {{#if duelMode}}
+                <div class="tap-row tap-meta-row">
+                  <span class="tap-meta-item" title="Duel spends a Counter Action"><i class="fas fa-shield-alt"></i> Counter Action</span>
+                  <span class="tap-meta-item" title="Total wager across the 3 Duel Clashes, secret until both reveal"><i class="fas fa-coins"></i> Wager cap: 1/2 Max Capacity</span>
+                </div>
+                <div class="tap-row tap-actions-row">
+                  <button type="button" class="tap-roll-btn" data-action="initiate-duel" data-round="{{../roundNumber}}" data-action-index="{{@index}}">
+                    <i class="fas fa-bolt"></i> Initiate Duel
+                  </button>
+                </div>
+                {{/if}}
+              </div>
+              {{/if}}
+              {{#if (eq type "transform")}}
+              <div class="tracker-attack-panel tracker-transform-panel" data-round="{{../roundNumber}}" data-action-index="{{@index}}">
+                <div class="tap-row">
+                  <span class="tap-label">Form:</span>
+                  <select class="ttf-source-select" data-round="{{../roundNumber}}" data-action-index="{{@index}}">
+                    <option value="">-- Select --</option>
+                    {{#each _transformData.options}}
+                    <option value="{{index}}" {{#if selected}}selected{{/if}}>{{name}} (ST {{stressTest}})</option>
+                    {{/each}}
+                  </select>
+                </div>
+                {{#if _transformData.chosen}}
+                <div class="tap-row tap-meta-row">
+                  <span class="tap-meta-item" title="Combined Stress Test Requirement including forms you are already in (highest + 1/2 of each other), with Prelude/Crimson/Step-by-Step applied"><i class="fas fa-dice-d20"></i> ST Required: {{_transformData.projectedST}}</span>
+                  <span class="tap-meta-item" title="The Transformation Maneuver ignores Health Threshold Penalties on the Stress Test"><i class="fas fa-heart"></i> Ignores Threshold Pen.{{#if _transformData.ignoredPenalty}} (+{{_transformData.ignoredPenalty}}){{/if}}</span>
+                  {{#if _transformData.crimson}}<span class="tap-meta-item" title="Crimson Acclimation: +2 Combined Stress Test">Crimson +2</span>{{/if}}
+                </div>
+                {{#if _transformData.stepByStep}}
+                <div class="tap-row tap-meta-row">
+                  <span class="tap-meta-item tap-step-good" title="Step-by-Step: you are in the Alternate Form '{{_transformData.stepByStep.formName}}', so its Tier of Power Requirement reduces the new form's Stress Test."><i class="fas fa-angle-double-down"></i> Step-by-Step −{{_transformData.stepByStep.reduction}} (from {{_transformData.stepByStep.formName}})</span>
+                  <label class="tap-wager-label" title="+1 to the Step-by-Step reduction if the new form is of the SAME Transformation Line as your current form (rules line 118).">
+                    <input type="checkbox" class="ttf-checkbox" data-field="transformSameLine" data-round="{{../roundNumber}}" data-action-index="{{@index}}" {{#if transformSameLine}}checked{{/if}} /> Same Line (−1 more)
+                  </label>
+                </div>
+                {{/if}}
+                <div class="tap-row">
+                  <label class="tap-wager-label" title="New Level of Power: the first time you enter a Transformation each Combat Encounter you roll the Stress Test. Check this ONLY when re-entering a form you have ALREADY entered this encounter — re-entering it on its own then needs no Stress Test (auto-success). Ignored when entering in conjunction with another active form.">
+                    <input type="checkbox" class="ttf-checkbox" data-field="transformSkipTest" data-round="{{../roundNumber}}" data-action-index="{{@index}}" {{#if transformSkipTest}}checked{{/if}} /> Already entered this encounter (skip test)
+                  </label>
+                </div>
+                <div class="tap-row tap-actions-row">
+                  <button type="button" class="tap-roll-btn" data-action="roll-tracker-transform" data-round="{{../roundNumber}}" data-action-index="{{@index}}">
+                    {{#if _transformData.willSkipTest}}<i class="fas fa-bolt"></i> Transform (no Stress Test){{else}}<i class="fas fa-dice-d20"></i> Roll Transformation (Stress Test){{/if}}
+                  </button>
+                </div>
+                {{/if}}
+              </div>
+              {{/if}}
+              {{#if (eq type "grapple")}}
+              <div class="tracker-attack-panel tracker-defend-panel" data-round="{{../roundNumber}}" data-action-index="{{@index}}">
+                <div class="tap-row">
+                  <span class="tap-label">Option:</span>
+                  <select class="tgp-option-select" data-round="{{../roundNumber}}" data-action-index="{{@index}}">
+                    <option value="">-- Select --</option>
+                    <option value="init" {{#if (eq grappleOption "init")}}selected{{/if}}>Grapple Check [1/Round]</option>
+                    <option value="tail" {{#if (eq grappleOption "tail")}}selected{{/if}}>Tail Restraint (−2(T))</option>
+                    <option value="escape" {{#if (eq grappleOption "escape")}}selected{{/if}}>Escape Grapple (turn start)</option>
+                    <option value="pulledIn" {{#if (eq grappleOption "pulledIn")}}selected{{/if}}>Pulled In (Might Clash)</option>
+                    <option value="launch" {{#if (eq grappleOption "launch")}}selected{{/if}}>Launch [1/Round]</option>
+                  </select>
+                </div>
+                {{#if grappleOption}}
+                <div class="tap-row tap-actions-row">
+                  <button type="button" class="tap-roll-btn" data-action="use-tracker-grapple" data-round="{{../roundNumber}}" data-action-index="{{@index}}">
+                    <i class="fas fa-hand-rock"></i> Roll Grapple
+                  </button>
+                </div>
+                {{/if}}
+              </div>
+              {{/if}}
+              {{#if (eq type "thrust")}}
+              <div class="tracker-attack-panel tracker-defend-panel" data-round="{{../roundNumber}}" data-action-index="{{@index}}">
+                <div class="tap-row"><span class="tdp-desc">[1/Round] Clash (Strike vs Strike/Dodge) vs a Melee opponent. Win: choose Push Back (½ Might squares) or Knock Prone (Might Clash) in the chat.</span></div>
+                <div class="tap-row tap-actions-row">
+                  <button type="button" class="tap-roll-btn" data-action="use-tracker-thrust" data-round="{{../roundNumber}}" data-action-index="{{@index}}">
+                    <i class="fas fa-arrows-alt-h"></i> Roll Thrust
+                  </button>
+                </div>
+              </div>
+              {{/if}}
+              {{#if (eq type "terrify")}}
+              <div class="tracker-attack-panel tracker-defend-panel" data-round="{{../roundNumber}}" data-action-index="{{@index}}">
+                <div class="tap-row"><span class="tdp-desc">[1/Round] Target within 4 Squares. Skill Clash (Intimidation vs Intuition/Intimidation). Win: Shaken until end of your next turn — if already Shaken, knocked Prone.</span></div>
+                <div class="tap-row tap-actions-row">
+                  <button type="button" class="tap-roll-btn" data-action="use-tracker-terrify" data-round="{{../roundNumber}}" data-action-index="{{@index}}">
+                    <i class="fas fa-ghost"></i> Roll Terrify (Intimidation)
+                  </button>
+                </div>
+              </div>
+              {{/if}}
+              {{#if (eq type "feint")}}
+              <div class="tracker-attack-panel tracker-defend-panel" data-round="{{../roundNumber}}" data-action-index="{{@index}}">
+                <div class="tap-row"><span class="tdp-desc">[1/Round · Instant · 2(T) KP] In response to declaring a Basic Attack (no AoE). Skill Clash (Bluff vs Intuition/Perception). Win: cancel the attack, regain the Action; your next Basic Attack (no AoE) vs that target this turn gets +1(T) Strike and +[initial KP] Wound; they can't Defend (no wager/EC for you).</span></div>
+                <div class="tap-row">
+                  <label class="tap-wager-label" title="KP cost of the Attacking Maneuver you are canceling — added to the follow-up Wound Roll">
+                    <i class="fas fa-fire"></i> Initial attack KP:
+                    <input type="number" class="tdp-input" data-field="feintAttackCost" data-round="{{../roundNumber}}" data-action-index="{{@index}}" value="{{feintAttackCost}}" min="0" />
+                  </label>
+                </div>
+                <div class="tap-row tap-actions-row">
+                  <button type="button" class="tap-roll-btn" data-action="use-tracker-feint" data-round="{{../roundNumber}}" data-action-index="{{@index}}">
+                    <i class="fas fa-theater-masks"></i> Roll Feint (Bluff) — pays 2(T) KP
+                  </button>
+                </div>
+              </div>
+              {{/if}}
+              {{#if (eq type "dirtyTrick")}}
+              <div class="tracker-attack-panel tracker-defend-panel" data-round="{{../roundNumber}}" data-action-index="{{@index}}">
+                <div class="tap-row"><span class="tdp-desc">[1/Round] Target within a Sphere AoE (centered on you). Clash (Bluff vs Intuition). Win: choose Pocket Sand (Blinded), Made ya look! (Guard Down), or It's Such a Tragedy! (Compelled, [1/Encounter]; on your Crit / their Botch they must Transform or Power Up next turn).</span></div>
+                <div class="tap-row tap-actions-row">
+                  <button type="button" class="tap-roll-btn" data-action="use-tracker-dirty-trick" data-round="{{../roundNumber}}" data-action-index="{{@index}}">
+                    <i class="fas fa-hand-sparkles"></i> Roll Dirty Trick (Bluff)
+                  </button>
+                </div>
+              </div>
+              {{/if}}
               {{else}}
               <div class="tracker-action past-action">
                 <span class="action-type-label">{{type}}</span>
                 <span class="action-ki-label">{{#if kiCost}}KI: {{kiCost}}{{/if}}{{#if dkpCost}} DKP: {{dkpCost}}{{/if}}</span>
                 <span class="action-desc-label">{{description}}{{#if source}} [{{source}}]{{/if}}</span>
               </div>
+              {{/if}}
               {{/if}}
               {{/each}}
             </div>
@@ -226,6 +460,7 @@
         <div class="tracker-controls">
           <button type="button" data-action="tracker-add-action" class="action-btn primary"><i class="fas fa-plus"></i> Action</button>
           <button type="button" data-action="tracker-add-action" data-default-type="attack" class="action-btn attack"><i class="fas fa-fist-raised"></i> Attack</button>
+          <button type="button" data-action="roll-tracker-dodge" class="action-btn dodge" title="Roll Dodge ({{trackerDodge.formula}} · CT {{trackerDodge.ct}}+)"><i class="fas fa-wind"></i> Dodge</button>
           <button type="button" data-action="tracker-next-round" class="action-btn"><i class="fas fa-forward"></i> Next Round</button>
           <button type="button" data-action="tracker-reset" class="action-btn danger"><i class="fas fa-trash"></i> Reset</button>
         </div>
@@ -284,27 +519,6 @@
       </table>
     </div>
   </div>
-
-  {{#if hasSpecialTransformationResources}}
-  <div class="combat-card">
-    <div class="combat-card-header">
-      <i class="fas fa-vial"></i> Transformation Resources
-    </div>
-    <div class="combat-resource-list">
-      {{#each specialTransformationResources}}
-      <div class="combat-resource-item">
-        <div class="resource-main">
-          <span class="resource-name">{{label}}</span>
-          <span class="resource-uses">{{value}}{{#if max}} / {{max}}{{/if}}</span>
-        </div>
-        {{#if sourceName}}
-        <div class="resource-meta">{{sourceName}}</div>
-        {{/if}}
-      </div>
-      {{/each}}
-    </div>
-  </div>
-  {{/if}}
 
   {{#if hasUniverseSeed}}
   <div class="combat-card">
@@ -1970,44 +2184,6 @@
     </div>
     {{/if}}
 
-    {{!-- CENTER: Resources Used --}}
-    <div class="combat-panel combat-panel-used">
-      <div class="section-header">
-        Turn Resources Used
-        <span class="round-indicator">Round {{combatRound}}</span>
-      </div>
-      <div class="combat-used-summary">
-        <span>Round: {{combatRoundUses}} uses</span>
-        <span>Encounter: {{combatEncounterUses}} uses</span>
-      </div>
-      <div class="combat-panel-body combat-used-body">
-        {{#each combatUsedResources}}
-        <div class="combat-used-item" data-effect-id="{{id}}">
-          <span class="used-name">{{sourceName}} <small>Lv{{level}}</small></span>
-          {{#if hasCap}}
-          <div class="used-pips">
-            {{#each pips}}
-            <span class="usage-pip {{#if available}}available{{/if}}"></span>
-            {{/each}}
-          </div>
-          {{else}}
-          <span class="resource-use-count">{{usedCount}}x</span>
-          {{/if}}
-          <div class="used-controls">
-            <button type="button" class="used-control-btn combat-undo-use" data-effect-id="{{id}}" data-limit="{{usageLimit}}" title="Undo"><i class="fas fa-minus"></i></button>
-            <button type="button" class="used-control-btn combat-add-use" data-effect-id="{{id}}" data-limit="{{usageLimit}}" title="Add" {{#if isMaxed}}disabled{{/if}}><i class="fas fa-plus"></i></button>
-          </div>
-        </div>
-        {{else}}
-        <div class="empty-message">No resources used this turn.</div>
-        {{/each}}
-      </div>
-      <div class="combat-panel-footer">
-        <button type="button" data-action="combat-new-round" class="action-btn"><i class="fas fa-sync"></i> New Round</button>
-        <button type="button" data-action="combat-new-encounter" class="action-btn danger"><i class="fas fa-redo"></i> New Encounter</button>
-      </div>
-    </div>
-
     {{!-- SIZE COMBAT RULES (at end of grid) --}}
     {{#if system.sizeCombatRules.length}}
     <div class="combat-panel combat-panel-size-rules">
@@ -2056,6 +2232,12 @@
                 {{selectOptions defenseOptions selected=system.damageCalc.defense}}
               </select>
             </div>
+            {{#if (eq system.damageCalc.defense "guard")}}
+            <div class="dmg-field dmg-wound-only">
+              <label title="Energy Charges on the incoming attack — Guard costs +1(T) KP each (max +4(T))">Attack EC</label>
+              <input type="number" class="combat-dmg-input" data-field="incomingEC" value="{{system.damageCalc.incomingEC}}" min="0" />
+            </div>
+            {{/if}}
           </div>
           <div class="dmg-input-row">
             <div class="dmg-field">
@@ -2068,7 +2250,8 @@
             </div>
             <div class="dmg-field dmg-result">
               <label>Final Damage</label>
-              <span class="dmg-result-value">{{system.damageCalc.healthReduction}}</span>
+              <span class="dmg-result-value" title="Soak {{system.damageCalc.effectiveSoak}} + DR {{system.damageCalc.innateDR}} + Extra DR {{system.damageCalc.damageReduction}} = -{{system.damageCalc.totalReduction}}">{{system.damageCalc.healthReduction}}</span>
+              <span class="dmg-result-breakdown">Soak {{system.damageCalc.effectiveSoak}} · DR {{add system.damageCalc.innateDR system.damageCalc.damageReduction}}</span>
             </div>
           </div>
           <div class="dmg-input-row dmg-actions">
@@ -2197,53 +2380,30 @@
     </div>
     {{/if}}
 
-    {{!-- COMBAT COUNTERS (Energy Charges, Power Stacks, Diminishing D/O, God Ki toggle) --}}
-    <div class="combat-panel combat-counters-panel" style="grid-column: 1 / -1;">
+    {{!-- ROUND STATUS — read-only, auto-tracked by the Round Tracker (attacks,
+         dodges, counters). Diminishing Offense/Defense are applied automatically
+         at roll time and reset every round. --}}
+    <div class="combat-panel round-status-panel" style="grid-column: 1 / -1;">
       <div class="section-header">
-        <i class="fas fa-sliders"></i> Combat Counters
+        <i class="fas fa-list-ol"></i> Round Status
+        <span class="round-status-hint">auto-tracked</span>
       </div>
-      <div class="combat-counters-grid">
-        <div class="counter-item">
-          <label>Energy Charges</label>
-          <div class="counter">
-            <button type="button" class="counter-btn minus" data-field="system.tracking.energyCharges" data-action="decrease">-</button>
-            <input type="number" name="system.tracking.energyCharges" value="{{system.tracking.energyCharges}}" min="0" />
-            <button type="button" class="counter-btn plus" data-field="system.tracking.energyCharges" data-action="increase">+</button>
-          </div>
+      <div class="round-status-grid">
+        <div class="round-status-item">
+          <div class="round-status-label"><i class="fas fa-fist-raised"></i> Attacks this round</div>
+          <div class="round-status-value">{{system.combatTabState.roundAttackCount}}</div>
+          <div class="round-status-sub">{{#if system.tracking.diminishingOffense}}<span class="rs-warn">Diminishing Offense −{{system.tracking.diminishingOffense}}(bT) Strike</span>{{else}}No Diminishing Offense (from 4th attack){{/if}}</div>
         </div>
-        <div class="counter-item">
-          <label>Power Stacks</label>
-          <div class="counter">
-            <button type="button" class="counter-btn minus" data-field="system.tracking.powerStacks" data-action="decrease">-</button>
-            <input type="number" name="system.tracking.powerStacks" value="{{system.tracking.powerStacks}}" min="0" />
-            <button type="button" class="counter-btn plus" data-field="system.tracking.powerStacks" data-action="increase">+</button>
-          </div>
+        <div class="round-status-item">
+          <div class="round-status-label"><i class="fas fa-wind"></i> Dodges this round</div>
+          <div class="round-status-value">{{system.combatTabState.roundDodgeCount}}</div>
+          <div class="round-status-sub">{{#if system.tracking.diminishingDefense}}<span class="rs-warn">Diminishing Defense −{{system.tracking.diminishingDefense}} stack(s) DV</span>{{else}}No Diminishing Defense (from 2nd dodge){{/if}}</div>
         </div>
-        <div class="counter-item">
-          <label>Diminishing Defense</label>
-          <div class="counter">
-            <button type="button" class="counter-btn minus" data-field="system.tracking.diminishingDefense" data-action="decrease">-</button>
-            <input type="number" name="system.tracking.diminishingDefense" value="{{system.tracking.diminishingDefense}}" min="0" />
-            <button type="button" class="counter-btn plus" data-field="system.tracking.diminishingDefense" data-action="increase">+</button>
-          </div>
+        <div class="round-status-item">
+          <div class="round-status-label"><i class="fas fa-shield-alt"></i> Counter Actions</div>
+          <div class="round-status-value">{{system.combatTabState.roundCounterCount}}</div>
+          <div class="round-status-sub">Defend / Duel spent this round</div>
         </div>
-        <div class="counter-item">
-          <label>Diminishing Offense</label>
-          <div class="counter">
-            <button type="button" class="counter-btn minus" data-field="system.tracking.diminishingOffense" data-action="decrease">-</button>
-            <input type="number" name="system.tracking.diminishingOffense" value="{{system.tracking.diminishingOffense}}" min="0" />
-            <button type="button" class="counter-btn plus" data-field="system.tracking.diminishingOffense" data-action="increase">+</button>
-          </div>
-        </div>
-      </div>
-      <div class="god-ki-tracking">
-        <label class="god-ki-toggle">
-          <input type="checkbox" name="system.godKi.permanent" {{#if system.godKi.permanent}}checked{{/if}} />
-          <span class="god-ki-label">Permanent God Ki</span>
-        </label>
-        {{#if system.godKi.active}}
-        <span class="god-ki-active-badge"><i class="fas fa-sun"></i> God Ki Active</span>
-        {{/if}}
       </div>
     </div>
 

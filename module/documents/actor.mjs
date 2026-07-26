@@ -367,6 +367,25 @@ export class DBUActor extends Actor {
    * active transformations, active auras, and custom buffs.
    */
   _calculateAttributeModifiers(system, tier) {
+    // Precompute Scaling Aspect x per active transformation (transformation-aspects.txt:92):
+    // x = base Tier of Power − the Transformation's ORIGINAL ToP Requirement, capped at
+    // the Aspect's level. Drives the +x(T) AMB (below) and the +2x Stress Test Requirement
+    // (folded into combinedStressTest in _calculateResources).
+    const scalingByTransId = {};
+    (system.transformations || []).forEach((trans, idx) => {
+      if (!trans?.active || !trans.aspects) return;
+      let lv = 0;
+      for (const asp of trans.aspects) {
+        const m = String(asp).trim().match(/^Scaling(?:\s*\(?\s*LV\s*(\d+)\s*\)?)?/i);
+        if (m) lv = Math.max(lv, Math.min(2, m[1] ? parseInt(m[1]) : 1));
+      }
+      if (lv <= 0) return;
+      const origReq = parseInt(String(trans.tierRequirement || "").match(/(\d+)/)?.[1] || "0");
+      const x = Math.max(0, Math.min(lv, (system.baseTier || 1) - origReq));
+      if (x > 0) scalingByTransId[String(trans.id ?? `idx${idx}`)] = x;
+    });
+    system._scalingByTransId = scalingByTransId;
+
     for (const key of ["ag", "fo", "te", "sc", "in", "ma", "pe"]) {
       const attr = system.attributes[key];
       if (!attr) continue;
@@ -401,6 +420,12 @@ export class DBUActor extends Actor {
             }
             modifier += amb;
           }
+        }
+
+        // Scaling Aspect: +x(T) to Attribute Modifier Bonuses, EXCEPT Insight.
+        if (key !== "in") {
+          const sx = scalingByTransId[String(trans.id ?? `idx${_tIdx}`)] || 0;
+          if (sx > 0) modifier += sx * tier;
         }
 
         // Pure Resolve: chosen AMBs +1, and doubling in Enhancement
@@ -742,6 +767,16 @@ export class DBUActor extends Actor {
     let stepByStepReduction = 0;
 
     const allActiveTransForRules = [...(system.transformations || []), ...gainedActiveTrans];
+    // Strainless: "Ignore the effects of Turbulent Power for this Transformation.
+    // Temporarily remove this Aspect if this Transformation is used in conjunction
+    // with another Transformation that does not have the Strainless or Natural
+    // Aspects." (transformation-aspects.txt:105)
+    const _hasAspect = (t, name) =>
+      (t.aspects || []).some(a => String(a).trim().startsWith(name));
+    const _activeForRules = allActiveTransForRules.filter(t => t.active);
+    const _allStrainlessOrNatural = _activeForRules.every(
+      t => _hasAspect(t, "Strainless") || _hasAspect(t, "Natural")
+    );
     for (const trans of allActiveTransForRules) {
       if (!trans.active) continue;
       const tt = trans.transformationType || "";
@@ -751,7 +786,10 @@ export class DBUActor extends Actor {
         if (trMatch) stepByStepReduction = Math.max(stepByStepReduction, parseInt(trMatch[1]));
       }
       if (["enhancement_standard", "enhancement_special", "enhancement_transcendent"].includes(tt)) {
-        turbulentPowerActive = true;
+        const effStrainless = _hasAspect(trans, "Strainless") && _allStrainlessOrNatural;
+        if (!effStrainless && !_hasAspect(trans, "Natural")) {
+          turbulentPowerActive = true;
+        }
       }
     }
 
@@ -771,7 +809,19 @@ export class DBUActor extends Actor {
     // Prelude rule: "reduce this Transformation's Stress Test Requirement by 5"
     let combinedStressTest = 0;
     const activeStressTests = [];
-    for (const trans of allActiveTransForRules) {
+    const scalingMap = system._scalingByTransId || {};
+    (system.transformations || []).forEach((trans, idx) => {
+      if (!trans.active) return;
+      let st = Number(trans.stressTest) || 0;
+      const hasPreludeAspect = (trans.aspects || []).some(a => String(a).trim() === "Prelude");
+      if (hasPreludeAspect && trans.preludeActive) st = Math.max(0, st - 5);
+      // Scaling Aspect: increase this Transformation's Stress Test Requirement by 2x.
+      const sx = scalingMap[String(trans.id ?? `idx${idx}`)] || 0;
+      if (sx > 0) st += 2 * sx;
+      if (st > 0) activeStressTests.push(st);
+    });
+    // Gained (OSF) active transformations don't get Scaling (host-owned); keep prior behavior.
+    for (const trans of (system._gainedActiveTransformations || [])) {
       if (!trans.active) continue;
       let st = Number(trans.stressTest) || 0;
       const hasPreludeAspect = (trans.aspects || []).some(a => String(a).trim() === "Prelude");
@@ -1055,6 +1105,31 @@ export class DBUActor extends Actor {
 
   _calculateCombatStats(system, tier, baseTier) {
     let size = system.status?.currentSize || system.baseSize || "medium";
+    // Growth Aspect (transformation-aspects.txt:46): LV1 sets Size Category to
+    // Large; each further level +1 (LV2 Enormous, LV3 Gigantic). Cannot lower
+    // your Size Category below what it would be otherwise. Applied here so all
+    // size-dependent combat stats (Soak/DV/Speed/Melee/Push) use the new size.
+    {
+      const order = DBUActor.SIZE_ORDER;
+      const growthTrans = [...(system.transformations || []), ...(system._gainedActiveTransformations || [])];
+      let growthLevel = 0;
+      for (const t of growthTrans) {
+        if (!t?.active) continue;
+        for (const asp of (t.aspects || [])) {
+          const m = String(asp).trim().match(/^Growth(?:\s*\(?\s*LV\s*(\d+)\s*\)?)?/i);
+          if (m) growthLevel = Math.max(growthLevel, Math.min(3, m[1] ? parseInt(m[1]) : 1));
+        }
+      }
+      if (growthLevel > 0) {
+        const targetIdx = order.indexOf("large") + (growthLevel - 1);
+        const curIdx = order.indexOf(size);
+        const newIdx = Math.min(order.length - 1, Math.max(curIdx, targetIdx));
+        if (newIdx > curIdx) {
+          size = order[newIdx];
+          if (system.status) system.status.currentSize = size;
+        }
+      }
+    }
     // Custom buff "Size Category" — shift size by N categories
     const sizeBuff = this._getBuffTotal(system, "Size Category");
     if (sizeBuff !== 0) {
@@ -1333,12 +1408,15 @@ export class DBUActor extends Actor {
     system.aptitudes.alertReroll = system.aptitudes.alertReroll ?? false;
 
     // --- Stress Bonus ---
-    // Base: 1 + Determination(floor(PE_Score/4)) + Power Level - threshold stress penalty
-    // Determination: +1 per 4 PE Score (continuous, not thresholded)
-    // Roll: 1d10 + 1 + Stress Bonus (the +1 is in the roll, not here)
-    // Derived-only field, accumulated by racial automation functions and finalized in prepareDerivedData.
-    system.aptitudes.stressBonus = 1 + (system.level || 1)
-      + Math.floor((system.attributes.pe?.score ?? 0) / 4)
+    // Rules (transformation-rules.txt:35-38): "The sum of your Power Level and
+    // Determination is known as your Stress Bonus." The flat +1 from the
+    // "1d10+1" roll is added at ROLL TIME (all stress-test handlers roll
+    // `1d10 + 1 + stressBonus`), NOT baked in here — otherwise it double-counts.
+    // Determination (attributes.txt:154): PE 4+ → +1, doubled to +2 at PE 8+
+    // (capped — it does NOT keep scaling past 8).
+    const peScore = system.attributes.pe?.score ?? 0;
+    const determination = peScore >= 8 ? 2 : (peScore >= 4 ? 1 : 0);
+    system.aptitudes.stressBonus = (system.level || 1) + determination
       - (system.thresholds?.stressPenalty || 0);
 
     // Gifted Student: "If SC Score 4+, +2 Dice Score on Skill Checks, +3 TP per Skill Improvement. Double if SC 8+."
@@ -1403,6 +1481,13 @@ export class DBUActor extends Actor {
     // Converts hardcoded talent/state bonuses into unified buff entries so
     // _getBuffTotal("Strike"/"Dodge"/"Wound") aggregates everything.
     this._generateDerivedBuffs(system);
+
+    // --- Active temp effects on passive stats (activable automation engine) ---
+    for (const fx of (system.combatTabState?.activeTempEffects || [])) {
+      if (!fx?.amount) continue;
+      if (fx.stat === "soak") system.status.soak = (system.status.soak || 0) + fx.amount;
+      else if (fx.stat === "defense") system.aptitudes.defenseValue = (system.aptitudes.defenseValue || 0) + fx.amount;
+    }
 
     // --- Aggregate combat roll buff totals (custom + derived) ---
     // Single pre-computed total per combat roll type for the sheet to consume.
@@ -2334,7 +2419,8 @@ export class DBUActor extends Actor {
       masteryConditionals,
       mindfulAspectLevel,
       ragingAspectLevel,
-      strainlessActive
+      strainlessActive,
+      perfectKiControlActive: hasPerfectKiControl
     };
 
     // Apply Mindful aspect: only effective while in Mindful Combat State.
@@ -2555,8 +2641,15 @@ export class DBUActor extends Actor {
     else if (dmgCategory === "lethal") effectiveSoak = 0;
     if (defense === "directHit") effectiveSoak = Math.floor(effectiveSoak * 1.5);
 
-    const totalReduction = (Number(dc.damageReduction) || 0) + effectiveSoak;
+    // DR = innate Damage Reduction (status.damageReduction — the comprehensive
+    // total: equipment + racial + talents + God Ki + buffs + aspects, finalized
+    // before this runs) + manual "Extra DR" input. Unlike Soak, DR is NOT
+    // reduced by the Damage Category (attacking.txt:63).
+    const innateDR = system.status?.damageReduction || 0;
+    const totalReduction = innateDR + (Number(dc.damageReduction) || 0) + effectiveSoak;
     dc.totalReduction = totalReduction;
+    dc.effectiveSoak = effectiveSoak;
+    dc.innateDR = innateDR;
 
     let healthReduction = Math.max(0, woundRoll - totalReduction);
 
@@ -3033,6 +3126,18 @@ export class DBUActor extends Actor {
       const analysisVal = Math.floor(scScore / 2);
       for (const eff of ["Strike", "Dodge", "Wound"]) {
         buffs.push({ active: true, effect: eff, flat: analysisVal, bT: 0, T: 0, source: "Analysis" });
+      }
+    }
+
+    // --- Active Temp Effects (activable automation engine) ---
+    // Roll-stat effects become derived buffs; soak/defense are applied
+    // separately after this call in _prepareCharacterData.
+    const rollStatMap = { strike: ["Strike"], dodge: ["Dodge"], wound: ["Wound"], combatRolls: ["Strike", "Dodge", "Wound"] };
+    for (const fx of (system.combatTabState?.activeTempEffects || [])) {
+      const effects = rollStatMap[fx?.stat];
+      if (!effects || !fx.amount) continue;
+      for (const eff of effects) {
+        buffs.push({ active: true, effect: eff, flat: fx.amount, bT: 0, T: 0, source: fx.source || "Activable" });
       }
     }
 

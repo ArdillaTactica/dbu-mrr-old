@@ -149,7 +149,7 @@
           </div>
           <div class="eq-field">
             <label>Break Value</label>
-            <input type="number" class="eq-inline-input" data-item-id="{{_id}}" data-field="system.breakValueCurrent" value="{{system.breakValueCurrent}}" min="0" max="6" />
+            <input type="number" class="eq-inline-input" data-item-id="{{_id}}" data-field="system.breakValueCurrent" value="{{system.breakValueCurrent}}" min="0" max="{{bvMax}}" /> <span class="eq-bv-max">/ {{bvMax}}</span>
           </div>
           <div class="eq-field check-field">
             <label><input type="checkbox" class="eq-inline-check" data-item-id="{{_id}}" data-field="system.doffUsed" {{#if system.doffUsed}}checked{{/if}} /> Doff Used</label>
@@ -409,6 +409,63 @@
     </div>
     {{else}}
     <div class="empty-message">No accessories. Click <i class="fas fa-plus"></i> to add.</div>
+    {{/each}}
+  </div>
+
+  {{!-- Basic Items --}}
+  <div class="section-header">
+    Basic Items
+    <button type="button" class="add-btn item-create" data-type="equipment" data-eq-type="basicItem" title="Add Basic Item"><i class="fas fa-plus"></i></button>
+  </div>
+  <div class="eq-basic-items-list">
+    {{#each basicItems}}
+    <div class="eq-item-card eq-basic-item-card" data-item-id="{{_id}}">
+      <div class="eq-card-header">
+        <span class="eq-card-name">{{name}}</span>
+        <span class="eq-type-badge basic-item-badge">Basic Item</span>
+        {{#if _isTech}}<span class="eq-type-badge tech-badge" title="Requires Craft: Basic Item skill rank to create">[Tech]</span>{{/if}}
+        {{#if _isSpecial}}<span class="eq-type-badge special-badge" title="ARC-only — cannot be crafted">Special</span>{{/if}}
+        <div class="eq-card-controls">
+          <a class="item-delete" data-item-id="{{_id}}" title="Delete"><i class="fas fa-trash"></i></a>
+        </div>
+      </div>
+      <div class="eq-card-body">
+        <div class="eq-fields-grid">
+          <div class="eq-field full-width">
+            <label>Catalog</label>
+            <select class="eq-basic-catalog-select" data-item-id="{{_id}}">
+              <option value="" {{#unless system.basicItemKey}}selected{{/unless}}>-- Custom / None --</option>
+              <optgroup label="Standard">
+                {{#each @root.basicItemCatalogOptions.standard}}
+                <option value="{{id}}" {{#if (eq id ../system.basicItemKey)}}selected{{/if}}>{{name}}{{#if isTech}} [Tech]{{/if}}</option>
+                {{/each}}
+              </optgroup>
+              <optgroup label="Special (ARC-only)">
+                {{#each @root.basicItemCatalogOptions.special}}
+                <option value="{{id}}" {{#if (eq id ../system.basicItemKey)}}selected{{/if}}>{{name}}</option>
+                {{/each}}
+              </optgroup>
+            </select>
+          </div>
+          <div class="eq-field">
+            <label>Name</label>
+            <input type="text" class="eq-inline-input" data-item-id="{{_id}}" data-field="name" value="{{name}}" />
+          </div>
+          {{#if _catalogEntry}}
+          <div class="eq-field">
+            <label>Craft DC</label>
+            <span class="eq-static-value">{{_craftDCLabel}}</span>
+          </div>
+          {{/if}}
+        </div>
+        <div class="eq-field full-width">
+          <label>{{#if _catalogEntry}}Effects{{else}}Description{{/if}}</label>
+          <textarea class="eq-inline-input eq-description" data-item-id="{{_id}}" data-field="system.description" rows="2">{{system.description}}</textarea>
+        </div>
+      </div>
+    </div>
+    {{else}}
+    <div class="empty-message">No basic items. Click <i class="fas fa-plus"></i> to add.</div>
     {{/each}}
   </div>
 

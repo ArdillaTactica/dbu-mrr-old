@@ -32,6 +32,7 @@ module/data/_build_catalog.py
 
 # LevelDB runtime artifacts
 packs/**/LOCK
+packs/**/lost/
 
 # Node / build artifacts
 node_modules/
