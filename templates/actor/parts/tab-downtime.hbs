@@ -36,6 +36,21 @@
     {{/if}}
   </div>
 
+  {{!-- ==================== LIFETIME GAINS ==================== --}}
+  {{#if dtHasGains}}
+  <div class="dt-gains-section">
+    <div class="dt-category-header"><i class="fas fa-chart-line"></i> Gains from Downtime</div>
+    <div class="dt-gains-list">
+      {{#each dtGainsSummary}}<span class="dt-gain-chip">{{this}}</span>{{/each}}
+    </div>
+  </div>
+  {{/if}}
+  {{#if dtStrenuousActive}}
+  <div class="dt-strenuous-banner">
+    <i class="fas fa-heart-broken"></i> Strenuous: {{dtStrenuousLabel}} for the next {{dtStrenuousLeft}} Combat Encounter(s)
+  </div>
+  {{/if}}
+
   {{!-- ==================== ACTIVITIES ==================== --}}
   <div class="dt-activities-section">
 
@@ -60,6 +75,11 @@
             <button type="button" class="dt-btn dt-btn-undo" data-action="dt-undo-activity" data-activity-id="{{id}}" title="Undo this activity">
               <i class="fas fa-undo"></i> Undo
             </button>
+            {{#unless disabled}}
+            <button type="button" class="dt-btn dt-btn-use" data-action="dt-use-activity" data-activity-id="{{id}}" title="Use again (Mentor / Deep Focus)">
+              <i class="fas fa-check-circle"></i> Use
+            </button>
+            {{/unless}}
           {{else}}
             <button type="button" class="dt-btn dt-btn-use" data-action="dt-use-activity" data-activity-id="{{id}}"
               {{#if disabled}}disabled{{/if}}
@@ -93,6 +113,11 @@
             <button type="button" class="dt-btn dt-btn-undo" data-action="dt-undo-activity" data-activity-id="{{id}}" title="Undo this activity">
               <i class="fas fa-undo"></i> Undo
             </button>
+            {{#unless disabled}}
+            <button type="button" class="dt-btn dt-btn-use" data-action="dt-use-activity" data-activity-id="{{id}}" title="Use again (Mentor / Deep Focus)">
+              <i class="fas fa-check-circle"></i> Use
+            </button>
+            {{/unless}}
           {{else}}
             <button type="button" class="dt-btn dt-btn-use" data-action="dt-use-activity" data-activity-id="{{id}}"
               {{#if disabled}}disabled{{/if}}

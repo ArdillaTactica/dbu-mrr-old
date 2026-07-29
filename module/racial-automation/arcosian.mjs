@@ -8,6 +8,8 @@
  *   system.keratinousPlatingOption
  */
 
+import { applyMetaTraitEffects } from "./alternate-forms.mjs";
+
 // Arcosian trait IDs from racial-traits-catalog.mjs
 const TRAIT_IDS = {
   divergentEvolution: "b252198d4bafa7c6",
@@ -143,6 +145,23 @@ export function applyArcosianBonuses(system, tier, baseTier) {
     });
   }
 
+  // Divergent Evolution: chosen Meta Trait (Standard: permanent benefits;
+  // Mutant: while in any Legendary Form — the benefit application is the same,
+  // timing is player-managed per their chosen option).
+  let divergentMeta = null;
+  if (has.divergentEvolution && !disabled.has(TRAIT_IDS.divergentEvolution)) {
+    const dvState = system.transformationMeta?.metaTraitState?.divergent || {};
+    const metaCatalog = (typeof CONFIG !== "undefined" && CONFIG.DBU?.metaTraitsCatalog) || [];
+    const def = metaCatalog.find(t => t.id === dvState.trait);
+    if (def) {
+      const metaEntry = { bonuses: [], conditionals: [], triggered: [] };
+      const names = new Set([def.name.toLowerCase()]);
+      applyMetaTraitEffects(system, metaEntry, null, tier, baseTier, names, dvState.config?.option || "", "divergent");
+      divergentMeta = { name: def.name, bonuses: metaEntry.bonuses, conditionals: metaEntry.conditionals };
+      triggered.push(...metaEntry.triggered);
+    }
+  }
+
   // Store derived data for UI display
   system.arcosianBonuses = {
     has,
@@ -153,6 +172,7 @@ export function applyArcosianBonuses(system, tier, baseTier) {
     platingSleekDefense,
     platingRoyalStress,
     platingCombatWound,
+    divergentMeta,
     triggered
   };
 }

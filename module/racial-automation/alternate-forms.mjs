@@ -196,8 +196,15 @@ export function applyAlternateFormBonuses(system, tier, baseTier) {
     // Catch-all: pick up any triggered/limited effects from catalog not hardcoded above
     const resolvedEffects = getResolvedTransformationEffects(trans, options);
     const existingTriggerIds = new Set(entry.triggered.map(t => t.id));
+    // Metamorphosis stages list ALL 14 Meta Traits in their catalog traitGroups as
+    // reference — only the CHOSEN ones (handled by applyMetaTraitEffects) should
+    // surface as activables, so skip meta-trait groups here.
+    const _normName = (s) => String(s || "").toLowerCase().replace(/[’']/g, "'");
+    const _metaNames = new Set(((typeof CONFIG !== "undefined" && CONFIG.DBU?.metaTraitsCatalog) || []).map(t => _normName(t.name)));
+    const _isMetaStage = ["full_suppression", "limited_suppression", "partial_suppression", "true_form"].includes(key);
     for (const [idx, eff] of resolvedEffects.entries()) {
       if (!["triggered", "limited"].includes(eff.activationType)) continue;
+      if (_isMetaStage && _metaNames.has(_normName(eff.groupName))) continue;
       const autoId = `${key}_${slugify(eff.groupName)}_${eff.level || 0}_${idx}`;
       if (existingTriggerIds.has(autoId)) continue;
       const baseName = eff.groupName || trans.name;
@@ -512,6 +519,9 @@ function applyBonusesForKey(key, system, tier, baseTier, S, G, options, entry, t
         description: "Set your Initiative to 1 higher than the highest Initiative in the Combat Encounter until the end of the Combat Round. This does not influence your Initiative Value.",
         usageLimit: "1/Encounter", maxUses: 1
       });
+      // Meta Traits chosen for this stage (S=0 → 1 trait)
+      applyMetaTraitEffects(system, entry, totals, tier, baseTier,
+        _getMetaTraitNames(system, key), _getMetaVWOption(system, key), "full_supp");
       break;
     }
 
@@ -538,6 +548,9 @@ function applyBonusesForKey(key, system, tier, baseTier, S, G, options, entry, t
         description: "When you gain a stack(s) of Cruelty, reduce your Critical Target for your Strike Rolls by 1 until the end of this Combat Round.",
         usageLimit: "2/Round", maxUses: 2
       });
+      // Meta Traits chosen for this stage (S=1 → 2 traits)
+      applyMetaTraitEffects(system, entry, totals, tier, baseTier,
+        _getMetaTraitNames(system, key), _getMetaVWOption(system, key), "limited_supp");
       break;
     }
 
@@ -559,83 +572,22 @@ function applyBonusesForKey(key, system, tier, baseTier, S, G, options, entry, t
         description: "Reduce your Cruelty Stacks by 2 to use the Basic Attack Maneuver as an Instant Maneuver.",
         usageLimit: "1/Round", maxUses: 1
       });
+      // Meta Traits chosen for this stage (S=2 → 3 traits)
+      applyMetaTraitEffects(system, entry, totals, tier, baseTier,
+        _getMetaTraitNames(system, key), _getMetaVWOption(system, key), "partial_supp");
       break;
     }
 
     case "true_form": {
-      // True Form has selectable Meta Traits — check options
+      // True Form has selectable Meta Traits (via the Meta Traits UI).
       const opt = _findOptionValue(options);
-
-      // Bio-Suit is mandatory (required by 100% Power), so always apply
-      totals.dr += 2 * tier;
-      totals.steadfast += 1;
-      entry.bonuses.push(`+${2 * tier} DR (Bio-Suit)`);
-      entry.bonuses.push("+1 Steadfast Dice Score (Bio-Suit)");
-
-      // Check structuredTraits for known meta trait names
       const metaTraits = _getMetaTraitNames(system, key);
-
-      if (metaTraits.has("aerodynamic")) {
-        const speedAdd = tier;
-        addSpeed(system, speedAdd);
-        totals.speed += speedAdd;
-        entry.bonuses.push(`+${speedAdd} Speed (Aerodynamic)`);
-      }
-
-      if (metaTraits.has("variable-weight plating") || metaTraits.has("variable_weight_plating")) {
-        if (opt && (opt.toLowerCase().includes("heavy"))) {
-          const soakAdd = 2 * tier;
-          const defPen = tier;
-          addSoak(system, soakAdd);
-          system.aptitudes.defenseValue = (system.aptitudes.defenseValue || 0) - defPen;
-          totals.soak += soakAdd;
-          totals.defense -= defPen;
-          entry.bonuses.push(`+${soakAdd} Soak, -${defPen} Defense (Heavy Plating)`);
-        } else if (opt && (opt.toLowerCase().includes("light"))) {
-          const defAdd = 2 * tier;
-          const soakPen = tier;
-          system.aptitudes.defenseValue = (system.aptitudes.defenseValue || 0) + defAdd;
-          addSoak(system, -soakPen);
-          totals.defense += defAdd;
-          totals.soak -= soakPen;
-          entry.bonuses.push(`+${defAdd} Defense, -${soakPen} Soak (Light Plating)`);
-        }
-      }
-
-      // Last Resource: Wound +1(T) per threshold below — conditional
-      if (metaTraits.has("last resource") || metaTraits.has("last_resource")) {
-        entry.conditionals.push(`Per threshold below: +${tier} Wound (Last Resource)`);
-      }
-
-      // Burning Hatred: while Compelled, Wound +1d6(T)
-      if (metaTraits.has("burning hatred") || metaTraits.has("burning_hatred")) {
-        entry.conditionals.push(`Compelled: +1d6(${tier}) Wound (Burning Hatred)`);
-      }
-
-      // Pressure L1: 2+ Cruelty, ST Strike +1(T)
-      if (metaTraits.has("pressure")) {
-        entry.conditionals.push(`2+ Cruelty: +${tier} ST Strike (Pressure)`);
-      }
-
-      // No Quarter L1 [Passive]: Brutal Assault Extra Dice +2 Dice Categories
-      if (metaTraits.has("no quarter") || metaTraits.has("no_quarter")) {
-        entry.conditionals.push("Brutal Assault Extra Dice +2 Dice Categories (No Quarter)");
-      }
-
-      // King's Stature L1 [Passive]: Size = Enormous
-      if (metaTraits.has("king's stature") || metaTraits.has("kings_stature") || metaTraits.has("king stature")) {
-        entry.conditionals.push("Size Category set to Enormous (King's Stature)");
-      }
-
-      // Redirected Energy L1 [Passive]: after Attacking Maneuver, regain 1(bT) KP
-      if (metaTraits.has("redirected energy") || metaTraits.has("redirected_energy")) {
-        entry.conditionals.push(`After Attacking Maneuver: regain ${baseTier} KP (Redirected Energy)`);
-      }
-
-      // Frozen Magician [Passive]: on gaining Cruelty, reduce UA KP cost by 1(T)
-      if (metaTraits.has("frozen magician") || metaTraits.has("frozen_magician")) {
-        entry.conditionals.push(`On gaining Cruelty: UA KP cost -${tier} (Frozen Magician)`);
-      }
+      // 100% Power: Bio-Suit and Redirected Energy are mandatory picks
+      metaTraits.add("bio-suit");
+      metaTraits.add("redirected energy");
+      const vwOption = _getMetaVWOption(system, key)
+        || (opt && opt.toLowerCase().includes("heavy") ? "heavy" : (opt && opt.toLowerCase().includes("light") ? "light" : ""));
+      applyMetaTraitEffects(system, entry, totals, tier, baseTier, metaTraits, vwOption, "true_form");
 
       // Transforming Physique L5: +3d6(bT) LP on Legend Realized
       entry.conditionals.push(`Legend Realized LP +3d6(${baseTier}) (Transforming Physique)`);
@@ -669,97 +621,6 @@ function applyBonusesForKey(key, system, tier, baseTier, S, G, options, entry, t
         usageLimit: "1/Encounter", maxUses: 1
       });
 
-      // Meta trait triggered entries
-      if (metaTraits.has("aerodynamic")) {
-        entry.triggered.push({
-          id: "true_form_aerodynamic_3", name: "Aerodynamic (1/Round)",
-          description: "If you hit an Opponent with an Attacking Maneuver and deal Damage, you may use the Movement Maneuver as an Out-of-Sequence Maneuver.",
-          usageLimit: "1/Round", maxUses: 1
-        });
-      }
-      if (metaTraits.has("elongated tail") || metaTraits.has("elongated_tail")) {
-        entry.triggered.push({
-          id: "true_form_elongated_tail_2", name: "Elongated Tail (1/Round)",
-          description: "If you hit an Opponent with your Tail Attack Maneuver, you may use the Grapple Maneuver against that Opponent as an Out-of-Sequence Maneuver.",
-          usageLimit: "1/Round", maxUses: 1
-        });
-      }
-      if (metaTraits.has("frozen magician") || metaTraits.has("frozen_magician")) {
-        entry.triggered.push({
-          id: "true_form_frozen_magician_1", name: "Frozen Magician (2/Round)",
-          description: `On gaining Cruelty, reduce KP cost of all Unique Abilities by ${tier} (1×T) until end of Combat Round.`,
-          usageLimit: "2/Round", maxUses: 2
-        });
-        entry.triggered.push({
-          id: "true_form_frozen_magician_2", name: "Frozen Magician — Cruelty (1/Round)",
-          description: "If you use a Unique Ability or Magic Attack, gain 1 Cruelty.",
-          usageLimit: "1/Round", maxUses: 1
-        });
-      }
-      if (metaTraits.has("furious onslaught") || metaTraits.has("furious_onslaught")) {
-        entry.triggered.push({
-          id: "true_form_furious_onslaught_1", name: "Furious Onslaught (1/Round)",
-          description: "Reduce your Cruelty Stacks by 2 to use the Signature Technique Maneuver as an Instant Maneuver.",
-          usageLimit: "1/Round", maxUses: 1
-        });
-      }
-      if (metaTraits.has("king's stature") || metaTraits.has("kings_stature") || metaTraits.has("king stature")) {
-        entry.triggered.push({
-          id: "true_form_kings_stature_2", name: "King's Stature (1/Encounter)",
-          description: "If you have 2+ Cruelty, treat your Size Category as Gigantic for Punching Down until end of your next turn.",
-          usageLimit: "1/Encounter", maxUses: 1
-        });
-      }
-      if (metaTraits.has("last resource") || metaTraits.has("last_resource")) {
-        entry.triggered.push({
-          id: "true_form_last_resource_2", name: "Last Resource (1/Encounter)",
-          description: `For each Health Threshold you are below, spend ${2 * baseTier} KP to apply an Energy Charge to your Attacking Maneuver.`,
-          usageLimit: "1/Encounter", maxUses: 1
-        });
-      }
-      if (metaTraits.has("pressure")) {
-        entry.triggered.push({
-          id: "true_form_pressure_2", name: "Pressure (1/Round)",
-          description: "If you hit an Opponent with a Signature Technique, double the Diminishing Defense they receive.",
-          usageLimit: "1/Round", maxUses: 1
-        });
-      }
-      if (metaTraits.has("redirected energy") || metaTraits.has("redirected_energy")) {
-        entry.triggered.push({
-          id: "true_form_redirected_energy_2", name: "Redirected Energy (1/Round)",
-          description: "If you use an Attacking Maneuver, increase the Wound Roll by 1/2 (rounded up) of its Ki Point Cost.",
-          usageLimit: "1/Round", maxUses: 1
-        });
-      }
-      if (metaTraits.has("ruler")) {
-        entry.triggered.push({
-          id: "true_form_ruler_1", name: "Ruler (1/Round)",
-          description: "Reduce Cruelty by 2 to target all Allies within a Large Sphere AoE. Targeted Allies apply your ToP Extra Dice (min. 1d4) to Combat Rolls until start of your next turn.",
-          usageLimit: "1/Round", maxUses: 1
-        });
-      }
-      if (metaTraits.has("no quarter") || metaTraits.has("no_quarter")) {
-        entry.triggered.push({
-          id: "true_form_no_quarter_2", name: "No Quarter (1/Round)",
-          description: "If you hit an Opponent for the 2nd time this round, apply Guard Down to that Opponent for your next Attacking Maneuver or until end of turn.",
-          usageLimit: "1/Round", maxUses: 1
-        });
-      }
-      if (metaTraits.has("variable-weight plating") || metaTraits.has("variable_weight_plating")) {
-        if (opt && opt.toLowerCase().includes("heavy")) {
-          entry.triggered.push({
-            id: "true_form_heavy_plating_5", name: "Heavy Plating (1/Round)",
-            description: "Reduce the Damage you would receive from an Attacking Maneuver by 1/2 (rounded up) of your Soak Value.",
-            usageLimit: "1/Round", maxUses: 1
-          });
-        } else if (opt && opt.toLowerCase().includes("light")) {
-          entry.triggered.push({
-            id: "true_form_light_plating_6", name: "Light Plating (1/Round)",
-            description: "Increase your Dodge Roll by 1/4 (rounded up) of your Defense Value.",
-            usageLimit: "1/Round", maxUses: 1
-          });
-        }
-      }
       break;
     }
 
@@ -2382,11 +2243,21 @@ function applyBonusesForKey(key, system, tier, baseTier, S, G, options, entry, t
 // ============================================================
 
 /**
- * Check the actor's transformation structuredTraits for known meta trait names.
- * Returns a Set of lowercase trait names found.
+ * Meta trait names for a Metamorphosis stage. Primary source is the
+ * selection UI storage (transformationMeta.metaTraitState.stages[catalogKey]);
+ * legacy structuredTraits names are still honored.
+ * Returns a Set of lowercase trait names.
  */
 function _getMetaTraitNames(system, catalogKey) {
   const names = new Set();
+  // Selected via the Meta Traits UI
+  const stageState = system.transformationMeta?.metaTraitState?.stages?.[catalogKey];
+  const metaCatalog = (typeof CONFIG !== "undefined" && CONFIG.DBU?.metaTraitsCatalog) || [];
+  for (const id of (stageState?.traits || [])) {
+    const def = metaCatalog.find(t => t.id === id);
+    if (def) names.add(def.name.toLowerCase());
+  }
+  // Legacy: names typed into structuredTraits
   const transformations = system.transformations || [];
   for (const trans of transformations) {
     if (trans.catalogKey !== catalogKey) continue;
@@ -2398,4 +2269,169 @@ function _getMetaTraitNames(system, catalogKey) {
     }
   }
   return names;
+}
+
+/** Variable-Weight Plating option for a stage ("heavy"/"light" or ""). */
+function _getMetaVWOption(system, catalogKey) {
+  return system.transformationMeta?.metaTraitState?.stages?.[catalogKey]
+    ?.config?.meta_variable_weight_plating?.option || "";
+}
+
+/**
+ * Apply the passive/conditional/triggered effects of a stage's chosen Meta
+ * Traits. Shared by all four Metamorphosis stages (and reused for the
+ * Divergent Evolution meta trait via arcosian automation).
+ */
+export function applyMetaTraitEffects(system, entry, totals, tier, baseTier, metaTraits, vwOption, idPrefix) {
+  const addSpeedLocal = (amt) => {
+    system.status.normalSpeed = (system.status.normalSpeed || 0) + amt;
+    system.status.boostedSpeed = (system.status.boostedSpeed || 0) + amt;
+  };
+  const addSoakLocal = (amt) => {
+    system.status.soak = (system.status.soak || 0) + amt;
+  };
+
+  if (metaTraits.has("bio-suit") || metaTraits.has("bio suit")) {
+    system.status.damageReduction = (system.status.damageReduction || 0) + 2 * tier;
+    system.aptitudes.steadfastBonus = (system.aptitudes.steadfastBonus || 0) + 1;
+    if (totals) { totals.dr += 2 * tier; totals.steadfast += 1; }
+    entry.bonuses.push(`+${2 * tier} DR (Bio-Suit)`);
+    entry.bonuses.push("+1 Steadfast Dice Score (Bio-Suit)");
+  }
+
+  if (metaTraits.has("aerodynamic")) {
+    addSpeedLocal(tier);
+    if (totals) totals.speed += tier;
+    entry.bonuses.push(`+${tier} Speed (Aerodynamic)`);
+    entry.conditionals.push("Boosted Speed costs 1 KP/Square instead of 3 (Aerodynamic)");
+    entry.triggered.push({
+      id: `${idPrefix}_aerodynamic_3`, name: "Aerodynamic (1/Round)",
+      description: "If you hit an Opponent with an Attacking Maneuver and deal Damage, you may use the Movement Maneuver as an Out-of-Sequence Maneuver.",
+      usageLimit: "1/Round", maxUses: 1
+    });
+  }
+
+  if (metaTraits.has("variable-weight plating") || metaTraits.has("variable_weight_plating")) {
+    if (vwOption === "heavy") {
+      addSoakLocal(2 * tier);
+      system.aptitudes.defenseValue = (system.aptitudes.defenseValue || 0) - tier;
+      if (totals) { totals.soak += 2 * tier; totals.defense -= tier; }
+      entry.bonuses.push(`+${2 * tier} Soak, -${tier} Defense (Heavy Plating)`);
+      entry.triggered.push({
+        id: `${idPrefix}_heavy_plating`, name: "Heavy Plating (1/Round)",
+        description: "Reduce the Damage you would receive from an Attacking Maneuver by 1/2 (rounded up) of your Soak Value.",
+        usageLimit: "1/Round", maxUses: 1
+      });
+    } else if (vwOption === "light") {
+      system.aptitudes.defenseValue = (system.aptitudes.defenseValue || 0) + 2 * tier;
+      addSoakLocal(-tier);
+      if (totals) { totals.defense += 2 * tier; totals.soak -= tier; }
+      entry.bonuses.push(`+${2 * tier} Defense, -${tier} Soak (Light Plating)`);
+      entry.triggered.push({
+        id: `${idPrefix}_light_plating`, name: "Light Plating (1/Round)",
+        description: "Increase your Dodge Roll by 1/4 (rounded up) of your Defense Value.",
+        usageLimit: "1/Round", maxUses: 1
+      });
+    } else {
+      entry.conditionals.push("Variable-Weight Plating: choose Heavy or Light in the Meta Traits selector");
+    }
+  }
+
+  if (metaTraits.has("last resource") || metaTraits.has("last_resource")) {
+    entry.conditionals.push(`Per threshold below: +${tier} Wound (Last Resource)`);
+    entry.triggered.push({
+      id: `${idPrefix}_last_resource_2`, name: "Last Resource (1/Encounter)",
+      description: `For each Health Threshold you are below, spend ${2 * baseTier} KP to apply an Energy Charge to your Attacking Maneuver.`,
+      usageLimit: "1/Encounter", maxUses: 1
+    });
+  }
+
+  if (metaTraits.has("burning hatred") || metaTraits.has("burning_hatred")) {
+    entry.conditionals.push(`Compelled: +1d6(${tier}) Wound (Burning Hatred)`);
+    entry.triggered.push({
+      id: `${idPrefix}_burning_hatred_1`, name: "Burning Hatred (Transform)",
+      description: "Select an Opponent: you gain Compelled against them until you leave this Transformation. If they are Defeated, lose Compelled and you may select a new target.",
+      usageLimit: null, maxUses: null
+    });
+  }
+
+  if (metaTraits.has("pressure")) {
+    entry.conditionals.push(`2+ Cruelty: +${tier} ST Strike (Pressure)`);
+    entry.triggered.push({
+      id: `${idPrefix}_pressure_2`, name: "Pressure (1/Round)",
+      description: "If you hit an Opponent with a Signature Technique, double the Diminishing Defense they receive.",
+      usageLimit: "1/Round", maxUses: 1
+    });
+  }
+
+  if (metaTraits.has("no quarter") || metaTraits.has("no_quarter")) {
+    entry.conditionals.push("Brutal Assault Extra Dice +2 Dice Categories (No Quarter)");
+    entry.triggered.push({
+      id: `${idPrefix}_no_quarter_2`, name: "No Quarter (1/Round)",
+      description: "If you hit an Opponent for the 2nd time this round, apply Guard Down to that Opponent for your next Attacking Maneuver or until end of turn.",
+      usageLimit: "1/Round", maxUses: 1
+    });
+  }
+
+  if (metaTraits.has("king's stature") || metaTraits.has("kings_stature") || metaTraits.has("king stature")) {
+    entry.conditionals.push("Size Category set to Enormous (King's Stature)");
+    system._metaKingsStature = true;
+    entry.triggered.push({
+      id: `${idPrefix}_kings_stature_2`, name: "King's Stature (1/Encounter)",
+      description: "If you have 2+ Cruelty, treat your Size Category as Gigantic for Punching Down until end of your next turn.",
+      usageLimit: "1/Encounter", maxUses: 1
+    });
+  }
+
+  if (metaTraits.has("redirected energy") || metaTraits.has("redirected_energy")) {
+    entry.conditionals.push(`After Attacking Maneuver: regain ${baseTier} KP (Redirected Energy)`);
+    entry.triggered.push({
+      id: `${idPrefix}_redirected_energy_2`, name: "Redirected Energy (1/Round)",
+      description: "If you use an Attacking Maneuver, increase the Wound Roll by 1/2 (rounded up) of its Ki Point Cost.",
+      usageLimit: "1/Round", maxUses: 1
+    });
+  }
+
+  if (metaTraits.has("frozen magician") || metaTraits.has("frozen_magician")) {
+    entry.conditionals.push(`On gaining Cruelty: UA KP cost -${tier} (Frozen Magician)`);
+    entry.triggered.push({
+      id: `${idPrefix}_frozen_magician_1`, name: "Frozen Magician (2/Round)",
+      description: `On gaining Cruelty, reduce KP cost of all Unique Abilities by ${tier} (1×T) until end of Combat Round.`,
+      usageLimit: "2/Round", maxUses: 2
+    });
+    entry.triggered.push({
+      id: `${idPrefix}_frozen_magician_2`, name: "Frozen Magician — Cruelty (1/Round)",
+      description: "If you use a Unique Ability or Magic Attack, gain 1 Cruelty.",
+      usageLimit: "1/Round", maxUses: 1
+    });
+  }
+
+  if (metaTraits.has("elongated tail") || metaTraits.has("elongated_tail")) {
+    entry.conditionals.push("Tail Attack: +1 Square Melee Range for that attack (Elongated Tail)");
+    entry.triggered.push({
+      id: `${idPrefix}_elongated_tail_2`, name: "Elongated Tail (1/Round)",
+      description: "If you hit an Opponent with your Tail Attack Maneuver, you may use the Grapple Maneuver against that Opponent as an Out-of-Sequence Maneuver.",
+      usageLimit: "1/Round", maxUses: 1
+    });
+  }
+
+  if (metaTraits.has("furious onslaught") || metaTraits.has("furious_onslaught")) {
+    entry.triggered.push({
+      id: `${idPrefix}_furious_onslaught_1`, name: "Furious Onslaught (1/Round)",
+      description: "Reduce your Cruelty Stacks by 2 to use the Signature Technique Maneuver as an Instant Maneuver.",
+      usageLimit: "1/Round", maxUses: 1
+    });
+  }
+
+  if (metaTraits.has("ruler")) {
+    entry.triggered.push({
+      id: `${idPrefix}_ruler_1`, name: "Ruler (1/Round)",
+      description: "Reduce Cruelty by 2 to target all Allies within a Large Sphere AoE. Targeted Allies apply your ToP Extra Dice (min. 1d4) to Combat Rolls until start of your next turn.",
+      usageLimit: "1/Round", maxUses: 1
+    });
+  }
+
+  if (metaTraits.has("bestial evolution") || metaTraits.has("bestial_evolution")) {
+    entry.conditionals.push("Bestial Evolution: grants the chosen Bestial Trait (Movement/Claws/Horns/Spikes)");
+  }
 }

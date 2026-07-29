@@ -945,7 +945,13 @@ export function computeSkillBonus(actor, skillKey) {
   const attrScore = actor.system.attributes?.[attrKey]?.score ?? 0;
   const gs = actor.system.aptitudes?.giftedStudentSkillBonus || 0;
   const equip = Number(actor.system.equipmentFlags?.skillBonuses?.[skillKey]) || 0;
-  return Math.floor(attrScore / 2) + (Number(rank) || 0) * 2 + gs + equip;
+  // Alternate Sight (bestial trait): +1 Perception Dice Score
+  const bestial = skillKey === "perception"
+    ? (Number(actor.system._bestialPerceptionBonus) || 0) : 0;
+  // Cloaking System (cybernetic trait): +1 Stealth Dice Score
+  const cyber = skillKey === "stealth"
+    ? (Number(actor.system._cyberStealthBonus) || 0) : 0;
+  return Math.floor(attrScore / 2) + (Number(rank) || 0) * 2 + gs + equip + bestial + cyber;
 }
 
 async function responderRoll(actor, choice) {

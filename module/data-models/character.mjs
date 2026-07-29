@@ -436,7 +436,9 @@ export default class DBUCharacterData extends foundry.abstract.TypeDataModel {
         incomingEC: new NumberField({ required: true, nullable: false, initial: 0, integer: true, min: 0 }),
         // Set when Guard was already paid through the Defend Maneuver chat card,
         // so Apply Damage doesn't charge the 8(T) again.
-        guardPaidViaCard: new BooleanField({ initial: false })
+        guardPaidViaCard: new BooleanField({ initial: false }),
+        // Incoming attack made from outside Melee Range (Treacherous Spikes DR)
+        isRanged: new BooleanField({ initial: false })
       }),
 
       // ---- Z-Soul ----
@@ -527,6 +529,11 @@ export default class DBUCharacterData extends foundry.abstract.TypeDataModel {
         encounterStartDKP: new NumberField({ required: false, nullable: true, initial: null }),
         // Mutation Trait complex state (Were-creature, OG Soldier, DNA Absorption, etc.)
         mutationState: new ObjectField(),
+        // Cybernetic Enhancement: { traits: [ids], config: { [traitId]: { attribute } } }
+        cyberneticState: new ObjectField(),
+        // Arcosian Meta Traits: { stages: { [catalogKey]: { traits: [ids], config: { [id]: { option, bestialTrait } } } },
+        //                        divergent: { trait: id, config: { option, bestialTrait } } }
+        metaTraitState: new ObjectField(),
         // Evil Aura: gain access to 5 Signature Techniques until end of turn (cost 2bT EP)
         evilTechsActive: new BooleanField({ initial: false }),
         evilPoints: new NumberField({ required: true, nullable: false, initial: 0, integer: true, min: 0 }),
@@ -701,7 +708,35 @@ export default class DBUCharacterData extends foundry.abstract.TypeDataModel {
           spentDT: new NumberField({ initial: 0, integer: true, min: 0 }),
           activitiesUsed: new ArrayField(new StringField()),
           modifiersUsed: new ArrayField(new StringField()),
-          notes: new StringField({ initial: "" })
+          notes: new StringField({ initial: "" }),
+          // One record per applied activity/modifier: what was actually granted,
+          // so Undo / Cancel Period can reverse it exactly.
+          appliedRecords: new ArrayField(new ObjectField())
+        }),
+        // Permanent gains granted by downtime activities (additive over the
+        // progression-row-derived values; folded in during data prep)
+        gains: new SchemaField({
+          attributes: new SchemaField({
+            ag: new NumberField({ initial: 0, integer: true, min: 0 }),
+            fo: new NumberField({ initial: 0, integer: true, min: 0 }),
+            te: new NumberField({ initial: 0, integer: true, min: 0 }),
+            sc: new NumberField({ initial: 0, integer: true, min: 0 }),
+            in: new NumberField({ initial: 0, integer: true, min: 0 }),
+            ma: new NumberField({ initial: 0, integer: true, min: 0 }),
+            pe: new NumberField({ initial: 0, integer: true, min: 0 })
+          }),
+          tp: new NumberField({ initial: 0, integer: true, min: 0 }),
+          stressBonus: new NumberField({ initial: 0, integer: true, min: 0 }),
+          devPoints: new NumberField({ initial: 0, integer: true, min: 0 }),
+          equipmentPoints: new NumberField({ initial: 0, integer: true, min: 0 }),
+          // skillId → extra ranks gained via downtime
+          skillRanks: new ObjectField()
+        }),
+        // Strenuous modifier LP penalty: fraction of Max LP lost for the next
+        // N combat encounters (set on End Period, decremented on New Encounter)
+        strenuous: new SchemaField({
+          fraction: new NumberField({ initial: 0, min: 0, max: 0.5 }),
+          encountersLeft: new NumberField({ initial: 0, integer: true, min: 0 })
         }),
         // Lifetime usage counters (limited activities only)
         lifetimeUses: new SchemaField({
@@ -790,7 +825,8 @@ export default class DBUCharacterData extends foundry.abstract.TypeDataModel {
       const attr = this.attributes[key];
       if (attr) {
         if (rows.length > 0) attr.progression = progressionTotals[key];
-        attr.score = 1 + (attr.racial ?? 0) + (attr.progression ?? 0);
+        const downtimeGain = this.downtime?.gains?.attributes?.[key] ?? 0;
+        attr.score = 1 + (attr.racial ?? 0) + (attr.progression ?? 0) + downtimeGain;
       }
     }
   }

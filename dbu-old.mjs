@@ -38,6 +38,8 @@ import { WEAKNESSES_CATALOG } from "./module/data/weaknesses-catalog.mjs";
 import { MINION_TRAITS_CATALOG } from "./module/data/minion-traits-catalog.mjs";
 import { MASTERY_EFFECTS_CATALOG } from "./module/data/mastery-effects-catalog.mjs";
 import { BESTIAL_TRAITS_CATALOG } from "./module/data/bestial-traits-catalog.mjs";
+import { CYBERNETIC_TRAITS_CATALOG } from "./module/data/cybernetic-traits-catalog.mjs";
+import { META_TRAITS_CATALOG } from "./module/data/meta-traits-catalog.mjs";
 import { APPAREL_QUALITIES_CATALOG } from "./module/data/apparel-qualities-catalog.mjs";
 import { WEAPON_QUALITIES_CATALOG } from "./module/data/weapon-qualities-catalog.mjs";
 import { EVIL_AURA_TECHNIQUES } from "./module/data/evil-aura-techniques-catalog.mjs";
@@ -77,6 +79,8 @@ Hooks.once("init", () => {
   CONFIG.DBU.masteryEffectsCatalog = MASTERY_EFFECTS_CATALOG;
   CONFIG.DBU.jacketModulesCatalog = JACKET_MODULES_CATALOG;
   CONFIG.DBU.bestialTraitsCatalog = BESTIAL_TRAITS_CATALOG;
+  CONFIG.DBU.cyberneticTraitsCatalog = CYBERNETIC_TRAITS_CATALOG;
+  CONFIG.DBU.metaTraitsCatalog = META_TRAITS_CATALOG;
   CONFIG.DBU.apparelQualities = Object.fromEntries(APPAREL_QUALITIES_CATALOG.map(q => [q.id, q]));
   CONFIG.DBU.weaponQualities  = Object.fromEntries(WEAPON_QUALITIES_CATALOG.map(q => [q.id, q]));
   CONFIG.DBU.evilAuraTechniques = EVIL_AURA_TECHNIQUES;

@@ -77,11 +77,21 @@ export function getActiveBestialTraits(system) {
     }
   }
 
-  // Dark Vassal — always active while mutation trait is Dark Vassal
-  addTraits(mutState.darkVassalBestialTraits, "darkVassal");
+  // Mutation-sourced traits require the Mutation transformation to be ACTIVE
+  // with the matching Mutation Trait selected (mirrors the Dark Vassal LP
+  // reduction guard in actor.mjs).
+  const mutIdx = (system.transformations || []).findIndex(t => t?.active && t?.catalogKey === "mutation");
+  const mutTrait = mutIdx >= 0
+    ? (system.transformationOptionSelections?.[String(mutIdx)]?.mutationTrait || "")
+    : "";
 
-  // Were-creature — only when transformed
-  if (mutState.wereCreatureActive) {
+  // Dark Vassal — active while the Mutation trait is Dark Vassal
+  if (mutTrait === "dark_vassal") {
+    addTraits(mutState.darkVassalBestialTraits, "darkVassal");
+  }
+
+  // Were-creature — only when transformed (and Were-creature trait selected)
+  if (mutTrait === "were_creature" && mutState.wereCreatureActive) {
     addTraits(mutState.wereCreatureBestialTraits, "wereCreature");
   }
 
@@ -89,6 +99,23 @@ export function getActiveBestialTraits(system) {
   addTraits(mutState.crusherFormBestialTraits, "crusherForm");
   addTraits(mutState.dragonForceBestialTraits, "dragonForce");
   addTraits(mutState.monsterFormBestialTraits, "monsterForm");
+
+  // Arcosian Meta Trait "Bestial Evolution": grants one chosen bestial trait
+  // while its Metamorphosis stage is active (or via Divergent Evolution).
+  const metaState = system.transformationMeta?.metaTraitState || {};
+  const METAMORPHOSIS_KEYS = ["full_suppression", "limited_suppression", "partial_suppression", "true_form"];
+  for (const trans of (system.transformations || [])) {
+    if (!trans?.active || !METAMORPHOSIS_KEYS.includes(trans.catalogKey)) continue;
+    const stage = metaState.stages?.[trans.catalogKey];
+    if (stage?.traits?.includes("meta_bestial_evolution")) {
+      const chosen = stage.config?.meta_bestial_evolution?.bestialTrait;
+      if (chosen) addTraits([chosen], "metaTrait");
+    }
+  }
+  if (metaState.divergent?.trait === "meta_bestial_evolution") {
+    const chosen = metaState.divergent?.config?.bestialTrait;
+    if (chosen) addTraits([chosen], "divergentMeta");
+  }
 
   // Enforce Bestial Limit (max 4)
   return collected.slice(0, 4);
@@ -153,11 +180,13 @@ export function applyBestialTraitBonuses(system, tier, baseTier) {
 /** Bestial Build: Thick Hide (+2T Soak, +1T Corp Save) or Slender (+1T DV, +1T Imp Save). */
 function _applyBestialBuild(system, tier, option) {
   if (option === "thick_hide") {
-    system.aptitudes.soakValue = (system.aptitudes.soakValue || 0) + 2 * tier;
-    system.savingThrows.corporeal.total = (system.savingThrows.corporeal.total || 0) + tier;
+    // Soak lives on status.soak (aptitudes.soakValue is not read anywhere)
+    system.status.soak = (system.status.soak || 0) + 2 * tier;
+    // Saves live on savingThrows[key].bonus (.total is not read anywhere)
+    system.savingThrows.corporeal.bonus = (system.savingThrows.corporeal.bonus || 0) + tier;
   } else if (option === "slender") {
     system.aptitudes.defenseValue = (system.aptitudes.defenseValue || 0) + tier;
-    system.savingThrows.impulsive.total = (system.savingThrows.impulsive.total || 0) + tier;
+    system.savingThrows.impulsive.bonus = (system.savingThrows.impulsive.bonus || 0) + tier;
   }
 }
 

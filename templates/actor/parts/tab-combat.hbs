@@ -232,6 +232,12 @@
                     <i class="fas fa-coins"></i> Ki Wager:
                     <input type="number" class="tap-wager-input" data-round="{{../roundNumber}}" data-action-index="{{@index}}" value="{{kiWager}}" min="0" />
                   </label>
+                  {{#if @root.system._bestialChargingWoundBonus}}
+                  <label class="tap-wager-label" title="Impaling Horns: +{{@root.system._bestialChargingWoundBonus}} Wound on Physical Attacks with Charging Assault">
+                    <i class="fas fa-horse-head"></i> Charging:
+                    <input type="checkbox" class="tap-charging-toggle" data-round="{{../roundNumber}}" data-action-index="{{@index}}" {{#if charging}}checked{{/if}} />
+                  </label>
+                  {{/if}}
                 </div>
                 {{#if _attackData.activeBuffs.length}}
                 <div class="tap-row tap-buffs-row">
@@ -356,6 +362,13 @@
                   <span class="tap-meta-item tap-step-good" title="Step-by-Step: you are in the Alternate Form '{{_transformData.stepByStep.formName}}', so its Tier of Power Requirement reduces the new form's Stress Test."><i class="fas fa-angle-double-down"></i> Step-by-Step −{{_transformData.stepByStep.reduction}} (from {{_transformData.stepByStep.formName}})</span>
                   <label class="tap-wager-label" title="+1 to the Step-by-Step reduction if the new form is of the SAME Transformation Line as your current form (rules line 118).">
                     <input type="checkbox" class="ttf-checkbox" data-field="transformSameLine" data-round="{{../roundNumber}}" data-action-index="{{@index}}" {{#if transformSameLine}}checked{{/if}} /> Same Line (−1 more)
+                  </label>
+                </div>
+                {{/if}}
+                {{#if _transformData.replaceable}}
+                <div class="tap-row">
+                  <label class="tap-wager-label" title="Step-by-Step: on success you LEAVE your current Form — its bonuses end and its Stress Test does not combine. Uncheck to enter in conjunction instead (keep both; Combined Stress Test = highest + 1/2 of the others).">
+                    <input type="checkbox" class="ttf-checkbox" data-field="transformReplace" data-round="{{../roundNumber}}" data-action-index="{{@index}}" {{#if _transformData.replaceMode}}checked{{/if}} /> Replace current form{{#if _transformData.replacedNames.length}} ({{#each _transformData.replacedNames}}{{#if @index}}, {{/if}}{{this}}{{/each}}){{/if}}
                   </label>
                 </div>
                 {{/if}}
@@ -2248,10 +2261,16 @@
               <label>Extra DR</label>
               <input type="number" class="combat-dmg-input" data-field="damageReduction" value="{{system.damageCalc.damageReduction}}" min="0" />
             </div>
+            {{#if system.damageCalc.hasBestialRangedDR}}
+            <div class="dmg-field dmg-wound-only">
+              <label title="Treacherous Spikes: +2(T) DR vs Attacking Maneuvers from outside your Melee Range">Ranged</label>
+              <input type="checkbox" class="combat-dmg-input" data-field="isRanged" {{#if system.damageCalc.isRanged}}checked{{/if}} />
+            </div>
+            {{/if}}
             <div class="dmg-field dmg-result">
               <label>Final Damage</label>
-              <span class="dmg-result-value" title="Soak {{system.damageCalc.effectiveSoak}} + DR {{system.damageCalc.innateDR}} + Extra DR {{system.damageCalc.damageReduction}} = -{{system.damageCalc.totalReduction}}">{{system.damageCalc.healthReduction}}</span>
-              <span class="dmg-result-breakdown">Soak {{system.damageCalc.effectiveSoak}} · DR {{add system.damageCalc.innateDR system.damageCalc.damageReduction}}</span>
+              <span class="dmg-result-value" title="Soak {{system.damageCalc.effectiveSoak}} + DR {{system.damageCalc.innateDR}}{{#if system.damageCalc.bestialRangedDR}} + Spikes {{system.damageCalc.bestialRangedDR}}{{/if}} + Extra DR {{system.damageCalc.damageReduction}} = -{{system.damageCalc.totalReduction}}">{{system.damageCalc.healthReduction}}</span>
+              <span class="dmg-result-breakdown">Soak {{system.damageCalc.effectiveSoak}} · DR {{add system.damageCalc.innateDR system.damageCalc.damageReduction}}{{#if system.damageCalc.bestialRangedDR}} +{{system.damageCalc.bestialRangedDR}} Spikes{{/if}}</span>
             </div>
           </div>
           <div class="dmg-input-row dmg-actions">

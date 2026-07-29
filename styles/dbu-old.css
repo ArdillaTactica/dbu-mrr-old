@@ -8855,6 +8855,36 @@
   flex: 1;
 }
 
+/* Downtime lifetime gains summary */
+.dbu-old.sheet .dt-gains-section {
+  margin: 6px 0;
+}
+.dbu-old.sheet .dt-gains-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 4px;
+}
+.dbu-old.sheet .dt-gain-chip {
+  font-size: 0.78em;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  color: #9adcff;
+  border: 1px solid rgba(0, 191, 255, 0.35);
+  background: rgba(0, 191, 255, 0.08);
+}
+.dbu-old.sheet .dt-strenuous-banner {
+  margin: 6px 0;
+  padding: 5px 10px;
+  font-size: 0.85em;
+  color: #ff9d7a;
+  border: 1px solid rgba(255, 120, 70, 0.4);
+  border-left: 3px solid rgba(255, 120, 70, 0.8);
+  background: rgba(255, 120, 70, 0.08);
+  border-radius: 3px;
+}
+
 /* Applied-effects summary inside trigger chat cards */
 .dbu-auto-applied {
   margin-top: 4px;

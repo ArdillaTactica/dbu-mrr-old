@@ -247,6 +247,26 @@ export const TRANSFORMATIONS_CATALOG = {
     ],
   },
 
+  "cybernetic_enhancement": {
+    id: "cybernetic_enhancement",
+    name: "Cybernetic Enhancement",
+    category: "manifested_power",
+    racialRequirement: "Any",
+    tierRequirement: "1+",
+    stressTest: 0,
+    maxStacks: 3,
+    attrBonuses: {"ag":"–","fo":"+1","te":"+1","sc":"–","in":"–","ma":"–","pe":"–"},
+    aspects: [],
+    traitGroups: [
+      {
+        name: "Scientific Upgrade",
+        effects: [
+          { level: 1, activationType: "passive", keyword: "Passive", usageLimit: null, maxUses: null, text: "Select and gain 3 Cybernetic Traits of your choice. For every stack of Cybernetic Enhancement gained after the first, select and gain an additional 2 Cybernetic Traits. The Cybernetic Traits each have an Attribute listed in brackets after their name. Increase the Total Attribute Modifier Bonuses of Cybernetic Enhancement by 1 for each listed Attribute among your Cybernetic Traits." },
+        ]
+      },
+    ],
+  },
+
   "demon_infusion": {
     id: "demon_infusion",
     name: "Demon Infusion",

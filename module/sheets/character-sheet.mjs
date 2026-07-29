@@ -310,7 +310,10 @@ export class DBUCharacterSheet extends ActorSheet {
       // Per-skill buff (matches the skill's display name from spreadsheet)
       const perSkillBuff = this.actor._getBuffTotal(system, def.name || "");
       const groupBuff = skillGroupBuff(attrKey);
-      const bonus = Math.floor(attrScore / 2) + (rankNum * 2) + gsSkillBonus + equipBonus + perSkillBuff + groupBuff;
+      // Trait bonuses: Alternate Sight (bestial) +1 Perception, Cloaking System (cybernetic) +1 Stealth
+      const traitBonus = (key === "perception" ? (Number(system._bestialPerceptionBonus) || 0) : 0)
+        + (key === "stealth" ? (Number(system._cyberStealthBonus) || 0) : 0);
+      const bonus = Math.floor(attrScore / 2) + (rankNum * 2) + gsSkillBonus + equipBonus + perSkillBuff + groupBuff + traitBonus;
       return {
         key,
         name: def.name || key,
@@ -342,6 +345,11 @@ export class DBUCharacterSheet extends ActorSheet {
       nano: "Nano", tiny: "Tiny", small: "Small", medium: "Medium",
       large: "Large", enormous: "Enormous", gigantic: "Gigantic", colossal: "Colossal"
     };
+    // The size select must edit the STORED value, not the derived one —
+    // automations (Growth, King's Stature, BJ piloting) overwrite the derived
+    // currentSize, and binding the select to it would persist the automated
+    // size on any form submit (stuck-size ratchet).
+    context.sourceCurrentSize = this.actor._source.system.status?.currentSize || "medium";
 
     context.dmgCategoryOptions = {
       standard: "Standard", direct: "Direct", lethal: "Lethal"
@@ -695,7 +703,8 @@ export class DBUCharacterSheet extends ActorSheet {
     context.totalAttrPoints = totalAttrPoints;
     context.totalSkillRanks = totalSkillRanks;
     // L1 SI already includes the 25 TP (15 base + 10 PL1 bonus per character-creation.txt:71)
-    context.totalTP = totalTP + giftedStudentTP + tpPerSIBuffTotal;
+    // Downtime gains: Technique Training / Training Partner / Strenuous grant flat TP
+    context.totalTP = totalTP + giftedStudentTP + tpPerSIBuffTotal + (system.downtime?.gains?.tp || 0);
     // Expose for testability and other consumers
     system.totalTP = context.totalTP;
     system.skillImprovementCount = skillImprovementCount;
@@ -854,7 +863,7 @@ export class DBUCharacterSheet extends ActorSheet {
       }
     }
     const gsTPBonus = (system.aptitudes?.giftedStudentTPPerSI || 0) * siCount;
-    const tpTotal = 25 + tpFromProgression + gsTPBonus;
+    const tpTotal = 25 + tpFromProgression + gsTPBonus + (system.downtime?.gains?.tp || 0);
     const tpSpentSignatures = preparedTechniques.reduce((sum, t) => sum + t.tpCost, 0);
     const tpSpentAuras = this._calcAurasTotalTP(system);
     const tpSpentUnique = this._calcUniqueTotalTP(system);
@@ -1143,7 +1152,10 @@ export class DBUCharacterSheet extends ActorSheet {
     // states apply to their Wound Rolls just like Basic Attacks.
     const ragingExtra = this._ragingWoundDice(system, tier);
     const surgingExtra = combatStates.surging ? `+${tier}d4` : "";
-    const formula = this._buildFormula(topDice, greaterDice, totalMod, chargesExtra + ssExtra + ragingExtra + surgingExtra);
+    // Synthetic Muscle (cybernetic trait): +1d4(T) Wound on Physical/Energy attacks
+    const synthExtra = (system._cyberSynthWoundDice && (tech.foundation === "Physical" || tech.foundation === "Energy"))
+      ? `+${this._scaleDiceByTier("1d4", tier)}` : "";
+    const formula = this._buildFormula(topDice, greaterDice, totalMod, chargesExtra + ssExtra + ragingExtra + surgingExtra + synthExtra);
 
     let damageCat = profileInfo.damageCat || "Standard";
     if (tech.profile === "Mega Flare" && charges >= 7) damageCat = "Direct";
@@ -2044,7 +2056,10 @@ export class DBUCharacterSheet extends ActorSheet {
       const ssWoundDice = system.aptitudes?.superStackWoundDice || "";
       const ssWoundExtra = (ssWoundDice && (ref.foundation === "Physical" || ref.foundation === "Energy"))
         ? `+${ssWoundDice}` : "";
-      const woundFormula = this._buildFormula(woundTopDice, woundGreaterDice, woundMod, chargesStr + ssWoundExtra + stateWoundExtra);
+      // Synthetic Muscle (cybernetic trait): +1d4(T) Wound on Physical/Energy attacks
+      const cyberSynthExtra = (system._cyberSynthWoundDice && (ref.foundation === "Physical" || ref.foundation === "Energy"))
+        ? `+${this._scaleDiceByTier("1d4", tier)}` : "";
+      const woundFormula = this._buildFormula(woundTopDice, woundGreaterDice, woundMod, chargesStr + ssWoundExtra + stateWoundExtra + cyberSynthExtra);
       let damageCat = profile.damageCat || "Standard";
       // Mega Flare: 7+ charges → upgrade damage category
       if (ref.profile === "Mega Flare" && charges >= 7) {
@@ -2928,7 +2943,10 @@ export class DBUCharacterSheet extends ActorSheet {
             ignoredPenalty: calc?.ignoredPenalty ?? (system.thresholds?.stressPenalty || 0),
             stepByStep: calc?.stepByStep || null,
             crimson: calc?.crimson || false,
-            willSkipTest: calc?.willSkipTest || false
+            willSkipTest: calc?.willSkipTest || false,
+            replaceable: calc?.replaceable || false,
+            replaceMode: calc?.replaceMode || false,
+            replacedNames: calc?.replacedNames || []
           };
         }
         if (a.type === "defend" && a.defendOption) {
@@ -4233,7 +4251,7 @@ export class DBUCharacterSheet extends ActorSheet {
     const encounterUsage = usage.encounter || {};
     return effects.map(effect => {
       const trackingId = `${prefix}:${effect.id}`;
-      const usageKey = effect.usageLimit === "encounter" ? "encounter" : "round";
+      const usageKey = /encounter/i.test(String(effect.usageLimit || "")) ? "encounter" : "round";
       const usedCount = (usageKey === "encounter" ? encounterUsage : roundUsage)[trackingId] || 0;
       const maxUses = effect.maxUses || 0;
       return {
@@ -4544,11 +4562,18 @@ export class DBUCharacterSheet extends ActorSheet {
     // Build activity display data
     for (const act of allActivities) {
       act.lifetimeUsed = act.lifetimeKey ? (lifetime[act.lifetimeKey] || 0) : 0;
-      act.usedThisPeriod = activitiesUsed.includes(act.id);
+      const usedCount = activitiesUsed.filter(a => a === act.id).length;
+      act.usedThisPeriod = usedCount > 0;
 
       // Determine disabled state
       act.disabled = false;
       act.disabledReason = "";
+
+      // Deep Focus lets ONE Recreational activity be used twice; Mentor lifts the once-per-period cap
+      const someRecDoubled = ["resting", "studying", "baseBuilding"].some(id =>
+        id !== act.id && activitiesUsed.filter(a => a === id).length >= 2);
+      const reuseAllowed = hasMentor
+        || (hasDeepFocus && act.type === "Recreational" && usedCount < 2 && !someRecDoubled);
 
       if (!context.dtPeriodActive) {
         act.disabled = true;
@@ -4559,7 +4584,7 @@ export class DBUCharacterSheet extends ActorSheet {
       } else if (act.limit !== "N/A" && act.lifetimeUsed >= act.limit) {
         act.disabled = true;
         act.disabledReason = `Lifetime limit reached (${act.limit})`;
-      } else if (act.usedThisPeriod && !hasMentor) {
+      } else if (act.usedThisPeriod && !reuseAllowed) {
         act.disabled = true;
         act.disabledReason = "Already used this period (each activity once per period)";
       }
@@ -4619,6 +4644,29 @@ export class DBUCharacterSheet extends ActorSheet {
 
     context.dtHistory = displayHistory;
     context.dtHasHistory = displayHistory.length > 0;
+
+    // Lifetime gains summary (what downtime has permanently granted)
+    const gains = dt.gains || {};
+    const attrLabels = { ag: "AG", fo: "FO", te: "TE", sc: "SC", in: "IN", ma: "MA", pe: "PE" };
+    const gainParts = [];
+    for (const [k, label] of Object.entries(attrLabels)) {
+      const v = gains.attributes?.[k] || 0;
+      if (v > 0) gainParts.push(`+${v} ${label}`);
+    }
+    if (gains.tp > 0) gainParts.push(`+${gains.tp} TP`);
+    if (gains.stressBonus > 0) gainParts.push(`+${gains.stressBonus} Stress Bonus`);
+    if (gains.devPoints > 0) gainParts.push(`+${gains.devPoints} Dev Points`);
+    if (gains.equipmentPoints > 0) gainParts.push(`+${gains.equipmentPoints} Equipment Points`);
+    const skillNamesById = {};
+    for (const sd of (CONFIG.DBU?.skillsData || [])) skillNamesById[sd.id] = sd.name;
+    for (const [sid, n] of Object.entries(gains.skillRanks || {})) {
+      if (n > 0) gainParts.push(`+${n} ${skillNamesById[sid] || sid} Rank${n > 1 ? "s" : ""}`);
+    }
+    context.dtGainsSummary = gainParts;
+    context.dtHasGains = gainParts.length > 0;
+    context.dtStrenuousActive = (dt.strenuous?.encountersLeft || 0) > 0;
+    context.dtStrenuousLabel = dt.strenuous?.fraction === 0.5 ? "-1/2 Max LP" : "-1/4 Max LP";
+    context.dtStrenuousLeft = dt.strenuous?.encountersLeft || 0;
   }
 
   // -------------------------------------------------------
@@ -5366,6 +5414,7 @@ export class DBUCharacterSheet extends ActorSheet {
     html.on("click", "[data-action='tracker-reset']", this._onTrackerReset.bind(this));
     html.on("click", "[data-action='delete-tracker-action']", this._onDeleteTrackerAction.bind(this));
     html.on("change", ".action-type, .action-ki, .action-dkp, .action-desc", this._onTrackerActionChange.bind(this));
+    html.on("change", ".tap-charging-toggle", this._onTrackerChargingToggle.bind(this));
     html.on("change", ".action-source", this._onTrackerSourceChange.bind(this));
     html.on("change", ".tap-wager-input", this._onTrackerWagerChange.bind(this));
     html.on("click", "[data-action='roll-tracker-attack']", this._onRollTrackerAttack.bind(this));
@@ -5519,7 +5568,13 @@ export class DBUCharacterSheet extends ActorSheet {
     const attrScore = attrData?.score ?? 0;
     const gsBonus = this.actor.system.aptitudes?.giftedStudentSkillBonus || 0;
     const equipBonus = Number(this.actor.system.equipmentFlags?.skillBonuses?.[skillKey]) || 0;
-    let bonus = Math.floor(attrScore / 2) + (Number(rank) || 0) * 2 + gsBonus + equipBonus;
+    // Alternate Sight (bestial trait): +1 Perception Dice Score
+    const bestialPerception = skillKey === "perception"
+      ? (Number(this.actor.system._bestialPerceptionBonus) || 0) : 0;
+    // Cloaking System (cybernetic trait): +1 Stealth Dice Score
+    const cyberStealth = skillKey === "stealth"
+      ? (Number(this.actor.system._cyberStealthBonus) || 0) : 0;
+    let bonus = Math.floor(attrScore / 2) + (Number(rank) || 0) * 2 + gsBonus + equipBonus + bestialPerception + cyberStealth;
 
     // --- Absorption OSF: use best skill bonus among suppressed actors ---
     let viaName = "";
@@ -6677,6 +6732,38 @@ export class DBUCharacterSheet extends ActorSheet {
     const trans = foundry.utils.deepClone(this.actor.system.transformations || []);
     if (transIndex >= trans.length) return;
     const wasActive = !!trans[transIndex][field];
+
+    // Step-by-Step guard: activating an Alternate/Legendary Form while another
+    // one is active normally REPLACES it (leave the old form so its bonuses and
+    // Stress contributions end). Offer conjunction (keep both) as the exception.
+    let replaceIndices = [];
+    if (field === "active" && el.checked && !wasActive) {
+      const FORM_TYPES = ["form_alternate", "form_legendary"];
+      if (FORM_TYPES.includes(trans[transIndex].transformationType)) {
+        const others = trans
+          .map((t, i) => (i !== transIndex && t.active && FORM_TYPES.includes(t.transformationType)) ? i : -1)
+          .filter(i => i >= 0);
+        if (others.length) {
+          const names = others.map(i => trans[i].name || "Form").join(", ");
+          const choice = await Dialog.wait({
+            title: "Change Form",
+            content: `<p>You are already in <b>${names}</b>.</p>
+              <p><b>Replace</b>: leave that Form (Step-by-Step — its bonuses end).<br>
+              <b>Keep both</b>: enter in conjunction (bonuses and Stress Tests combine).</p>`,
+            buttons: {
+              replace: { icon: '<i class="fas fa-exchange-alt"></i>', label: "Replace", callback: () => "replace" },
+              keep: { icon: '<i class="fas fa-layer-group"></i>', label: "Keep both", callback: () => "keep" },
+              cancel: { icon: '<i class="fas fa-times"></i>', label: "Cancel", callback: () => "cancel" }
+            },
+            default: "replace",
+            close: () => "cancel"
+          });
+          if (choice === "cancel") { el.checked = false; return; }
+          if (choice === "replace") replaceIndices = others;
+        }
+      }
+    }
+
     trans[transIndex][field] = el.checked;
 
     const updates = { "system.transformations": trans };
@@ -6684,6 +6771,10 @@ export class DBUCharacterSheet extends ActorSheet {
     if (field === "active") {
       const snapshots = foundry.utils.deepClone(this.actor.system.transformationMeta?.entrySnapshots || {});
       const transId = String(trans[transIndex].id ?? transIndex);
+      for (const ri of replaceIndices) {
+        trans[ri].active = false;
+        delete snapshots[String(trans[ri].id ?? ri)];
+      }
       if (el.checked && !wasActive) {
         entrySnapshot = this._buildTransformationEntrySnapshot(transIndex, trans);
         snapshots[transId] = entrySnapshot;
@@ -7593,6 +7684,109 @@ export class DBUCharacterSheet extends ActorSheet {
     const transSelections = allSelections[transIndex] || {};
     const actorRef = this.actor;
 
+    // === ARCOSIAN METAMORPHOSIS: Meta Trait selection ===
+    const META_STAGE_LIMITS = { full_suppression: 1, limited_suppression: 2, partial_suppression: 3, true_form: 4 };
+    if (trans.catalogKey in META_STAGE_LIMITS) {
+      const mtCatalog = CONFIG.DBU?.metaTraitsCatalog || [];
+      const mtState = this.actor.system.transformationMeta?.metaTraitState || {};
+      const stageState = mtState.stages?.[trans.catalogKey] || {};
+      const forced = trans.catalogKey === "true_form" ? ["meta_bio_suit", "meta_redirected_energy"] : [];
+      const chosenRaw = (Array.isArray(stageState.traits) ? stageState.traits : [])
+        .filter(id => mtCatalog.some(t => t.id === id));
+      const chosen = [...new Set([...forced, ...chosenRaw])];
+      const cfg = stageState.config || {};
+      const emperorBonus = this.actor.system.transformationMeta?.mutationState?.emperorExtraMetaTrait ? 1 : 0;
+      const mtLimit = META_STAGE_LIMITS[trans.catalogKey] + emperorBonus;
+      const btNames = { bestial_movement: "Bestial Movement", bestial_claws: "Claws", bestial_impaling_horns: "Impaling Horns", bestial_treacherous_spikes: "Treacherous Spikes" };
+
+      html += `<div class="mutation-sub-config" data-trait="metatraits">
+        <div class="tf-trait-group-header">Meta Traits — ${trans.name || trans.catalogKey} (${chosen.length}/${mtLimit})</div>
+        <p class="mutation-bwp-rules"><i>Select ${mtLimit} Meta Traits for this stage (S+1${emperorBonus ? " +1 Emperor" : ""}).${forced.length ? " True Form must include Bio-Suit and Redirected Energy." : ""}</i></p>
+        <div class="mut-checkbox-list">
+          ${mtCatalog.map(mt => {
+            const isForced = forced.includes(mt.id);
+            const checked = chosen.includes(mt.id);
+            const disabled = isForced || (!checked && chosen.length >= mtLimit);
+            const effectLines = (mt.effects || []).map(e => `[${e.keyword}] ${e.text}`).join("&#10;");
+            let extra = "";
+            if (checked && mt.options) {
+              extra = `<div class="bestial-option-row" style="margin-left:24px;margin-bottom:4px;">
+                <select class="mut-meta-option" data-trait-id="${mt.id}" data-stage="${trans.catalogKey}">
+                  <option value="">-- Choose --</option>
+                  ${mt.options.map(o => `<option value="${o.key}" ${cfg[mt.id]?.option === o.key ? "selected" : ""}>${o.name}</option>`).join("")}
+                </select>
+              </div>`;
+            }
+            if (checked && mt.bestialChoice) {
+              extra = `<div class="bestial-option-row" style="margin-left:24px;margin-bottom:4px;">
+                <select class="mut-meta-bestial" data-trait-id="${mt.id}" data-stage="${trans.catalogKey}">
+                  <option value="">-- Choose Bestial Trait --</option>
+                  ${mt.bestialChoice.map(b => `<option value="${b}" ${cfg[mt.id]?.bestialTrait === b ? "selected" : ""}>${btNames[b] || b}</option>`).join("")}
+                </select>
+              </div>`;
+            }
+            return `<label class="effect-option-checkbox ${checked ? "selected" : ""} ${disabled ? "disabled" : ""}" title="${mt.description}&#10;${effectLines}">
+              <input type="checkbox" class="mut-meta-trait" data-name="${mt.id}" data-stage="${trans.catalogKey}" ${checked ? "checked" : ""} ${disabled ? "disabled" : ""} />
+              <span class="option-name">${mt.name}${isForced ? " (required)" : ""}</span>
+            </label>${extra}`;
+          }).join("")}
+        </div>
+        ${(this.actor.system.racialTraits || []).includes("b252198d4bafa7c6") ? `
+        <div class="tf-trait-group-header" style="margin-top:8px;">Divergent Evolution — Meta Trait</div>
+        <p class="mutation-bwp-rules"><i>Standard: permanent. Mutant: applies while in any Legendary Form.</i></p>
+        <div class="mut-sub-row">
+          <select class="mut-divergent-meta">
+            <option value="">-- Choose Meta Trait --</option>
+            ${mtCatalog.map(mt => `<option value="${mt.id}" ${mtState.divergent?.trait === mt.id ? "selected" : ""}>${mt.name}</option>`).join("")}
+          </select>
+          ${mtState.divergent?.trait === "meta_variable_weight_plating" ? `
+          <select class="mut-divergent-meta-option">
+            <option value="">-- Option --</option>
+            <option value="heavy" ${mtState.divergent?.config?.option === "heavy" ? "selected" : ""}>Heavy Plating</option>
+            <option value="light" ${mtState.divergent?.config?.option === "light" ? "selected" : ""}>Light Plating</option>
+          </select>` : ""}
+          ${mtState.divergent?.trait === "meta_bestial_evolution" ? `
+          <select class="mut-divergent-meta-bestial">
+            <option value="">-- Bestial Trait --</option>
+            ${Object.entries(btNames).map(([k, v]) => `<option value="${k}" ${mtState.divergent?.config?.bestialTrait === k ? "selected" : ""}>${v}</option>`).join("")}
+          </select>` : ""}
+        </div>` : ""}
+      </div>`;
+    }
+
+    // === CYBERNETIC ENHANCEMENT: Cybernetic Trait selection ===
+    if (trans.catalogKey === "cybernetic_enhancement") {
+      const cyCatalog = CONFIG.DBU?.cyberneticTraitsCatalog || [];
+      const cyState = this.actor.system.transformationMeta?.cyberneticState || {};
+      const cyChosen = (Array.isArray(cyState.traits) ? cyState.traits : [])
+        .filter(id => cyCatalog.some(t => t.id === id));
+      const cyConfig = cyState.config || {};
+      const cyStacks = Math.min(3, Math.max(1, parseInt(String(trans.gradeOrStacks ?? "").replace(/[^\d]/g, ""), 10) || 1));
+      const cyLimit = 3 + 2 * (cyStacks - 1);
+      const attrLabels = { ag: "AG", fo: "FO", te: "TE", sc: "SC", in: "IN", ma: "MA", pe: "PE" };
+
+      html += `<div class="mutation-sub-config" data-trait="cybernetic">
+        <div class="tf-trait-group-header">Scientific Upgrade — Cybernetic Traits (${cyChosen.length}/${cyLimit})</div>
+        <p class="mutation-bwp-rules"><i>${cyStacks} stack${cyStacks > 1 ? "s" : ""} → select up to ${cyLimit} traits (3 + 2 per extra stack; set stacks in the Grade/Stacks field). Each chosen trait adds +1 AMB to its bracketed Attribute.</i></p>
+        <div class="mut-checkbox-list">
+          ${cyCatalog.map(ct => {
+            const checked = cyChosen.includes(ct.id);
+            const disabled = !checked && cyChosen.length >= cyLimit;
+            const cfg = cyConfig[ct.id] || {};
+            const effectLines = (ct.effects || []).map(e => `[${e.keyword}] ${e.text}`).join("&#10;");
+            return `<label class="effect-option-checkbox ${checked ? "selected" : ""} ${disabled ? "disabled" : ""}" title="${ct.description}&#10;${effectLines}">
+              <input type="checkbox" class="mut-cyber-trait" data-name="${ct.id}" ${checked ? "checked" : ""} ${disabled ? "disabled" : ""} />
+              <span class="option-name">${ct.name} (${ct.attributeChoice ? ct.attributeChoice.map(k => attrLabels[k]).join("/") : attrLabels[ct.attribute]})</span>
+            </label>${checked && ct.attributeChoice ? `<div class="bestial-option-row" style="margin-left:24px;margin-bottom:4px;">
+              <select class="mut-cyber-attr" data-trait-id="${ct.id}">
+                ${ct.attributeChoice.map(k => `<option value="${k}" ${(cfg.attribute || ct.attribute) === k ? "selected" : ""}>${attrLabels[k]} (+1 AMB)</option>`).join("")}
+              </select>
+            </div>` : ""}`;
+          }).join("")}
+        </div>
+      </div>`;
+    }
+
     // === MUTATION: Born with Power distribution + Mutation Trait selector ===
     if (trans.catalogKey === "mutation") {
       const currentBonuses = trans.attrBonuses || {};
@@ -8034,6 +8228,102 @@ export class DBUCharacterSheet extends ActorSheet {
       buttons: { close: { label: "Close" } },
       default: "close",
       render: (dialogHtml) => {
+        // === ARCOSIAN META TRAITS: selection handlers ===
+        if (["full_suppression", "limited_suppression", "partial_suppression", "true_form"].includes(trans.catalogKey)) {
+          const _mtReopen = () => { dialog.close(); this._onViewTransformationTraits(event); };
+          const _mtSave = async (mutator) => {
+            const state = foundry.utils.deepClone(actorRef.system.transformationMeta?.metaTraitState || {});
+            if (!state.stages) state.stages = {};
+            if (!state.stages[trans.catalogKey]) state.stages[trans.catalogKey] = { traits: [], config: {} };
+            if (!Array.isArray(state.stages[trans.catalogKey].traits)) state.stages[trans.catalogKey].traits = [];
+            if (!state.stages[trans.catalogKey].config) state.stages[trans.catalogKey].config = {};
+            if (!state.divergent) state.divergent = { trait: "", config: {} };
+            mutator(state);
+            await actorRef.update({ "system.transformationMeta.metaTraitState": state });
+          };
+          const stageLimits = { full_suppression: 1, limited_suppression: 2, partial_suppression: 3, true_form: 4 };
+          const emperorB = actorRef.system.transformationMeta?.mutationState?.emperorExtraMetaTrait ? 1 : 0;
+          const limitNow = stageLimits[trans.catalogKey] + emperorB;
+          const forcedNow = trans.catalogKey === "true_form" ? ["meta_bio_suit", "meta_redirected_energy"] : [];
+
+          dialogHtml.on("change", ".mut-meta-trait", async (ev) => {
+            const traitId = ev.currentTarget.dataset.name;
+            await _mtSave(state => {
+              const stage = state.stages[trans.catalogKey];
+              // Keep forced traits always present
+              for (const f of forcedNow) if (!stage.traits.includes(f)) stage.traits.push(f);
+              if (ev.currentTarget.checked) {
+                if (stage.traits.length < limitNow && !stage.traits.includes(traitId)) stage.traits.push(traitId);
+              } else if (!forcedNow.includes(traitId)) {
+                const i = stage.traits.indexOf(traitId);
+                if (i >= 0) stage.traits.splice(i, 1);
+              }
+            });
+            _mtReopen();
+          });
+          dialogHtml.on("change", ".mut-meta-option", async (ev) => {
+            const traitId = ev.currentTarget.dataset.traitId;
+            await _mtSave(state => {
+              const cfg = state.stages[trans.catalogKey].config;
+              cfg[traitId] = { ...(cfg[traitId] || {}), option: ev.currentTarget.value };
+            });
+          });
+          dialogHtml.on("change", ".mut-meta-bestial", async (ev) => {
+            const traitId = ev.currentTarget.dataset.traitId;
+            await _mtSave(state => {
+              const cfg = state.stages[trans.catalogKey].config;
+              cfg[traitId] = { ...(cfg[traitId] || {}), bestialTrait: ev.currentTarget.value };
+            });
+          });
+          dialogHtml.on("change", ".mut-divergent-meta", async (ev) => {
+            await _mtSave(state => { state.divergent.trait = ev.currentTarget.value; });
+            _mtReopen();
+          });
+          dialogHtml.on("change", ".mut-divergent-meta-option", async (ev) => {
+            await _mtSave(state => { state.divergent.config = { ...(state.divergent.config || {}), option: ev.currentTarget.value }; });
+          });
+          dialogHtml.on("change", ".mut-divergent-meta-bestial", async (ev) => {
+            await _mtSave(state => { state.divergent.config = { ...(state.divergent.config || {}), bestialTrait: ev.currentTarget.value }; });
+          });
+        }
+
+        // === CYBERNETIC ENHANCEMENT: trait selection handlers ===
+        if (trans.catalogKey === "cybernetic_enhancement") {
+          const _cyReopen = () => { dialog.close(); this._onViewTransformationTraits(event); };
+          const _cySave = async (mutator) => {
+            const state = foundry.utils.deepClone(actorRef.system.transformationMeta?.cyberneticState || {});
+            if (!Array.isArray(state.traits)) state.traits = [];
+            if (!state.config) state.config = {};
+            mutator(state);
+            await actorRef.update({ "system.transformationMeta.cyberneticState": state });
+          };
+          const cyLimitNow = 3 + 2 * (Math.min(3, Math.max(1, parseInt(String(trans.gradeOrStacks ?? "").replace(/[^\d]/g, ""), 10) || 1)) - 1);
+
+          dialogHtml.on("change", ".mut-cyber-trait", async (ev) => {
+            const traitId = ev.currentTarget.dataset.name;
+            await _cySave(state => {
+              const arr = state.traits;
+              if (ev.currentTarget.checked) {
+                if (arr.length < cyLimitNow && !arr.includes(traitId)) arr.push(traitId);
+              } else {
+                const i = arr.indexOf(traitId);
+                if (i >= 0) arr.splice(i, 1);
+                // NOTE: orphaned config entries are harmless (only read while chosen);
+                // deleting keys from ObjectField clones doesn't persist anyway.
+              }
+            });
+            _cyReopen();
+          });
+
+          dialogHtml.on("change", ".mut-cyber-attr", async (ev) => {
+            const traitId = ev.currentTarget.dataset.traitId;
+            const attr = ev.currentTarget.value;
+            await _cySave(state => {
+              state.config[traitId] = { ...(state.config[traitId] || {}), attribute: attr };
+            });
+          });
+        }
+
         // === MUTATION: Born with Power handlers ===
         if (trans.catalogKey === "mutation") {
           const bwpInputs = dialogHtml.find('.mutation-bwp-input');
@@ -9210,10 +9500,12 @@ export class DBUCharacterSheet extends ActorSheet {
   }
 
   async _trackCombatUsage(effectId, limit = "round", maxUses = 0, label = "") {
-    const key = limit === "encounter" ? "encounter" : "round";
+    // Limits arrive as "encounter" (catalog format) or "1/Encounter", "x/Encounter" (hand-written entries)
+    const key = /encounter/i.test(String(limit || "")) ? "encounter" : "round";
     const currentCount = this.actor.system.combatTabState?.resourceUsage?.[key]?.[effectId] || 0;
     if (maxUses > 0 && currentCount >= maxUses) {
       ui.notifications.warn("That effect has already reached its usage limit.");
+      this._usageRejected = true;
       return false;
     }
 
@@ -9527,6 +9819,27 @@ export class DBUCharacterSheet extends ActorSheet {
       });
     }
 
+    // Nanomachine Repair (cybernetic trait): regain 2(bT) LP +1(bT) per Health
+    // Threshold below, at the start of each Combat Round (works even Defeated).
+    if (this.actor.system._cyberNanomachineActive) {
+      const nmBaseTier = this.actor.system.baseTier || 1;
+      const nmThresholds = this.actor.system.thresholds?.crossedCount || 0;
+      const nmHeal = (2 + nmThresholds) * nmBaseTier;
+      const lpCur = this.actor.system.lifePoints?.value ?? 0;
+      const lpMax = this.actor.system.lifePoints?.max ?? 0;
+      const lpNew = Math.min(lpMax, lpCur + nmHeal);
+      if (lpNew !== lpCur) await this.actor.update({ "system.lifePoints.value": lpNew });
+      ChatMessage.create({
+        speaker: ChatMessage.getSpeaker({ actor: this.actor }),
+        content: `<div class="dbu-attack-roll" data-actor-id="${this.actor.id}">
+          <h3 class="dbu-attack-title"><span class="dbu-card-title-text"><i class="fas fa-heartbeat"></i> Nanomachine Repair</span><span class="dbu-action-count">R${cts.currentRound}</span></h3>
+          <div class="dbu-card-body">
+            <div class="dbu-defend-guide">Regained <b>+${lpNew - lpCur} LP</b> (2(bT)${nmThresholds ? ` +${nmThresholds}(bT) thresholds below` : ""}). LP ${lpCur} → <b>${lpNew}</b>.</div>
+          </div>
+        </div>`
+      });
+    }
+
     // Temporary: countdown and forced deactivation
     const countdowns = foundry.utils.deepClone(this.actor.system.transformationMeta?.temporaryCountdowns || {});
     let countdownChanged = false;
@@ -9817,6 +10130,14 @@ export class DBUCharacterSheet extends ActorSheet {
       // Clear all temp effects from activable automation
       "system.combatTabState.activeTempEffects": []
     };
+
+    // Strenuous downtime penalty: consume one of the N affected encounters
+    const strenuousDT = this.actor.system.downtime?.strenuous || {};
+    if ((strenuousDT.encountersLeft || 0) > 0) {
+      const left = strenuousDT.encountersLeft - 1;
+      updates["system.downtime.strenuous.encountersLeft"] = left;
+      if (left <= 0) updates["system.downtime.strenuous.fraction"] = 0;
+    }
 
     // Reset Possession host LP tracking if in possession mode
     const fusion = this.actor.system.fusion || {};
@@ -10604,7 +10925,7 @@ export class DBUCharacterSheet extends ActorSheet {
 
   async _undoCombatUsage(trackingId, usageLimit) {
     if (!trackingId || !usageLimit) return;
-    const key = usageLimit === "encounter" ? "encounter" : "round";
+    const key = /encounter/i.test(String(usageLimit || "")) ? "encounter" : "round";
     const ctsUndo = foundry.utils.deepClone(this.actor.system.combatTabState || {});
     const etUndo = foundry.utils.deepClone(this.actor.system.effectTracking || {});
     // Keep 0 instead of deleting: removed keys are silently ignored by
@@ -11956,9 +12277,11 @@ export class DBUCharacterSheet extends ActorSheet {
   async _onDamageCalcInput(event) {
     const field = event.currentTarget.dataset.field;
     if (!field) return;
-    const val = event.currentTarget.type === "number"
-      ? Number(event.currentTarget.value) || 0
-      : event.currentTarget.value;
+    const val = event.currentTarget.type === "checkbox"
+      ? event.currentTarget.checked
+      : (event.currentTarget.type === "number"
+        ? Number(event.currentTarget.value) || 0
+        : event.currentTarget.value);
     await this.actor.update({ [`system.damageCalc.${field}`]: val });
   }
 
@@ -12904,6 +13227,18 @@ export class DBUCharacterSheet extends ActorSheet {
     await this.actor.update({ "system.combatTabState": cts });
   }
 
+  /** Toggle Charging Assault on a tracker attack action (Impaling Horns wound bonus). */
+  async _onTrackerChargingToggle(event) {
+    const el = event.currentTarget;
+    const roundNum = Number(el.dataset.round);
+    const actionIndex = Number(el.dataset.actionIndex);
+    const cts = foundry.utils.deepClone(this.actor.system.combatTabState || {});
+    const round = (cts.rounds || []).find(r => r.roundNumber === roundNum);
+    if (!round?.actions?.[actionIndex]) return;
+    round.actions[actionIndex].charging = el.checked;
+    await this.actor.update({ "system.combatTabState": cts });
+  }
+
   async _onTrackerNextRound(event) {
     event.preventDefault();
     return this._onCombatNewRound(event);
@@ -13050,6 +13385,7 @@ export class DBUCharacterSheet extends ActorSheet {
     //    Limited-use effects log themselves into the Round Tracker via _trackCombatUsage.
     this._usageJustLogged = false;
     this._usageJustUndone = false;
+    this._usageRejected = false;
     await this._onUnifiedAction({
       preventDefault: () => {},
       currentTarget: button
@@ -13057,8 +13393,9 @@ export class DBUCharacterSheet extends ActorSheet {
 
     // 2. Fallback log entry for UNLIMITED effects so the tracker stays a complete
     //    combat log. Skipped when the use was already logged (or logged-then-undone
-    //    because the dialog was cancelled). Stance shifts post their own chat card.
-    if (this._usageJustLogged || this._usageJustUndone) return;
+    //    because the dialog was cancelled), and when the use was rejected for
+    //    hitting its usage limit. Stance shifts post their own chat card.
+    if (this._usageJustLogged || this._usageJustUndone || this._usageRejected) return;
     if ((button.dataset.actionType || "") === "talent-stance") return;
     const sourceName = button.dataset.sourceName || "Ability";
     const cts = foundry.utils.deepClone(this.actor.system.combatTabState || {});
@@ -13193,9 +13530,13 @@ export class DBUCharacterSheet extends ActorSheet {
       ? `${strikeFormulaBase}-${dimOffensePen}`
       : strikeFormulaBase;
     const woundFormulaBase = sd.woundFormula || "1d10";
-    const woundFormula = wager > 0
+    // Impaling Horns (bestial trait): +2(T) Wound on Physical attacks with Charging Assault
+    const chargingBonus = action.charging
+      ? (Number(this.actor.system._bestialChargingWoundBonus) || 0) : 0;
+    let woundFormula = wager > 0
       ? `${woundFormulaBase}${woundFormulaBase.includes("+") ? "+" : "+"}${wager}`
       : woundFormulaBase;
+    if (chargingBonus > 0) woundFormula = `${woundFormula}+${chargingBonus}`;
 
     // Execute rolls
     const strikeRoll = new Roll(strikeFormulaRaw);
@@ -13212,11 +13553,14 @@ export class DBUCharacterSheet extends ActorSheet {
       });
     }
 
-    const buffLines = (sd.activeBuffs || []).map(b => {
+    let buffLines = (sd.activeBuffs || []).map(b => {
       const name = typeof b === "string" ? b : b.name;
       const tip = typeof b === "string" ? "" : (b.tooltip || "");
       return `<span class="dbu-attack-buff"${tip ? ` title="${tip.replace(/"/g, "&quot;")}"` : ""}>${name}</span>`;
     }).join("");
+    if (chargingBonus > 0) {
+      buffLines += `<span class="dbu-attack-buff" title="Impaling Horns: Charging Assault wound bonus">Impaling Horns +${chargingBonus} Wound</span>`;
+    }
     const buffsHtml = buffLines
       ? `<div class="dbu-attack-buffs"><strong>Active when rolled:</strong> ${buffLines}</div>`
       : "";
@@ -13375,7 +13719,7 @@ export class DBUCharacterSheet extends ActorSheet {
   async _onTrackerTransformCheckbox(event) {
     const el = event.currentTarget;
     const field = el.dataset.field;
-    if (!["transformSameLine", "transformSkipTest"].includes(field)) return;
+    if (!["transformSameLine", "transformSkipTest", "transformReplace"].includes(field)) return;
     const roundNum = Number(el.dataset.round);
     const actionIndex = Number(el.dataset.actionIndex);
     const cts = foundry.utils.deepClone(this.actor.system.combatTabState || {});
@@ -13385,12 +13729,19 @@ export class DBUCharacterSheet extends ActorSheet {
     await this.actor.update({ "system.combatTabState": cts });
   }
 
-  /** Activate a transformation with full entry machinery (snapshot + syncs + entry effects). */
-  async _activateTransformationAtIndex(transIndex) {
+  /** Activate a transformation with full entry machinery (snapshot + syncs + entry effects).
+   *  `deactivateIndices` lets a Step-by-Step replacement leave the previous form(s)
+   *  in the same update so their bonuses never coexist with the new form's. */
+  async _activateTransformationAtIndex(transIndex, deactivateIndices = []) {
     const trans = foundry.utils.deepClone(this.actor.system.transformations || []);
     if (!trans[transIndex] || trans[transIndex].active) return;
-    trans[transIndex].active = true;
     const snapshots = foundry.utils.deepClone(this.actor.system.transformationMeta?.entrySnapshots || {});
+    for (const di of deactivateIndices) {
+      if (di === transIndex || !trans[di]?.active) continue;
+      trans[di].active = false;
+      delete snapshots[String(trans[di].id ?? di)];
+    }
+    trans[transIndex].active = true;
     const transId = String(trans[transIndex].id ?? transIndex);
     const entrySnapshot = this._buildTransformationEntrySnapshot(transIndex, trans);
     snapshots[transId] = entrySnapshot;
@@ -13443,8 +13794,20 @@ export class DBUCharacterSheet extends ActorSheet {
     let newST = effST(chosen);
     if (stepByStep) newST = Math.max(0, newST - stepByStep.reduction);
 
-    // Combined ST = highest + 1/2 of each other (active forms + the new form)
-    const sts = all.filter(t => t.active).map(effST);
+    // Step-by-Step replacement (default) vs conjunction: when entering an
+    // Alternate/Legendary Form while another one is active, the normal flow is
+    // to LEAVE the previous form (its ST does not combine and its bonuses end
+    // on success). Unchecking "Replace" keeps both (transformation-rules.txt:40).
+    const FORM_TYPES = ["form_alternate", "form_legendary"];
+    const newIsFormType = FORM_TYPES.includes(chosen.transformationType);
+    const replaceMode = newIsFormType && action.transformReplace !== false;
+    const replacedIndices = replaceMode
+      ? all.map((t, i) => (t.active && FORM_TYPES.includes(t.transformationType)) ? i : -1).filter(i => i >= 0)
+      : [];
+    const replacedNames = replacedIndices.map(i => all[i].name || "Form");
+
+    // Combined ST = highest + 1/2 of each other (remaining active forms + the new form)
+    const sts = all.filter((t, i) => t.active && !replacedIndices.includes(i)).map(effST);
     sts.push(newST);
     sts.sort((x, y) => y - x);
     let required = (sts[0] || 0) + sts.slice(1).reduce((acc, s) => acc + Math.floor(s / 2), 0);
@@ -13455,8 +13818,8 @@ export class DBUCharacterSheet extends ActorSheet {
 
     // New Level of Power (transformation-rules.txt:62): re-entering a form you
     // already entered this encounter needs no Stress Test — but ONLY on a solo
-    // entry (no other active forms). Marked manually via the panel checkbox.
-    const soloEntry = all.filter(t => t.active).length === 0;
+    // entry (no other active forms remaining). Marked manually via the panel checkbox.
+    const soloEntry = all.filter((t, i) => t.active && !replacedIndices.includes(i)).length === 0;
     const willSkipTest = !!action.transformSkipTest && soloEntry;
 
     return {
@@ -13465,6 +13828,10 @@ export class DBUCharacterSheet extends ActorSheet {
       crimson,
       willSkipTest,
       soloRequested: !!action.transformSkipTest,
+      replaceMode,
+      replaceable: newIsFormType && all.some(t => t.active && FORM_TYPES.includes(t.transformationType)),
+      replacedIndices,
+      replacedNames,
       ignoredPenalty: system.thresholds?.stressPenalty || 0
     };
   }
@@ -13499,10 +13866,11 @@ export class DBUCharacterSheet extends ActorSheet {
     const modChips = [];
     if (calc.stepByStep) modChips.push(`<span class="dbu-meta-chip">Step-by-Step −${calc.stepByStep.reduction} (${calc.stepByStep.formName}${calc.stepByStep.sameLine ? ", same line" : ""})</span>`);
     if (calc.crimson) modChips.push(`<span class="dbu-meta-chip">Crimson +2</span>`);
+    if (calc.replaceMode && calc.replacedNames.length) modChips.push(`<span class="dbu-meta-chip">Leaves ${calc.replacedNames.join(", ")}</span>`);
 
     // New Level of Power skip: solo re-entry needs no Stress Test.
     if (calc.willSkipTest) {
-      await this._activateTransformationAtIndex(idx);
+      await this._activateTransformationAtIndex(idx, calc.replacedIndices);
       await ChatMessage.create({
         speaker: ChatMessage.getSpeaker({ actor: this.actor }),
         content: `<div class="dbu-attack-roll dbu-defend-card" data-actor-id="${this.actor.id}">
@@ -13530,7 +13898,7 @@ export class DBUCharacterSheet extends ActorSheet {
     await roll.evaluate();
     const success = roll.total >= required;
 
-    if (success) await this._activateTransformationAtIndex(idx);
+    if (success) await this._activateTransformationAtIndex(idx, calc.replacedIndices);
     await roll.toMessage({
       speaker: ChatMessage.getSpeaker({ actor: this.actor }),
       flavor: `<div class="dbu-attack-roll ${success ? "dbu-defend-card" : ""}" data-actor-id="${this.actor.id}">
@@ -13844,6 +14212,11 @@ export class DBUCharacterSheet extends ActorSheet {
       let formula = base;
       if (penalty > 0) formula += `-${penalty}`;
       if (wager > 0) formula += `+${wager}`;
+      // Robotic Limb (cybernetic trait) + Fierce Counter (talent): +Strike on Parry
+      const parryBonus = isParry
+        ? (Number(this.actor.system._cyberParryStrike) || 0) + (Number(this.actor.system.aptitudes?.fierceCounterStrike) || 0)
+        : 0;
+      if (parryBonus > 0) formula += `+${parryBonus}`;
       const kiCost = opt.costT * tier;
       const totalPay = kiCost + wager;
 
@@ -14000,13 +14373,18 @@ export class DBUCharacterSheet extends ActorSheet {
     const formula = dimDefensePen > 0 ? `${td.formula}-${dimDefensePen}` : td.formula;
     const roll = new Roll(formula);
     await roll.evaluate();
-    const nat = roll.dice[0]?.results?.[0]?.result ?? "?";
+    const rawNat = roll.dice[0]?.results?.[0]?.result ?? "?";
+    // Alternate Sight (bestial trait): +1 Natural Result on Dodge Rolls
+    // (raises the effective die face: affects total AND crit check; a raw 1 still botches)
+    const natBonus = Number(this.actor.system._bestialDodgeNaturalBonus) || 0;
+    const nat = rawNat === "?" ? "?" : Math.min(10, rawNat + natBonus);
     const isCrit = nat !== "?" && nat >= td.ct;
-    const isBotch = nat === 1;
+    const isBotch = rawNat === 1;
     let critRoll = null;
     if (isCrit) { critRoll = new Roll(this._critExtraFormula(sysTier)); await critRoll.evaluate(); }
     const botchPenalty = 2 * sysBaseTier;
-    const total = roll.total + (critRoll?.total || 0) - (isBotch ? botchPenalty : 0);
+    const natGain = (nat !== "?" && rawNat !== "?") ? (nat - rawNat) : 0;
+    const total = roll.total + natGain + (critRoll?.total || 0) - (isBotch ? botchPenalty : 0);
     const tag = critRoll
       ? ` <span class="dbu-crit">CRIT! +${critRoll.formula}: ${critRoll.total}</span>`
       : (isBotch ? ` <span class="dbu-botch">BOTCH -${botchPenalty}</span>` : "");
@@ -14022,7 +14400,7 @@ export class DBUCharacterSheet extends ActorSheet {
           <span class="dbu-roll-label">Dodge</span>
           <span class="dbu-roll-main">
             <code class="dbu-roll-formula">${formula}</code>
-            <span class="dbu-roll-sub">Nat ${nat} · CT ${td.ct}+</span>${tag}
+            <span class="dbu-roll-sub">Nat ${natGain > 0 ? `${rawNat}→${nat} (Alt. Sight)` : nat} · CT ${td.ct}+</span>${tag}
           </span>
           <span class="dbu-roll-total">${total}</span>
         </div>
@@ -14854,18 +15232,37 @@ export class DBUCharacterSheet extends ActorSheet {
       notes: period.notes || ""
     });
 
-    await this.actor.update({
+    const updates = {
       "system.downtime.currentPeriod.active": false,
       "system.downtime.currentPeriod.totalDT": 0,
       "system.downtime.currentPeriod.spentDT": 0,
       "system.downtime.currentPeriod.activitiesUsed": [],
       "system.downtime.currentPeriod.modifiersUsed": [],
       "system.downtime.currentPeriod.notes": "",
+      "system.downtime.currentPeriod.appliedRecords": [],
       "system.downtime.history": history
-    });
+    };
+
+    // Strenuous: LP penalty starts now, for the next 2 combat encounters.
+    // Resting this period reduces the penalty by 1/4 (0.25 → none, 0.5 → 0.25).
+    const strenuousRec = (period.appliedRecords || []).find(r => r.sourceId === "mod:strenuous");
+    let strenuousLine = "";
+    if (strenuousRec) {
+      let fraction = strenuousRec.strenuous === "lifeThreatening" ? 0.5 : 0.25;
+      if ((period.activitiesUsed || []).includes("resting")) fraction -= 0.25;
+      if (fraction > 0) {
+        updates["system.downtime.strenuous.fraction"] = fraction;
+        updates["system.downtime.strenuous.encountersLeft"] = 2;
+        strenuousLine = `<br><em>Strenuous: -${fraction === 0.5 ? "1/2" : "1/4"} Max LP for the next 2 Combat Encounters.</em>`;
+      } else {
+        strenuousLine = "<br><em>Strenuous LP penalty negated by Resting.</em>";
+      }
+    }
+
+    await this.actor.update(updates);
     ChatMessage.create({
       speaker: ChatMessage.getSpeaker({ actor: this.actor }),
-      content: `<b>Downtime Period Ended</b> — ${period.spentDT || 0}/${period.totalDT || 0} DT spent.`
+      content: `<b>Downtime Period Ended</b> — ${period.spentDT || 0}/${period.totalDT || 0} DT spent.${strenuousLine}`
     });
   }
 
@@ -14873,7 +15270,7 @@ export class DBUCharacterSheet extends ActorSheet {
     event.preventDefault();
     const confirmed = await Dialog.confirm({
       title: "Cancel Downtime Period",
-      content: "<p>Cancel the current period? Lifetime usage counters from this period will be reverted.</p>",
+      content: "<p>Cancel the current period? All gains applied this period (scores, TP, skills, karma, transformations…) and lifetime counters will be reverted.</p>",
       defaultYes: false
     });
     if (!confirmed) return;
@@ -14884,7 +15281,6 @@ export class DBUCharacterSheet extends ActorSheet {
     const lifetime = foundry.utils.deepClone(dt.lifetimeUses || {});
     const activitiesUsed = period.activitiesUsed || [];
 
-    // Count occurrences of each activity and revert
     const activityMap = {
       basicTraining: "basicTraining", techniqueTraining: "techniqueTraining",
       transformationTraining: "transformationTraining", heartbeatTraining: "heartbeatTraining",
@@ -14895,15 +15291,150 @@ export class DBUCharacterSheet extends ActorSheet {
       if (key && lifetime[key] > 0) lifetime[key]--;
     }
 
-    await this.actor.update({
+    // Reverse EVERY applied record (activities + modifiers) from this period
+    const updates = {
       "system.downtime.currentPeriod.active": false,
       "system.downtime.currentPeriod.totalDT": 0,
       "system.downtime.currentPeriod.spentDT": 0,
       "system.downtime.currentPeriod.activitiesUsed": [],
       "system.downtime.currentPeriod.modifiersUsed": [],
       "system.downtime.currentPeriod.notes": "",
+      "system.downtime.currentPeriod.appliedRecords": [],
       "system.downtime.lifetimeUses": lifetime
+    };
+    const records = period.appliedRecords || [];
+    let transClone = null;
+    for (let i = records.length - 1; i >= 0; i--) {
+      const record = records[i];
+      this._dtBuildGainsUpdates(record.gains, -1, updates);
+      if (record.trans) {
+        if (!transClone) transClone = foundry.utils.deepClone(this.actor.system.transformations || []);
+        this._dtReverseTransChanges(record, transClone);
+      }
+    }
+    if (transClone) updates["system.transformations"] = transClone;
+
+    await this.actor.update(updates);
+  }
+
+  // Shared downtime activity metadata
+  static DT_COSTS = {
+    basicTraining: 1, techniqueTraining: 1, reinforcingForm: 2,
+    unlockingForm: 2, transformationTraining: 2, heartbeatTraining: 1,
+    resting: 1, studying: 1, baseBuilding: 2
+  };
+  static DT_NAMES = {
+    basicTraining: "Basic Training", techniqueTraining: "Technique Training",
+    reinforcingForm: "Reinforcing Form", unlockingForm: "Unlocking Form",
+    transformationTraining: "Transformation Training", heartbeatTraining: "Heartbeat Training",
+    resting: "Resting", studying: "Studying", baseBuilding: "Base Building"
+  };
+  static DT_LIMITS = {
+    basicTraining: 4, techniqueTraining: 4, transformationTraining: 2,
+    heartbeatTraining: 1, resting: 4, studying: 4, baseBuilding: 4
+  };
+
+  /** Dialog: allocate N attribute points among a set of attributes. Returns {attrKey: n} or null. */
+  async _dtPromptAttributes(title, points, allowed = ["ag", "fo", "te", "in", "ma"]) {
+    const labels = { ag: "Agility", fo: "Force", te: "Tenacity", sc: "Scholarship", in: "Insight", ma: "Magic", pe: "Personality" };
+    const opts = allowed.map(k => `<option value="${k}">${labels[k]} (${k.toUpperCase()})</option>`).join("");
+    const selects = Array.from({ length: points }, (_, i) =>
+      `<div class="form-group"><label>Point ${i + 1}</label><select name="attr${i}">${opts}</select></div>`).join("");
+    const result = await Dialog.prompt({
+      title,
+      content: `<form>${selects}<p class="notes">Score Limit still applies (8 + 3 per Tier past the first).</p></form>`,
+      callback: html => Array.from({ length: points }, (_, i) => html.find(`[name='attr${i}']`).val()),
+      rejectClose: false
     });
+    if (!result || result.some(v => !v)) return null;
+    const alloc = {};
+    for (const k of result) alloc[k] = (alloc[k] || 0) + 1;
+    return alloc;
+  }
+
+  /** Dialog: pick N distinct-or-not skills. Returns array of skill ids or null. */
+  async _dtPromptSkills(title, count, attrFilter = null) {
+    const skills = (CONFIG.DBU?.skillsData || []).filter(s => !attrFilter || s.attribute === attrFilter);
+    const opts = skills.map(s => `<option value="${s.id}">${s.name}</option>`).join("");
+    const selects = Array.from({ length: count }, (_, i) =>
+      `<div class="form-group"><label>Skill Rank ${i + 1}</label><select name="skill${i}">${opts}</select></div>`).join("");
+    const result = await Dialog.prompt({
+      title,
+      content: `<form>${selects}</form>`,
+      callback: html => Array.from({ length: count }, (_, i) => html.find(`[name='skill${i}']`).val()),
+      rejectClose: false
+    });
+    if (!result || result.some(v => !v)) return null;
+    return result;
+  }
+
+  /** Dialog: pick one option from [value, label] pairs. Returns value or null. */
+  async _dtPromptSelect(title, prompt, pairs) {
+    const opts = pairs.map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
+    const result = await Dialog.prompt({
+      title,
+      content: `<form><div class="form-group"><label>${prompt}</label><select name="pick">${opts}</select></div></form>`,
+      callback: html => html.find("[name='pick']").val(),
+      rejectClose: false
+    });
+    return result ?? null;
+  }
+
+  /** Fold a gains-delta into update entries (sign +1 applies, -1 reverses). */
+  _dtBuildGainsUpdates(gains, sign, updates) {
+    if (!gains) return;
+    const cur = this.actor.system.downtime?.gains || {};
+    for (const [k, v] of Object.entries(gains.attributes || {})) {
+      if (!v) continue;
+      const base = updates[`system.downtime.gains.attributes.${k}`] ?? (cur.attributes?.[k] || 0);
+      updates[`system.downtime.gains.attributes.${k}`] = Math.max(0, base + sign * v);
+    }
+    for (const k of ["tp", "stressBonus", "devPoints", "equipmentPoints"]) {
+      if (!gains[k]) continue;
+      const base = updates[`system.downtime.gains.${k}`] ?? (cur[k] || 0);
+      updates[`system.downtime.gains.${k}`] = Math.max(0, base + sign * gains[k]);
+    }
+    if (gains.skillRanks && Object.keys(gains.skillRanks).length) {
+      const sr = updates["system.downtime.gains.skillRanks"] || foundry.utils.deepClone(cur.skillRanks || {});
+      for (const [sid, n] of Object.entries(gains.skillRanks)) {
+        sr[sid] = Math.max(0, (sr[sid] || 0) + sign * n);
+      }
+      updates["system.downtime.gains.skillRanks"] = sr;
+    }
+    if (gains.karma) {
+      const base = updates["system.zsoul.karma"] ?? (this.actor.system.zsoul?.karma || 0);
+      updates["system.zsoul.karma"] = Math.max(0, base + sign * gains.karma);
+    }
+  }
+
+  /** Reverse a record's transformation changes on a working clone. */
+  _dtReverseTransChanges(record, transClone) {
+    const tr = record.trans;
+    if (!tr) return;
+    const byId = (id) => transClone.find(t => t.id === id);
+    if (tr.masteredId != null) {
+      const t = byId(tr.masteredId);
+      if (t) t.mastered = false;
+    }
+    if (tr.piId != null) {
+      const t = byId(tr.piId);
+      if (t) {
+        // Undo Control side-effects if we applied them
+        if (t.powerImprovement === "control" && tr.piValue === "control") {
+          t.aspects = (t.aspects || []).filter(a => a !== "Strainless" || !tr.piAddedStrainless);
+          if (tr.piStressReduced) t.stressTest = (t.stressTest || 0) + 2;
+        }
+        t.powerImprovement = tr.piPrev || "none";
+      }
+    }
+    if (tr.heartbeatId != null) {
+      const t = byId(tr.heartbeatId);
+      if (t) t.aspects = (t.aspects || []).filter(a => a !== "Heartbeat");
+    }
+    if (tr.addedId != null) {
+      const idx = transClone.findIndex(t => t.id === tr.addedId);
+      if (idx >= 0) transClone.splice(idx, 1);
+    }
   }
 
   async _onDtUseActivity(event) {
@@ -14911,61 +15442,202 @@ export class DBUCharacterSheet extends ActorSheet {
     const actId = event.currentTarget.dataset.activityId;
     if (!actId) return;
 
-    const dt = this.actor.system.downtime || {};
+    const system = this.actor.system;
+    const dt = system.downtime || {};
     const period = dt.currentPeriod || {};
-    const lifetime = foundry.utils.deepClone(dt.lifetimeUses || {});
     const activitiesUsed = [...(period.activitiesUsed || [])];
+    const modifiersUsed = period.modifiersUsed || [];
 
-    // Activity cost lookup
-    const costMap = {
-      basicTraining: 1, techniqueTraining: 1, reinforcingForm: 2,
-      unlockingForm: 2, transformationTraining: 2, heartbeatTraining: 1,
-      resting: 1, studying: 1, baseBuilding: 2
-    };
-    const nameMap = {
-      basicTraining: "Basic Training", techniqueTraining: "Technique Training",
-      reinforcingForm: "Reinforcing Form", unlockingForm: "Unlocking Form",
-      transformationTraining: "Transformation Training", heartbeatTraining: "Heartbeat Training",
-      resting: "Resting", studying: "Studying", baseBuilding: "Base Building"
-    };
-    const effectMap = {
-      basicTraining: "+2 Attribute Points (not SC/PE)",
-      techniqueTraining: "+15 Technique Points",
-      reinforcingForm: "Mastery / Power Improvement",
-      unlockingForm: "New Transformation access",
-      transformationTraining: "+1 Stress Bonus",
-      heartbeatTraining: "Transformation gains Heartbeat Aspect",
-      resting: "+1 Karma, +1 PE Skill Rank, +2 PE Score",
-      studying: "+2 Skill Ranks, +2 SC Score",
-      baseBuilding: "+2 Dev Points, +1 PE, +1 SC Score"
-    };
-
-    const cost = costMap[actId] || 1;
+    const cost = DBUCharacterSheet.DT_COSTS[actId] || 1;
+    const name = DBUCharacterSheet.DT_NAMES[actId] || actId;
     const remaining = (period.totalDT || 0) - (period.spentDT || 0);
-    if (remaining < cost) {
-      ui.notifications.warn("Not enough DT remaining.");
+    if (!period.active) { ui.notifications.warn("No active downtime period."); return; }
+    if (remaining < cost) { ui.notifications.warn("Not enough DT remaining."); return; }
+
+    // Once per period (Mentor lifts it; Deep Focus allows ONE Recreational twice)
+    const usedCount = activitiesUsed.filter(a => a === actId).length;
+    const isRecreational = ["resting", "studying", "baseBuilding"].includes(actId);
+    const someRecDoubled = ["resting", "studying", "baseBuilding"].some(id =>
+      id !== actId && activitiesUsed.filter(a => a === id).length >= 2);
+    const reuseAllowed = modifiersUsed.includes("mentor")
+      || (modifiersUsed.includes("deepFocus") && isRecreational && usedCount < 2 && !someRecDoubled);
+    if (usedCount >= 1 && !reuseAllowed) {
+      ui.notifications.warn("Each Downtime Activity can only be used once per period.");
+      return;
+    }
+    // Lifetime limit
+    const limit = DBUCharacterSheet.DT_LIMITS[actId];
+    if (limit && (dt.lifetimeUses?.[actId] || 0) >= limit) {
+      ui.notifications.warn(`Lifetime limit reached for ${name} (${limit}).`);
       return;
     }
 
-    activitiesUsed.push(actId);
-    const spentDT = (period.spentDT || 0) + cost;
+    // Build the applied record; any cancelled dialog aborts with no changes
+    const record = { sourceId: actId, gains: {}, trans: null };
+    const lines = [];
+    const updates = {};
+    const transformations = system.transformations || [];
 
-    // Increment lifetime uses for limited activities
-    const lifetimeKey = ["basicTraining", "techniqueTraining", "transformationTraining",
-      "heartbeatTraining", "resting", "studying", "baseBuilding"];
-    if (lifetimeKey.includes(actId)) {
-      lifetime[actId] = (lifetime[actId] || 0) + 1;
+    switch (actId) {
+      case "basicTraining": {
+        const alloc = await this._dtPromptAttributes("Basic Training — 2 Attribute Points (not SC/PE)", 2);
+        if (!alloc) return;
+        record.gains.attributes = alloc;
+        lines.push(Object.entries(alloc).map(([k, n]) => `+${n} ${k.toUpperCase()} Score`).join(", "));
+        break;
+      }
+      case "techniqueTraining": {
+        record.gains.tp = 15;
+        lines.push("+15 Technique Points");
+        break;
+      }
+      case "reinforcingForm": {
+        const options = [];
+        transformations.forEach((t, i) => {
+          const type = t.transformationType || "";
+          const isForm = type === "form_alternate" || type === "form_legendary" || t.isLegendary;
+          const isEP = type.startsWith("enhancement");
+          if (isForm && !t.mastered) options.push([`m:${i}`, `${t.name || "(unnamed)"} — gain Mastery`]);
+          if (isEP && (t.powerImprovement || "none") === "none") options.push([`p:${i}`, `${t.name || "(unnamed)"} — Power Improvement`]);
+        });
+        if (!options.length) {
+          ui.notifications.warn("No eligible unmastered Alternate/Legendary Form or Enhancement Power without Power Improvement.");
+          return;
+        }
+        const pick = await this._dtPromptSelect("Reinforcing Form", "Select what to reinforce:", options);
+        if (pick === null) return;
+        const [kind, idxStr] = pick.split(":");
+        const idx = Number(idxStr);
+        const transClone = foundry.utils.deepClone(transformations);
+        if (kind === "m") {
+          transClone[idx].mastered = true;
+          record.trans = { masteredId: transClone[idx].id };
+          lines.push(`Mastery gained: ${transClone[idx].name || "Form"}`);
+        } else {
+          const piPick = await this._dtPromptSelect("Power Improvement", `Improvement for ${transClone[idx].name}:`,
+            [["control", "Control (Strainless, Stress -2)"], ["surpass", "Surpass (Mastered, Unlimited State Access)"]]);
+          if (piPick === null) return;
+          const t = transClone[idx];
+          record.trans = { piId: t.id, piPrev: t.powerImprovement || "none", piValue: piPick };
+          t.powerImprovement = piPick;
+          if (piPick === "control") {
+            if (!t.aspects) t.aspects = [];
+            if (!t.aspects.includes("Strainless")) { t.aspects.push("Strainless"); record.trans.piAddedStrainless = true; }
+            if ((t.stressTest || 0) > 0) { t.stressTest = Math.max(0, t.stressTest - 2); record.trans.piStressReduced = true; }
+          }
+          lines.push(`Power Improvement (${piPick}): ${t.name || "Enhancement"}`);
+        }
+        updates["system.transformations"] = transClone;
+        break;
+      }
+      case "unlockingForm": {
+        const catalog = CONFIG.DBU?.transformationsCatalog || {};
+        const tier = system.tier || 1;
+        const owned = new Set(transformations.map(t => t.catalogKey).filter(Boolean));
+        const options = [];
+        for (const [key, entry] of Object.entries(catalog)) {
+          if (owned.has(key)) continue;
+          const reqTier = parseInt(String(entry.tierRequirement || "1")) || 1;
+          if (reqTier > tier) continue;
+          if (!this._meetsRacialRequirement(system.race, entry.racialRequirement)) continue;
+          options.push([key, `${entry.name} (${entry.category || ""}, ToP ${entry.tierRequirement || "1+"})`]);
+        }
+        if (!options.length) { ui.notifications.warn("No eligible catalog transformations found."); return; }
+        options.sort((a, b) => a[1].localeCompare(b[1]));
+        const pick = await this._dtPromptSelect("Unlocking Form", "Transformation to unlock (ARC approval — prerequisites not auto-checked):", options);
+        if (pick === null) return;
+        const entry = catalog[pick];
+        const typeMap = {
+          manifested_power: "manifested_power", enhancement_power: "enhancement_standard",
+          form_alternate: "form_alternate", form_legendary: "form_legendary"
+        };
+        const transClone = foundry.utils.deepClone(transformations);
+        const nextId = transClone.length > 0 ? Math.max(...transClone.map(t => t.id || 0)) + 1 : 1;
+        transClone.push({
+          id: nextId, catalogKey: entry.id, name: entry.name, active: false,
+          gradeOrStacks: "", tierRequirement: entry.tierRequirement || "", mastered: false,
+          stressTest: entry.stressTest || 0,
+          transformationType: typeMap[entry.category] || "form_alternate",
+          attrBonuses: foundry.utils.deepClone(entry.attrBonuses || {}),
+          aspects: [...(entry.aspects || [])],
+          structuredTraits: [], traits: "", isLegendary: entry.category === "form_legendary"
+        });
+        record.trans = { addedId: nextId };
+        lines.push(`Transformation unlocked: ${entry.name}`);
+        updates["system.transformations"] = transClone;
+        break;
+      }
+      case "transformationTraining": {
+        record.gains.stressBonus = 1;
+        lines.push("+1 Stress Bonus (permanent)");
+        break;
+      }
+      case "heartbeatTraining": {
+        const options = [];
+        transformations.forEach((t, i) => {
+          const aspects = (t.aspects || []).map(a => String(a).toLowerCase());
+          const hasBlocked = aspects.some(a => a.startsWith("dedicated") || a.startsWith("heartbeat"));
+          if (!hasBlocked) options.push([String(i), t.name || "(unnamed)"]);
+        });
+        if (!options.length) { ui.notifications.warn("No transformation without Dedicated/Heartbeat found."); return; }
+        const pick = await this._dtPromptSelect("Heartbeat Training", "Transformation that gains Heartbeat:", options);
+        if (pick === null) return;
+        const transClone = foundry.utils.deepClone(transformations);
+        const t = transClone[Number(pick)];
+        if (!t.aspects) t.aspects = [];
+        t.aspects.push("Heartbeat");
+        record.trans = { heartbeatId: t.id };
+        lines.push(`Heartbeat Aspect gained: ${t.name || "Transformation"}`);
+        updates["system.transformations"] = transClone;
+        break;
+      }
+      case "resting": {
+        const skills = await this._dtPromptSkills("Resting — 1 Skill Rank (Personality Skill)", 1, "pe");
+        if (!skills) return;
+        record.gains.karma = 1;
+        record.gains.attributes = { pe: 2 };
+        record.gains.skillRanks = { [skills[0]]: 1 };
+        const sName = (CONFIG.DBU?.skillsData || []).find(s => s.id === skills[0])?.name || skills[0];
+        lines.push(`+1 Karma Point, +1 ${sName} Rank, +2 PE Score`);
+        break;
+      }
+      case "studying": {
+        const skills = await this._dtPromptSkills("Studying — 2 Skill Ranks (any Skills)", 2);
+        if (!skills) return;
+        const sr = {};
+        for (const sid of skills) sr[sid] = (sr[sid] || 0) + 1;
+        record.gains.attributes = { sc: 2 };
+        record.gains.skillRanks = sr;
+        const names = skills.map(sid => (CONFIG.DBU?.skillsData || []).find(s => s.id === sid)?.name || sid);
+        lines.push(`+1 Rank: ${names.join(", ")}; +2 SC Score`);
+        break;
+      }
+      case "baseBuilding": {
+        record.gains.devPoints = 2;
+        record.gains.attributes = { pe: 1, sc: 1 };
+        lines.push("+2 Dev Points (spend immediately), +1 PE Score, +1 SC Score");
+        break;
+      }
+      default:
+        return;
     }
 
-    await this.actor.update({
-      "system.downtime.currentPeriod.activitiesUsed": activitiesUsed,
-      "system.downtime.currentPeriod.spentDT": spentDT,
-      "system.downtime.lifetimeUses": lifetime
-    });
+    // Apply gains + bookkeeping in a single update
+    this._dtBuildGainsUpdates(record.gains, 1, updates);
+    record.lines = lines;
+    activitiesUsed.push(actId);
+    updates["system.downtime.currentPeriod.activitiesUsed"] = activitiesUsed;
+    updates["system.downtime.currentPeriod.spentDT"] = (period.spentDT || 0) + cost;
+    updates["system.downtime.currentPeriod.appliedRecords"] = [...(period.appliedRecords || []), record];
+    if (limit) {
+      updates[`system.downtime.lifetimeUses.${actId}`] = (dt.lifetimeUses?.[actId] || 0) + 1;
+    }
+    await this.actor.update(updates);
 
     ChatMessage.create({
       speaker: ChatMessage.getSpeaker({ actor: this.actor }),
-      content: `<b>Downtime:</b> ${nameMap[actId] || actId} (${cost} DT)<br><em>${effectMap[actId] || ""}</em>`
+      content: `<b>Downtime:</b> ${name} (${cost} DT)`
+        + `<div class="dbu-auto-applied">${lines.map(l => `<div>${l}</div>`).join("")}</div>`
     });
   }
 
@@ -14976,47 +15648,57 @@ export class DBUCharacterSheet extends ActorSheet {
 
     const dt = this.actor.system.downtime || {};
     const period = dt.currentPeriod || {};
-    const lifetime = foundry.utils.deepClone(dt.lifetimeUses || {});
     const activitiesUsed = [...(period.activitiesUsed || [])];
+    const records = foundry.utils.deepClone(period.appliedRecords || []);
 
-    const costMap = {
-      basicTraining: 1, techniqueTraining: 1, reinforcingForm: 2,
-      unlockingForm: 2, transformationTraining: 2, heartbeatTraining: 1,
-      resting: 1, studying: 1, baseBuilding: 2
-    };
-
-    // Remove last occurrence
     const idx = activitiesUsed.lastIndexOf(actId);
     if (idx === -1) return;
     activitiesUsed.splice(idx, 1);
 
-    const cost = costMap[actId] || 1;
-    const spentDT = Math.max(0, (period.spentDT || 0) - cost);
+    const cost = DBUCharacterSheet.DT_COSTS[actId] || 1;
+    const updates = {
+      "system.downtime.currentPeriod.activitiesUsed": activitiesUsed,
+      "system.downtime.currentPeriod.spentDT": Math.max(0, (period.spentDT || 0) - cost)
+    };
 
-    // Decrement lifetime
-    const lifetimeKey = ["basicTraining", "techniqueTraining", "transformationTraining",
-      "heartbeatTraining", "resting", "studying", "baseBuilding"];
-    if (lifetimeKey.includes(actId) && (lifetime[actId] || 0) > 0) {
-      lifetime[actId]--;
+    // Reverse the applied record (latest one for this activity)
+    let recIdx = -1;
+    for (let i = records.length - 1; i >= 0; i--) {
+      if (records[i].sourceId === actId) { recIdx = i; break; }
+    }
+    if (recIdx >= 0) {
+      const record = records.splice(recIdx, 1)[0];
+      this._dtBuildGainsUpdates(record.gains, -1, updates);
+      if (record.trans) {
+        const transClone = foundry.utils.deepClone(this.actor.system.transformations || []);
+        this._dtReverseTransChanges(record, transClone);
+        updates["system.transformations"] = transClone;
+      }
+    }
+    updates["system.downtime.currentPeriod.appliedRecords"] = records;
+
+    // Decrement lifetime counter
+    if (DBUCharacterSheet.DT_LIMITS[actId] && (dt.lifetimeUses?.[actId] || 0) > 0) {
+      updates[`system.downtime.lifetimeUses.${actId}`] = dt.lifetimeUses[actId] - 1;
     }
 
-    await this.actor.update({
-      "system.downtime.currentPeriod.activitiesUsed": activitiesUsed,
-      "system.downtime.currentPeriod.spentDT": spentDT,
-      "system.downtime.lifetimeUses": lifetime
-    });
+    await this.actor.update(updates);
   }
 
   async _onDtToggleModifier(event) {
     const modId = event.currentTarget.dataset.modifierId;
     if (!modId) return;
 
-    const dt = this.actor.system.downtime || {};
+    const system = this.actor.system;
+    const dt = system.downtime || {};
     const period = dt.currentPeriod || {};
     const modifiersUsed = [...(period.modifiersUsed || [])];
+    const records = foundry.utils.deepClone(period.appliedRecords || []);
     const checked = event.currentTarget.checked;
+    const recId = `mod:${modId}`;
 
     const updates = {};
+    const lines = [];
 
     if (checked) {
       if (modifiersUsed.length >= 2) {
@@ -15024,21 +15706,89 @@ export class DBUCharacterSheet extends ActorSheet {
         ui.notifications.warn("Maximum 2 modifiers per downtime period.");
         return;
       }
-      modifiersUsed.push(modId);
 
-      // Mentor grants +1 DT
+      const record = { sourceId: recId, gains: {} };
+
       if (modId === "mentor") {
+        record.dtBonus = 1;
         updates["system.downtime.currentPeriod.totalDT"] = (period.totalDT || 0) + 1;
+        lines.push("+1 DT this period; activities may repeat");
+      } else if (modId === "trainingPartner") {
+        const pick = await this._dtPromptSelect("Training Partner", "Choose the shared benefit:", [
+          ["ap", "+1 Attribute Point (not SC/PE) & +1 Score Limit until next base Tier"],
+          ["tp", "+10 Technique Points & +5 single Sig/Aura TP limit until next base Tier"],
+          ["stress", "+1 Natural Result on Stress Tests for a chosen Transformation"]
+        ]);
+        if (pick === null) { event.currentTarget.checked = false; return; }
+        if (pick === "ap") {
+          const alloc = await this._dtPromptAttributes("Training Partner — 1 Attribute Point (not SC/PE)", 1);
+          if (!alloc) { event.currentTarget.checked = false; return; }
+          record.gains.attributes = alloc;
+          lines.push(`+1 ${Object.keys(alloc)[0].toUpperCase()} Score; +1 Score Limit until next base Tier (manual)`);
+        } else if (pick === "tp") {
+          record.gains.tp = 10;
+          lines.push("+10 Technique Points; +5 single Sig/Aura TP limit until next base Tier (manual)");
+        } else {
+          const transOpts = (system.transformations || []).map((t, i) => [String(i), t.name || "(unnamed)"]);
+          if (!transOpts.length) { ui.notifications.warn("No transformations to select."); event.currentTarget.checked = false; return; }
+          const tPick = await this._dtPromptSelect("Training Partner", "Transformation with +1 Stress Test Natural Result:", transOpts);
+          if (tPick === null) { event.currentTarget.checked = false; return; }
+          const tName = system.transformations[Number(tPick)]?.name || "Transformation";
+          record.note = `+1 Stress Test Natural Result: ${tName}`;
+          lines.push(record.note + " (manual, apply on Stress rolls)");
+        }
+      } else if (modId === "strenuous") {
+        const pick = await this._dtPromptSelect("Strenuous", "Extent of the training:", [
+          ["grueling", "Grueling: -1/4 Max LP (2 encounters), +1 AP, +10 TP"],
+          ["lifeThreatening", "Life Threatening: -1/2 Max LP (2 encounters), +1 AP, +10 TP, +1 DT"]
+        ]);
+        if (pick === null) { event.currentTarget.checked = false; return; }
+        const alloc = await this._dtPromptAttributes("Strenuous — 1 Attribute Point (not SC/PE)", 1);
+        if (!alloc) { event.currentTarget.checked = false; return; }
+        record.strenuous = pick;
+        record.gains.attributes = alloc;
+        record.gains.tp = 10;
+        lines.push(`+1 ${Object.keys(alloc)[0].toUpperCase()} Score, +10 TP`);
+        if (pick === "lifeThreatening") {
+          record.dtBonus = 1;
+          updates["system.downtime.currentPeriod.totalDT"] = (period.totalDT || 0) + 1;
+          lines.push("+1 DT this period");
+        }
+        lines.push(`LP penalty (${pick === "lifeThreatening" ? "-1/2" : "-1/4"} Max LP, 2 encounters) starts when the period ends`);
+      } else if (modId === "deepFocus") {
+        record.gains.karma = 1;
+        lines.push("+1 Karma Point; one Recreational activity may be used twice");
+      } else if (modId === "crafting") {
+        const craftRank = system.skills?.crafting?.rank || 0;
+        if (craftRank <= 0) { ui.notifications.warn("No Craft Skill Ranks — Crafting grants nothing."); }
+        record.gains.equipmentPoints = 2 * craftRank;
+        lines.push(`+${2 * craftRank} Equipment Points (2 per Craft Rank, spend immediately)`);
       }
+
+      record.lines = lines;
+      this._dtBuildGainsUpdates(record.gains, 1, updates);
+      modifiersUsed.push(modId);
+      records.push(record);
     } else {
       const idx = modifiersUsed.indexOf(modId);
       if (idx !== -1) modifiersUsed.splice(idx, 1);
 
-      // Removing Mentor reverts the +1 DT
-      if (modId === "mentor") {
+      // Reverse this modifier's applied record
+      const recIdx = records.findIndex(r => r.sourceId === recId);
+      if (recIdx >= 0) {
+        const record = records.splice(recIdx, 1)[0];
+        this._dtBuildGainsUpdates(record.gains, -1, updates);
+        if (record.dtBonus) {
+          const newTotal = Math.max(0, (period.totalDT || 0) - record.dtBonus);
+          updates["system.downtime.currentPeriod.totalDT"] = newTotal;
+          if ((period.spentDT || 0) > newTotal) {
+            updates["system.downtime.currentPeriod.spentDT"] = newTotal;
+          }
+        }
+      } else if (modId === "mentor") {
+        // Legacy periods without records: keep old mentor revert behavior
         const newTotal = Math.max(0, (period.totalDT || 0) - 1);
         updates["system.downtime.currentPeriod.totalDT"] = newTotal;
-        // Clamp spentDT if needed
         if ((period.spentDT || 0) > newTotal) {
           updates["system.downtime.currentPeriod.spentDT"] = newTotal;
         }
@@ -15046,7 +15796,16 @@ export class DBUCharacterSheet extends ActorSheet {
     }
 
     updates["system.downtime.currentPeriod.modifiersUsed"] = modifiersUsed;
+    updates["system.downtime.currentPeriod.appliedRecords"] = records;
     await this.actor.update(updates);
+
+    if (checked && lines.length) {
+      ChatMessage.create({
+        speaker: ChatMessage.getSpeaker({ actor: this.actor }),
+        content: `<b>Downtime Modifier:</b> ${modId.charAt(0).toUpperCase() + modId.slice(1)}`
+          + `<div class="dbu-auto-applied">${lines.map(l => `<div>${l}</div>`).join("")}</div>`
+      });
+    }
   }
 
   async _onDtDeleteHistory(event) {

@@ -25,6 +25,7 @@ import { applyLegendaryTraitBonuses } from "../racial-automation/legendary-trait
 import { applyTalentBonuses } from "../racial-automation/talents.mjs";
 import { applyEquipmentQualityBonuses } from "../equipment-automation/qualities.mjs";
 import { applyBestialTraitBonuses } from "../racial-automation/bestial-traits.mjs";
+import { applyCyberneticTraitBonuses, getActiveCyberneticTraits, getCyberneticAttrBonus } from "../racial-automation/cybernetic-traits.mjs";
 
 export class DBUActor extends Actor {
 
@@ -104,6 +105,10 @@ export class DBUActor extends Actor {
           skillRanks[skillId] = (skillRanks[skillId] || 0) + 1;
         }
       }
+    }
+    // Downtime activity skill-rank gains (Resting / Studying)
+    for (const [sid, n] of Object.entries(system.downtime?.gains?.skillRanks || {})) {
+      if (n > 0) skillRanks[sid] = (skillRanks[sid] || 0) + n;
     }
     // For regular fusion actors, preserve DB-saved fusion skills (highest of both)
     const fusionData = system.fusion || {};
@@ -276,6 +281,9 @@ export class DBUActor extends Actor {
     // ---- Bestial Trait Automation ----
     applyBestialTraitBonuses(system, tier, baseTier);
 
+    // ---- Cybernetic Enhancement trait bonuses ----
+    applyCyberneticTraitBonuses(system, tier, baseTier);
+
     // ---- Talent Automation ----
     applyTalentBonuses(system, tier, baseTier);
 
@@ -445,6 +453,12 @@ export class DBUActor extends Actor {
             const baseParsed = baseVal ? DBUActor.parseAttrBonus(baseVal, tier, system.baseTier) : 0;
             modifier += baseParsed + prExtra; // add again to double
           }
+        }
+
+        // Cybernetic Enhancement (Scientific Upgrade): +1 AMB to the listed
+        // Attribute of each chosen Cybernetic Trait
+        if (trans.catalogKey === "cybernetic_enhancement") {
+          modifier += getCyberneticAttrBonus(system, key);
         }
 
         // Mastery additional attribute bonuses
@@ -695,6 +709,11 @@ export class DBUActor extends Actor {
         }
       }
     }
+    // Strenuous downtime modifier: -1/4 or -1/2 Max LP for the next N combat encounters
+    const strenuous = system.downtime?.strenuous || {};
+    if ((strenuous.encountersLeft || 0) > 0 && (strenuous.fraction || 0) > 0) {
+      system.lifePoints.max = Math.max(1, system.lifePoints.max - Math.floor(system.lifePoints.max * strenuous.fraction));
+    }
     // Default current LP to max only when truly unset (null/undefined), not when 0
     if (system.lifePoints.value == null) system.lifePoints.value = system.lifePoints.max;
 
@@ -943,6 +962,10 @@ export class DBUActor extends Actor {
       healFlat += 2 * surgeToP * _crossed;
     }
     healFlat += this._getBuffTotal(system, "Healing Surge");
+    // Cybernetic Enhancement — Emergency Energy Supplies: +3(bT) LP/KP per Surge
+    const _cyberSurge = getActiveCyberneticTraits(system).includes("cyber_emergency_energy")
+      ? 3 * (system.baseTier || 1) : 0;
+    healFlat += _cyberSurge;
     const healFlatStr = healFlat >= 0 ? `+${healFlat}` : `${healFlat}`;
     system.status.healingSurge = healParts.join("+") + healFlatStr;
 
@@ -955,6 +978,7 @@ export class DBUActor extends Actor {
       psFlat += 2 * surgeToP * _crossed;
     }
     psFlat += this._getBuffTotal(system, "Power Surge");
+    psFlat += _cyberSurge;
     system.status.powerSurgeKi = psFlat;
     system.status.powerSurgeCapacity = Math.floor(system.capacity.max / 4);
 
@@ -1126,6 +1150,25 @@ export class DBUActor extends Actor {
         const newIdx = Math.min(order.length - 1, Math.max(curIdx, targetIdx));
         if (newIdx > curIdx) {
           size = order[newIdx];
+          if (system.status) system.status.currentSize = size;
+        }
+      }
+    }
+    // King's Stature Meta Trait: Size Category set to Enormous (cannot lower).
+    // Read from metaTraitState directly — alternate-form automation runs later.
+    {
+      const metaState = system.transformationMeta?.metaTraitState || {};
+      const META_KEYS = ["full_suppression", "limited_suppression", "partial_suppression", "true_form"];
+      let kingsStature = (system.transformations || []).some(t =>
+        t?.active && META_KEYS.includes(t.catalogKey) &&
+        (metaState.stages?.[t.catalogKey]?.traits || []).includes("meta_kings_stature"));
+      if (!kingsStature && system.race === "arcosian" &&
+          (system.racialTraits || []).includes("b252198d4bafa7c6") &&
+          metaState.divergent?.trait === "meta_kings_stature") kingsStature = true;
+      if (kingsStature) {
+        const order = DBUActor.SIZE_ORDER;
+        if (order.indexOf("enormous") > order.indexOf(size)) {
+          size = "enormous";
           if (system.status) system.status.currentSize = size;
         }
       }
@@ -1417,6 +1460,7 @@ export class DBUActor extends Actor {
     const peScore = system.attributes.pe?.score ?? 0;
     const determination = peScore >= 8 ? 2 : (peScore >= 4 ? 1 : 0);
     system.aptitudes.stressBonus = (system.level || 1) + determination
+      + (system.downtime?.gains?.stressBonus || 0)
       - (system.thresholds?.stressPenalty || 0);
 
     // Gifted Student: "If SC Score 4+, +2 Dice Score on Skill Checks, +3 TP per Skill Improvement. Double if SC 8+."
@@ -2646,10 +2690,18 @@ export class DBUActor extends Actor {
     // before this runs) + manual "Extra DR" input. Unlike Soak, DR is NOT
     // reduced by the Damage Category (attacking.txt:63).
     const innateDR = system.status?.damageReduction || 0;
-    const totalReduction = innateDR + (Number(dc.damageReduction) || 0) + effectiveSoak;
+    // Treacherous Spikes (bestial trait): +2(T) DR vs attacks from outside Melee Range
+    const bestialRangedDR = dc.isRanged ? (Number(system._bestialRangedDR) || 0) : 0;
+    // Armor Plating (cybernetic trait): +2(bT) DR vs Standard-damage attacks
+    const cyberStandardDR = (dc.category || "standard") === "standard"
+      ? (Number(system._cyberStandardDR) || 0) : 0;
+    const totalReduction = innateDR + bestialRangedDR + cyberStandardDR + (Number(dc.damageReduction) || 0) + effectiveSoak;
     dc.totalReduction = totalReduction;
     dc.effectiveSoak = effectiveSoak;
     dc.innateDR = innateDR;
+    dc.bestialRangedDR = bestialRangedDR;
+    dc.hasBestialRangedDR = (Number(system._bestialRangedDR) || 0) > 0;
+    dc.cyberStandardDR = cyberStandardDR;
 
     let healthReduction = Math.max(0, woundRoll - totalReduction);
 
