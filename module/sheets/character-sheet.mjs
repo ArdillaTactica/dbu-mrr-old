@@ -310,8 +310,9 @@ export class DBUCharacterSheet extends ActorSheet {
       // Per-skill buff (matches the skill's display name from spreadsheet)
       const perSkillBuff = this.actor._getBuffTotal(system, def.name || "");
       const groupBuff = skillGroupBuff(attrKey);
-      // Trait bonuses: Alternate Sight (bestial) +1 Perception, Cloaking System (cybernetic) +1 Stealth
-      const traitBonus = (key === "perception" ? (Number(system._bestialPerceptionBonus) || 0) : 0)
+      // Trait bonuses: Alternate Sight (bestial) +1 Perception, Cloaking System (cybernetic) +1 Stealth,
+      // racial Perception bonuses (Part Beast, Lock-On, Red Eye, Feline Senses…) via aptitudes.perceptionBonus
+      const traitBonus = (key === "perception" ? (Number(system._bestialPerceptionBonus) || 0) + (Number(system.aptitudes?.perceptionBonus) || 0) : 0)
         + (key === "stealth" ? (Number(system._cyberStealthBonus) || 0) : 0);
       const bonus = Math.floor(attrScore / 2) + (rankNum * 2) + gsSkillBonus + equipBonus + perSkillBuff + groupBuff + traitBonus;
       return {
@@ -783,27 +784,21 @@ export class DBUCharacterSheet extends ActorSheet {
     const preparedTechniques = techniques.map(t => {
       const tpCost = this._calcTechTPCost(t);
 
+      // Magical Flavor: the ST is treated as the chosen Energy Profile for
+      // effects/formulas while remaining a Magic ST (uses MA, Magic buffs).
+      const mfProfile = this._techMagicalFlavor(t);
+      const tCalc = mfProfile ? { ...t, profile: mfProfile } : t;
+
       // Profile data
-      const profileInfo = profileDataMap[t.profile] || null;
+      const profileInfo = profileDataMap[tCalc.profile] || null;
 
-      // KP Cost: profile base KP + ceil(TP/5)
-      const profileBaseKP = profileKpCosts[t.profile] || 0;
-      const kpCost = profileBaseKP + Math.ceil(tpCost / 5);
-
-      // KP Reduction: sum of absolute disadvantage TP costs
-      let kpReduction = 0;
-      for (const dis of (t.disadvantages || [])) {
-        const tc = dis.tpCost || 0;
-        if (tc < 0) kpReduction += Math.abs(tc);
-      }
+      // KP model (Free TP excluded, Efficiency/Inefficiency, profile-KP floor)
+      const { profileBaseKP, tpFull, kpCost, kpReduction, finalKP } = this._calcTechKP(t);
 
       // Dynamic Ki: sum of all dynamicTP values
       let dynamicKi = 0;
       for (const adv of (t.advantages || [])) dynamicKi += (adv.dynamicTP || 0);
       for (const dis of (t.disadvantages || [])) dynamicKi += (dis.dynamicTP || 0);
-
-      // Final KP (reduce by KP Reduction from disadvantages, floor at half profile base)
-      const finalKP = Math.max(Math.ceil(profileBaseKP / 2), kpCost - kpReduction);
 
       // Available profiles for selected foundation
       const availableProfiles = foundations[t.foundation] || Object.keys(profileDataMap);
@@ -821,15 +816,17 @@ export class DBUCharacterSheet extends ActorSheet {
       }));
 
       // Strike formula
-      const strikeInfo = this._calcTechStrike(t, system, tier);
+      const strikeInfo = this._calcTechStrike(tCalc, system, tier);
       // Wound formula
-      const woundInfo = this._calcTechWound(t, system, tier);
+      const woundInfo = this._calcTechWound(tCalc, system, tier);
       // CT info
-      const ctInfo = this._calcTechCT(t, system);
+      const ctInfo = this._calcTechCT(tCalc, system);
 
       return {
         ...t,
         tpCost,
+        tpFull,
+        mfProfile,
         kpCost,
         kpReduction,
         dynamicKi,
@@ -888,17 +885,10 @@ export class DBUCharacterSheet extends ActorSheet {
           const cloned = foundry.utils.deepClone(st);
           const tpCost = this._calcTechTPCost(cloned);
           const profileInfo = profileDataMap[cloned.profile] || null;
-          const profileBaseKP = profileKpCosts[cloned.profile] || 0;
-          const kpCost = profileBaseKP + Math.ceil(tpCost / 5);
-          let kpReduction = 0;
-          for (const dis of (cloned.disadvantages || [])) {
-            const tc = dis.tpCost || 0;
-            if (tc < 0) kpReduction += Math.abs(tc);
-          }
+          const { profileBaseKP, kpCost, kpReduction, finalKP } = this._calcTechKP(cloned);
           let dynamicKi = 0;
           for (const adv of (cloned.advantages || [])) dynamicKi += (adv.dynamicTP || 0);
           for (const dis of (cloned.disadvantages || [])) dynamicKi += (dis.dynamicTP || 0);
-          const finalKP = Math.max(Math.ceil(profileBaseKP / 2), kpCost - kpReduction);
           const availableProfiles = foundations[cloned.foundation] || Object.keys(profileDataMap);
           const enrichedAdvantages = (cloned.advantages || []).map(adv => ({
             ...adv, requirement: advData[adv.name]?.requirement || ""
@@ -952,17 +942,10 @@ export class DBUCharacterSheet extends ActorSheet {
         const cloned = foundry.utils.deepClone(st);
         const tpCost = this._calcTechTPCost(cloned);
         const profileInfo = profileDataMap[cloned.profile] || null;
-        const profileBaseKP = profileKpCosts[cloned.profile] || 0;
-        const kpCost = profileBaseKP + Math.ceil(tpCost / 5);
-        let kpReduction = 0;
-        for (const dis of (cloned.disadvantages || [])) {
-          const tc = dis.tpCost || 0;
-          if (tc < 0) kpReduction += Math.abs(tc);
-        }
+        const { profileBaseKP, kpCost, kpReduction, finalKP: baseFinalKP } = this._calcTechKP(cloned);
         let dynamicKi = 0;
         for (const adv of (cloned.advantages || [])) dynamicKi += (adv.dynamicTP || 0);
         for (const dis of (cloned.disadvantages || [])) dynamicKi += (dis.dynamicTP || 0);
-        const baseFinalKP = Math.max(Math.ceil(profileBaseKP / 2), kpCost - kpReduction);
         // Rule: "Reduce their Ki Point Cost by 1/2."
         const finalKP = Math.ceil(baseFinalKP / 2);
         const availableProfiles = foundations[cloned.foundation] || Object.keys(profileDataMap);
@@ -1007,6 +990,47 @@ export class DBUCharacterSheet extends ActorSheet {
     // Advantage/disadvantage names
     context.advantageOptions = Object.keys(advData).sort();
     context.disadvantageOptions = Object.keys(disadvData).sort();
+    // Energy profiles for the Magical Flavor selector
+    context.energyProfileOptions = foundations["Energy"] || [];
+  }
+
+  /**
+   * Magical Flavor (signature.txt:529-539): a Spell-Profile ST that selects an
+   * Energy Profile gains that Profile's effects, is treated as that Profile,
+   * and uses its KP Cost. Returns the chosen profile name or "".
+   */
+  _techMagicalFlavor(tech) {
+    if ((tech.profile || "") !== "Spell") return "";
+    const mf = (tech.advantages || []).find(a => a.name === "Magical Flavor");
+    const choice = String(mf?.notes || "").trim();
+    if (!choice) return "";
+    const energyProfiles = (CONFIG.DBU?.techniqueFoundations || {})["Energy"] || [];
+    return energyProfiles.includes(choice) ? choice : "";
+  }
+
+  /**
+   * Signature Technique KP Cost (signature.txt:18-20, 162, 930):
+   * profile base + ceil(fullTP/5), −4(T)/Efficiency rank, +4(T)/Inefficiency
+   * rank, floored at the Profile's listed KP Cost (the Minimum Ki Cost).
+   * Free TP never lowers the KP Cost — it only reduces the TP the player pays.
+   * Magical Flavor swaps in the chosen Energy Profile's KP cost/minimum.
+   */
+  _calcTechKP(tech) {
+    const profileKpCosts = CONFIG.DBU?.profileKpCosts || {};
+    const mfProfile = this._techMagicalFlavor(tech);
+    const profileBaseKP = profileKpCosts[mfProfile || tech.profile] || 0;
+    const tpFull = this._calcTechTPCost({ ...tech, freeTP: 0 });
+    const kpCost = profileBaseKP + Math.ceil(tpFull / 5);
+    let kpReduction = 0;
+    for (const adv of (tech.advantages || [])) {
+      if (adv.name === "Efficiency") kpReduction += 4 * (adv.ranks || 1);
+    }
+    let kpIncrease = 0;
+    for (const dis of (tech.disadvantages || [])) {
+      if (dis.name === "Inefficiency") kpIncrease += 4 * (dis.ranks || 1);
+    }
+    const finalKP = Math.max(profileBaseKP, kpCost + kpIncrease - kpReduction);
+    return { profileBaseKP, tpFull, kpCost, kpReduction, kpIncrease, finalKP };
   }
 
   _calcTechTPCost(tech) {
@@ -1115,7 +1139,13 @@ export class DBUCharacterSheet extends ActorSheet {
     const charges = (tech.baseEnergyCharges || 0) + (tech.extraEnergyCharges || 0);
     // Unified wound buff total (talents, states, maneuvers, custom buffs)
     const woundBuffTotal = system.aptitudes?.woundBuffTotal ?? 0;
-    let totalMod = damageAttr + extraDamageAttr + powerShotBonus - lowPenPenalty + woundBuffTotal;
+    // Per-foundation wound buffs ("Wound (Physical/Energy/Magic)")
+    const foundationWoundBuff = Number({
+      Physical: system.aptitudes?.woundBuffPhysical,
+      Energy: system.aptitudes?.woundBuffEnergy,
+      Magic: system.aptitudes?.woundBuffMagic
+    }[tech.foundation]) || 0;
+    let totalMod = damageAttr + extraDamageAttr + powerShotBonus - lowPenPenalty + woundBuffTotal + foundationWoundBuff;
 
     // Aura wound bonus (Powerful Aura advantage)
     const activeAura = this.actor._getActiveAura(system);
@@ -2007,6 +2037,18 @@ export class DBUCharacterSheet extends ActorSheet {
       }
     }
 
+    // Weapon lookup for Attack Refs: "Weapon Equipped" stores the weapon item's
+    // name; resolving it here lets Size, Weapon Penalty and quality bonuses flow
+    // into the Strike/Wound formulas (weapons.txt).
+    const weaponItemsByName = new Map();
+    for (const it of this.actor.items) {
+      if (it.type === "equipment" && it.system.equipmentType === "weapon")
+        weaponItemsByName.set(it.name.trim().toLowerCase(), it);
+    }
+    context.weaponOptions = [...weaponItemsByName.values()].map(it => it.name).sort((a, b) => a.localeCompare(b));
+    const hasWeaponSpecialist = (system.talents || []).includes("weapon_specialist");
+    const eqFlags = system.equipmentFlags || {};
+
     // Prepare each attack ref card with calculated formulas
     const refs = system.attackRefs || [];
     context.attackRefs = refs.map((ref, idx) => {
@@ -2015,6 +2057,51 @@ export class DBUCharacterSheet extends ActorSheet {
       const wager = ref.kiWager || 0;
       const ps = ref.powerShot || 0;
       const targetRange = ref.targetRange || 0;
+
+      // --- WEAPON (Armed Attack) ---
+      const wKey = String(ref.weaponEquipped || "").trim().toLowerCase();
+      const wItem = (wKey && wKey !== "unarmed") ? weaponItemsByName.get(wKey) : null;
+      let weaponStrikeMod = 0, weaponWoundMod = 0, weaponDamageCatBonus = 0;
+      const weaponNotes = [];
+      if (wItem) {
+        // Weapon Penalty (weapons.txt): -2(T) Strike, removed by Weapon Specialist
+        if (!hasWeaponSpecialist) {
+          weaponStrikeMod -= 2 * tier;
+          weaponNotes.push(`Weapon Penalty −${2 * tier} Strike (no Weapon Specialist)`);
+        }
+        // Weapon Size
+        const wSize = wItem.system.weaponSize || "standard";
+        if (wSize === "small") {
+          weaponStrikeMod += tier; weaponWoundMod -= 2 * tier;
+          weaponNotes.push(`Small: +${tier} Strike, −${2 * tier} Wound`);
+        } else if (wSize === "big") {
+          weaponStrikeMod -= tier; weaponWoundMod += 2 * tier;
+          weaponNotes.push(`Big: −${tier} Strike, +${2 * tier} Wound`);
+        }
+        // Quality effects (equipmentFlags maps are only populated while the
+        // weapon is Equipped in the Equipment tab)
+        if (wItem.system.worn) {
+          const qWound = (eqFlags.weaponWoundBonus || {})[wItem.id] || 0;
+          const qStrike = (eqFlags.weaponStrikePenalty || {})[wItem.id] || 0;
+          if (qWound) { weaponWoundMod += qWound; weaponNotes.push(`Qualities: +${qWound} Wound`); }
+          if (qStrike) { weaponStrikeMod += qStrike; weaponNotes.push(`Qualities: ${qStrike} Strike`); }
+          weaponDamageCatBonus = (eqFlags.weaponDamageCatBonus || {})[wItem.id] || 0;
+          if ((eqFlags.weaponLongRangeStrikeBonus || {})[wItem.id] && targetRange >= 9) {
+            weaponStrikeMod += (eqFlags.weaponLongRangeStrikeBonus || {})[wItem.id];
+            weaponNotes.push(`Long Range Weapon: +${(eqFlags.weaponLongRangeStrikeBonus || {})[wItem.id]} Strike`);
+          }
+        } else {
+          weaponNotes.push("Not Equipped in the Equipment tab — quality effects inactive");
+        }
+        // Broken weapon (0 LP) cannot attack — the tracker roll enforces the block
+        const wMax = this._calcWeaponLPMax(wItem);
+        const wUnbreakable = (wItem.system.qualities || []).some(q => q.qualityKey === "unbreakable");
+        if (!wUnbreakable && wMax - (wItem.system.weaponLPDamage || 0) <= 0) {
+          weaponNotes.push("BROKEN (0 LP) — cannot be used until repaired");
+        }
+      } else if (wKey && wKey !== "unarmed") {
+        weaponNotes.push(`No weapon named "${ref.weaponEquipped}" in the Equipment tab`);
+      }
 
       // --- STRIKE ---
       let haste = system.aptitudes?.haste ?? 0;
@@ -2034,7 +2121,7 @@ export class DBUCharacterSheet extends ActorSheet {
       const ssPenStrike = system.aptitudes?.superStackStrikePenalty ?? 0;
       // Unified strike buff total (talents, states, maneuvers, custom buffs)
       const strikeBuffTotal = system.aptitudes?.strikeBuffTotal ?? 0;
-      const strikeMod = haste + awareness + sparkingBonus - strikePenShaken - strikePenLR - eqPenalty - ssPenStrike + strikeBuffTotal + stateAllMod;
+      const strikeMod = haste + awareness + sparkingBonus - strikePenShaken - strikePenLR - eqPenalty - ssPenStrike + strikeBuffTotal + stateAllMod + weaponStrikeMod;
       const strikeFormula = this._buildFormula(strikeTopDice, strikeGreaterDice, strikeMod, stateStrikeExtra);
 
       // --- WOUND ---
@@ -2047,7 +2134,12 @@ export class DBUCharacterSheet extends ActorSheet {
       const woundPSBonus = ps * 2 * tier;
       // Unified wound buff total (talents, states, maneuvers, custom buffs)
       const woundBuffTotal = system.aptitudes?.woundBuffTotal ?? 0;
-      const woundMod = damageAttr + extraDmgAttr + wager + woundPSBonus + auraWoundBonus + stateWoundMod + stateAllMod + woundBuffTotal;
+      const foundationWoundBuff = Number({
+        Physical: system.aptitudes?.woundBuffPhysical,
+        Energy: system.aptitudes?.woundBuffEnergy,
+        Magic: system.aptitudes?.woundBuffMagic
+      }[ref.foundation]) || 0;
+      const woundMod = damageAttr + extraDmgAttr + wager + woundPSBonus + auraWoundBonus + stateWoundMod + stateAllMod + woundBuffTotal + foundationWoundBuff + weaponWoundMod;
       // Attack Refs are Basic Attacking Maneuvers (not Signature Techniques),
       // so per attacking.txt:31 each Energy Charge adds 1d6(T) to the Wound Roll
       // (Sig Techs use d8 — handled separately in _calcTechWound).
@@ -2063,6 +2155,11 @@ export class DBUCharacterSheet extends ActorSheet {
       let damageCat = profile.damageCat || "Standard";
       // Mega Flare: 7+ charges → upgrade damage category
       if (ref.profile === "Mega Flare" && charges >= 7) {
+        if (damageCat === "Standard") damageCat = "Direct";
+        else if (damageCat === "Direct") damageCat = "Lethal";
+      }
+      // Dimension Blade weapon quality: +1 Damage Category
+      for (let dc = 0; dc < weaponDamageCatBonus; dc++) {
         if (damageCat === "Standard") damageCat = "Direct";
         else if (damageCat === "Direct") damageCat = "Lethal";
       }
@@ -2119,6 +2216,10 @@ export class DBUCharacterSheet extends ActorSheet {
         totalEnergyCharges: charges,
         maxWager: defaultWager,
         weaponEquippedLabel: ref.weaponEquipped || "Unarmed",
+        weaponNotes,
+        weaponStrikeMod,
+        weaponWoundMod,
+        weaponMatched: !!wItem,
         offHandLabel: ref.offHand || "Unarmed",
         defense: system.defense ?? 0,
         soak: system.soak ?? 0,
@@ -2837,6 +2938,16 @@ export class DBUCharacterSheet extends ActorSheet {
     const prepTechs = context.signatureTechniques || [];
     for (const tech of prepTechs) {
       if (!tech.name) continue;
+      // Twin-Linked / Dead-Link: the chosen roll (Strike/Wound, stored in the
+      // advancement's notes) is rolled twice keeping the highest/lowest.
+      const _linkChoice = (list, name) => {
+        const e = (list || []).find(x => x.name === name);
+        if (!e) return "";
+        const n = String(e.notes || "").trim().toLowerCase();
+        return n.startsWith("s") ? "strike" : n.startsWith("w") ? "wound" : "";
+      };
+      const twinLinked = _linkChoice(tech.advantages, "Twin-Linked");
+      const deadLinked = _linkChoice(tech.disadvantages, "Dead-Link");
       stSources.push({
         key: `tech_${tech.id}`,
         name: tech.name,
@@ -2851,6 +2962,8 @@ export class DBUCharacterSheet extends ActorSheet {
         energyCharges: (tech.baseEnergyCharges || 0) + (tech.extraEnergyCharges || 0),
         powerShot: (tech.advantages || []).find(a => a.name === "Power Shot")?.ranks || 0,
         defaultWager: 0,
+        twinLinked,
+        deadLinked,
         activeBuffs
       });
     }
@@ -4860,6 +4973,26 @@ export class DBUCharacterSheet extends ActorSheet {
           }
         }
       }
+      // Part Beast (Earthling Beastman): selector for its two permanent Bestial Traits
+      if (trait.id === "979b43c2cb80c474") {
+        const mutState = system.transformationMeta?.mutationState || {};
+        const chosen = (mutState.partBeastBestialTraits || []).slice(0, 2);
+        const btConfig = mutState.bestialTraitConfig || {};
+        trait.isPartBeast = true;
+        trait.partBeastCount = chosen.length;
+        trait.partBeastBestial = (CONFIG.DBU?.bestialTraitsCatalog || []).map(bt => {
+          const optEffect = (bt.effects || []).find(e => e.activationType === "option");
+          const checked = chosen.includes(bt.id);
+          return {
+            id: bt.id, name: bt.name, checked,
+            disabled: !checked && chosen.length >= 2,
+            options: (checked && optEffect) ? optEffect.options.map(o => {
+              const key = o.name.toLowerCase().replace(/\s+/g, "_");
+              return { key, name: o.name, selected: (btConfig[bt.id]?.option) === key };
+            }) : null
+          };
+        });
+      }
       results.push(trait);
     }
     return results;
@@ -4930,6 +5063,26 @@ export class DBUCharacterSheet extends ActorSheet {
     // Expose dynamic Break Value max to apparel cards (used by inventory input).
     for (const item of apparel) {
       item.bvMax = this._calcBreakValueMax(item);
+    }
+
+    // Weapon durability (weapons.txt "Damaging Weapons" / "Hardness Value"):
+    // LP max = 32 + 8 per Power Level beyond the 1st (+2×PL with Durable),
+    // DR 6(bT), Hardness 3 (4 with Super Heavy). Broken at 0 LP.
+    const wLevel = this.actor.system.level || 1;
+    const wBaseTier = this.actor.system.baseTier || 1;
+    for (const item of weapons) {
+      const qKeys = (item.system.qualities || []).map(q => q.qualityKey);
+      const hasDurable = qKeys.includes("durable");
+      item._wUnbreakable = qKeys.includes("unbreakable");
+      item._wHasSpecial = (item.system.qualities || []).some(q =>
+        CONFIG.DBU?.weaponQualities?.[q.qualityKey]?.isSpecial);
+      item._wLpMax = 32 + 8 * (wLevel - 1) + (hasDurable ? 2 * wLevel : 0);
+      item._wLpCurrent = item._wUnbreakable
+        ? item._wLpMax
+        : Math.max(0, item._wLpMax - (item.system.weaponLPDamage || 0));
+      item._wBroken = !item._wUnbreakable && item._wLpCurrent <= 0;
+      item._wHardness = qKeys.includes("super_heavy") ? 4 : (item.system.weaponHardness ?? 3);
+      item._wDR = 6 * wBaseTier;
     }
 
     // Enrich Basic Items with catalog entry data (catalogName, isTech, isSpecial,
@@ -5256,6 +5409,8 @@ export class DBUCharacterSheet extends ActorSheet {
     html.on("click", ".item-delete", this._onItemDelete.bind(this));
     html.on("change", ".eq-worn-toggle", this._onEquipmentWornToggle.bind(this));
     html.on("change", ".eq-inline-input", this._onEquipmentInlineEdit.bind(this));
+    html.on("change", ".eq-weapon-lp", this._onWeaponLPChange.bind(this));
+    html.on("click", "[data-action='weapon-repair']", this._onWeaponRepair.bind(this));
     html.on("change", ".eq-inline-check", this._onEquipmentInlineCheck.bind(this));
     html.on("change", ".eq-basic-catalog-select", this._onBasicItemCatalogChange.bind(this));
 
@@ -5296,6 +5451,8 @@ export class DBUCharacterSheet extends ActorSheet {
     html.on("click", "[data-action='toggle-trait']", this._onToggleTrait.bind(this));
     html.on("change", ".option-select", this._onTraitOptionSelect.bind(this));
     html.on("change", ".option-checkbox", this._onTraitOptionCheckbox.bind(this));
+    html.on("change", ".pb-bestial-check", this._onPartBeastBestialCheck.bind(this));
+    html.on("change", ".pb-bestial-option", this._onPartBeastBestialOption.bind(this));
 
     // Adversary CRUD
     html.on("click", "[data-action='add-villainous-trait']", this._onAddVillainousTrait.bind(this));
@@ -5568,9 +5725,10 @@ export class DBUCharacterSheet extends ActorSheet {
     const attrScore = attrData?.score ?? 0;
     const gsBonus = this.actor.system.aptitudes?.giftedStudentSkillBonus || 0;
     const equipBonus = Number(this.actor.system.equipmentFlags?.skillBonuses?.[skillKey]) || 0;
-    // Alternate Sight (bestial trait): +1 Perception Dice Score
+    // Alternate Sight (bestial trait) + racial Perception bonuses (Part Beast, Lock-On, …)
     const bestialPerception = skillKey === "perception"
-      ? (Number(this.actor.system._bestialPerceptionBonus) || 0) : 0;
+      ? (Number(this.actor.system._bestialPerceptionBonus) || 0)
+        + (Number(this.actor.system.aptitudes?.perceptionBonus) || 0) : 0;
     // Cloaking System (cybernetic trait): +1 Stealth Dice Score
     const cyberStealth = skillKey === "stealth"
       ? (Number(this.actor.system._cyberStealthBonus) || 0) : 0;
@@ -5929,6 +6087,32 @@ export class DBUCharacterSheet extends ActorSheet {
     if (!options[traitId]) options[traitId] = {};
     options[traitId][effectLevel] = event.currentTarget.value;
     await this.actor.update({ "system.racialOptionSelections": options });
+  }
+
+  /** Part Beast (Earthling Beastman): toggle one of the two permanent Bestial Traits. */
+  async _onPartBeastBestialCheck(event) {
+    const el = event.currentTarget;
+    const id = el.dataset.name;
+    if (!id) return;
+    const chosen = foundry.utils.deepClone(this.actor.system.transformationMeta?.mutationState?.partBeastBestialTraits || []);
+    if (el.checked) {
+      if (chosen.length >= 2) { el.checked = false; return; }
+      if (!chosen.includes(id)) chosen.push(id);
+    } else {
+      const i = chosen.indexOf(id);
+      if (i >= 0) chosen.splice(i, 1);
+    }
+    await this.actor.update({ "system.transformationMeta.mutationState.partBeastBestialTraits": chosen });
+  }
+
+  /** Part Beast: option for a chosen Bestial Trait (shared bestialTraitConfig). */
+  async _onPartBeastBestialOption(event) {
+    const el = event.currentTarget;
+    const traitId = el.dataset.traitId;
+    if (!traitId) return;
+    const cfg = foundry.utils.deepClone(this.actor.system.transformationMeta?.mutationState?.bestialTraitConfig || {});
+    cfg[traitId] = { ...(cfg[traitId] || {}), option: el.value };
+    await this.actor.update({ "system.transformationMeta.mutationState.bestialTraitConfig": cfg });
   }
 
   async _onTraitOptionCheckbox(event) {
@@ -8904,6 +9088,53 @@ export class DBUCharacterSheet extends ActorSheet {
     } else {
       await item.update({ [field]: value });
     }
+  }
+
+  /** Weapon LP max (weapons.txt): 32 + 8 per Power Level beyond the 1st; Durable adds +2×PL. */
+  _calcWeaponLPMax(item) {
+    const level = this.actor.system.level || 1;
+    const hasDurable = (item.system.qualities || []).some(q => q.qualityKey === "durable");
+    return 32 + 8 * (level - 1) + (hasDurable ? 2 * level : 0);
+  }
+
+  /** Edit a weapon's current LP (stored as damage taken so max can scale with PL). */
+  async _onWeaponLPChange(event) {
+    const el = event.currentTarget;
+    const item = this.actor.items.get(el.dataset.itemId);
+    if (!item) return;
+    if ((item.system.qualities || []).some(q => q.qualityKey === "unbreakable")) {
+      ui.notifications.warn("Unbreakable: this Weapon's Life Points cannot be reduced.");
+      return;
+    }
+    const max = this._calcWeaponLPMax(item);
+    const current = Math.max(0, Math.min(max, Number(el.value) || 0));
+    await item.update({ "system.weaponLPDamage": max - current });
+    if (current <= 0) {
+      ChatMessage.create({
+        speaker: ChatMessage.getSpeaker({ actor: this.actor }),
+        content: `<div style="font-size:0.9rem"><b><i class="fas fa-heart-broken"></i> ${item.name} — BROKEN</b><br>Its Life Points were reduced to 0: it cannot be used for any Attacking Maneuvers until repaired.</div>`
+      });
+    }
+  }
+
+  /** Repairing Weapons (weapons.txt): 1 hour outside combat + Weapon Craft check restores the weapon. */
+  async _onWeaponRepair(event) {
+    event.preventDefault();
+    const item = this.actor.items.get(event.currentTarget.dataset.itemId);
+    if (!item) return;
+    const hasSpecial = (item.system.qualities || []).some(q =>
+      CONFIG.DBU?.weaponQualities?.[q.qualityKey]?.isSpecial);
+    const dc = hasSpecial ? "Master" : "Qualified";
+    const confirmed = await Dialog.confirm({
+      title: `Repair ${item.name}`,
+      content: `<p>Repairing requires <b>one hour outside of Combat Encounters</b> and a successful <b>${dc} Weapon Craft Skill Check</b>.</p><p>Restore <b>${item.name}</b> to full Life Points?</p>`
+    });
+    if (!confirmed) return;
+    await item.update({ "system.weaponLPDamage": 0 });
+    ChatMessage.create({
+      speaker: ChatMessage.getSpeaker({ actor: this.actor }),
+      content: `<div style="font-size:0.9rem"><b><i class="fas fa-wrench"></i> ${item.name} — Repaired</b><br>Restored to full Life Points (${this._calcWeaponLPMax(item)}) after a successful ${dc} Weapon Craft Skill Check.</div>`
+    });
   }
 
   async _onEquipmentInlineCheck(event) {
@@ -13510,6 +13741,24 @@ export class DBUCharacterSheet extends ActorSheet {
       ui.notifications.error("Attack source not found.");
       return;
     }
+
+    // Broken weapon guard (weapons.txt "Damaging Weapons"): a Weapon at 0 LP
+    // cannot be used for any Attacking Maneuvers. Matches the attack ref's
+    // free-text "Weapon Equipped" against owned weapon items by name.
+    if (String(action.source).startsWith("ref_")) {
+      const refIdx = Number(String(action.source).slice(4));
+      const refWeapon = String(this.actor.system.attackRefs?.[refIdx]?.weaponEquipped || "").trim().toLowerCase();
+      if (refWeapon && refWeapon !== "unarmed") {
+        const wItem = this.actor.items.find(i =>
+          i.type === "equipment" && i.system.equipmentType === "weapon" &&
+          i.name.trim().toLowerCase() === refWeapon);
+        if (wItem && !(wItem.system.qualities || []).some(q => q.qualityKey === "unbreakable")
+            && (this._calcWeaponLPMax(wItem) - (wItem.system.weaponLPDamage || 0)) <= 0) {
+          ui.notifications.warn(`${wItem.name} is BROKEN (0 LP) — it cannot be used for Attacking Maneuvers. Repair it first.`);
+          return;
+        }
+      }
+    }
     const wager = Math.max(0, Number(action.kiWager) || 0);
 
     // --- Diminishing Offense (attacking.txt:33-34): each Attacking Maneuver
@@ -13538,11 +13787,25 @@ export class DBUCharacterSheet extends ActorSheet {
       : woundFormulaBase;
     if (chargingBonus > 0) woundFormula = `${woundFormula}+${chargingBonus}`;
 
-    // Execute rolls
-    const strikeRoll = new Roll(strikeFormulaRaw);
-    const woundRoll = new Roll(woundFormula);
-    await strikeRoll.evaluate();
-    await woundRoll.evaluate();
+    // Execute rolls. Twin-Linked (signature.txt:382): roll the chosen Combat
+    // Roll twice, keep the highest Dice Score. Dead-Link (signature.txt:875):
+    // keep the lowest.
+    const _rollLinked = async (formula, mode) => {
+      const r1 = new Roll(formula);
+      await r1.evaluate();
+      if (!mode) return { roll: r1, discarded: null };
+      const r2 = new Roll(formula);
+      await r2.evaluate();
+      const keepHigh = mode === "high";
+      const keep = (r2.total > r1.total) === keepHigh ? r2 : r1;
+      return { roll: keep, discarded: keep === r1 ? r2 : r1 };
+    };
+    const strikeLinkMode = sd.twinLinked === "strike" ? "high" : sd.deadLinked === "strike" ? "low" : "";
+    const woundLinkMode = sd.twinLinked === "wound" ? "high" : sd.deadLinked === "wound" ? "low" : "";
+    const strikeLinked = await _rollLinked(strikeFormulaRaw, strikeLinkMode);
+    const woundLinked = await _rollLinked(woundFormula, woundLinkMode);
+    const strikeRoll = strikeLinked.roll;
+    const woundRoll = woundLinked.roll;
 
     // Consume "next attack" temp effects — their bonuses were already baked
     // into the prepared Strike/Wound formulas used above.
@@ -13560,6 +13823,12 @@ export class DBUCharacterSheet extends ActorSheet {
     }).join("");
     if (chargingBonus > 0) {
       buffLines += `<span class="dbu-attack-buff" title="Impaling Horns: Charging Assault wound bonus">Impaling Horns +${chargingBonus} Wound</span>`;
+    }
+    if (strikeLinked.discarded) {
+      buffLines += `<span class="dbu-attack-buff" title="${strikeLinkMode === "high" ? "Twin-Linked" : "Dead-Link"} (Strike): rolled twice, kept ${strikeRoll.total} over ${strikeLinked.discarded.total}">${strikeLinkMode === "high" ? "Twin-Linked" : "Dead-Link"} Strike: ${strikeRoll.total} vs ${strikeLinked.discarded.total}</span>`;
+    }
+    if (woundLinked.discarded) {
+      buffLines += `<span class="dbu-attack-buff" title="${woundLinkMode === "high" ? "Twin-Linked" : "Dead-Link"} (Wound): rolled twice, kept ${woundRoll.total} over ${woundLinked.discarded.total}">${woundLinkMode === "high" ? "Twin-Linked" : "Dead-Link"} Wound: ${woundRoll.total} vs ${woundLinked.discarded.total}</span>`;
     }
     const buffsHtml = buffLines
       ? `<div class="dbu-attack-buffs"><strong>Active when rolled:</strong> ${buffLines}</div>`

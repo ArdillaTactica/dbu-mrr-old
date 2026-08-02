@@ -1577,6 +1577,11 @@ export class DBUActor extends Actor {
     system.aptitudes.woundCTPhysical = this._getBuffTotal(system, "Wound CT (Physical)");
     system.aptitudes.woundCTEnergy = this._getBuffTotal(system, "Wound CT (Energy)");
     system.aptitudes.woundCTMagic = this._getBuffTotal(system, "Wound CT (Magic)");
+    // Per-foundation Wound VALUE buffs — "Wound (Energy)"-style buffs from
+    // talents/traits that only boost one attack foundation's Wound Rolls.
+    system.aptitudes.woundBuffPhysical = this._getBuffTotal(system, "Wound (Physical)");
+    system.aptitudes.woundBuffEnergy = this._getBuffTotal(system, "Wound (Energy)");
+    system.aptitudes.woundBuffMagic = this._getBuffTotal(system, "Wound (Magic)");
 
     // --- Equipment Derived ---
     system.equipment = system.equipment || {};

@@ -148,7 +148,15 @@
                             <tr>
                                 <td class="ar-lbl">Weapon Equipped</td>
                                 <td class="ar-val" colspan="2">
-                                    <input type="text" class="ar-input" name="system.attackRefs.{{_idx}}.weaponEquipped" value="{{weaponEquippedLabel}}" />
+                                    <select class="ar-input" name="system.attackRefs.{{_idx}}.weaponEquipped" title="Pick one of your Weapons from the Equipment tab. Its Size, Weapon Penalty and (while Equipped) quality bonuses are applied to the Strike/Wound formulas above.">
+                                        <option value="">Unarmed</option>
+                                        {{#each ../weaponOptions}}
+                                        <option value="{{this}}" {{#if (eq this ../weaponEquippedLabel)}}selected{{/if}}>{{this}}</option>
+                                        {{/each}}
+                                        {{#unless weaponMatched}}{{#if weaponEquipped}}{{#unless (eq weaponEquipped "Unarmed")}}
+                                        <option value="{{weaponEquipped}}" selected>{{weaponEquipped}} (?)</option>
+                                        {{/unless}}{{/if}}{{/unless}}
+                                    </select>
                                 </td>
                                 <td class="ar-val ar-check-cell">
                                     <input type="checkbox" class="ar-checkbox" name="system.attackRefs.{{_idx}}.weaponCheckbox" {{#if weaponCheckbox}}checked{{/if}} />
@@ -161,6 +169,14 @@
                                     <input type="checkbox" class="ar-checkbox" name="system.attackRefs.{{_idx}}.offHandCheckbox" {{#if offHandCheckbox}}checked{{/if}} />
                                 </td>
                             </tr>
+                            {{#if weaponNotes.length}}
+                            <tr class="ar-weapon-notes-row">
+                                <td colspan="8" class="ar-weapon-notes">
+                                    <i class="fas fa-khanda"></i>
+                                    {{#each weaponNotes}}<span class="ar-weapon-note">{{this}}</span>{{/each}}
+                                </td>
+                            </tr>
+                            {{/if}}
                             {{!-- Row 10: power shot and misc dodge --}}
                             <tr>
                                 <td class="ar-lbl">Power Shot</td>

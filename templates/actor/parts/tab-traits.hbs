@@ -103,6 +103,29 @@
           </div>
           {{/each}}
         </div>
+        {{#if isPartBeast}}
+        <div class="pb-bestial-section">
+          <div class="option-limit">Bestial Traits — choose 2 ({{partBeastCount}}/2 selected)</div>
+          <div class="mut-checkbox-list">
+            {{#each partBeastBestial}}
+            <label class="effect-option-checkbox {{#if checked}}selected{{/if}} {{#if disabled}}disabled{{/if}}">
+              <input type="checkbox" class="pb-bestial-check" data-name="{{id}}" {{#if checked}}checked{{/if}} {{#if disabled}}disabled{{/if}} />
+              <span class="option-name">{{name}}</span>
+            </label>
+            {{#if options}}
+            <div class="bestial-option-row" style="margin-left:24px;margin-bottom:4px;">
+              <select class="pb-bestial-option" data-trait-id="{{id}}">
+                <option value="">-- Choose --</option>
+                {{#each options}}
+                <option value="{{key}}" {{#if selected}}selected{{/if}}>{{name}}</option>
+                {{/each}}
+              </select>
+            </div>
+            {{/if}}
+            {{/each}}
+          </div>
+        </div>
+        {{/if}}
       </div>
       {{/each}}
     {{else}}

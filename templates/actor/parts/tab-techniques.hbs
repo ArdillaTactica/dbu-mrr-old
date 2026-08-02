@@ -195,7 +195,24 @@
                 </select>
               </td>
               <td><input type="number" class="adv-input" data-tech-id="{{../id}}" data-adv-index="{{@index}}" data-field="ranks" value="{{ranks}}" min="1" /></td>
-              <td><input type="text" class="adv-input" data-tech-id="{{../id}}" data-adv-index="{{@index}}" data-field="notes" value="{{notes}}" /></td>
+              <td>
+                {{#if (eq name "Twin-Linked")}}
+                <select class="adv-input" data-tech-id="{{../id}}" data-adv-index="{{@index}}" data-field="notes" title="Twin-Linked: choose Strike or Wound — that Combat Roll is rolled twice, keeping the highest Dice Score">
+                  <option value="">-- Choose Roll --</option>
+                  <option value="Strike" {{#if (eq notes "Strike")}}selected{{/if}}>Strike</option>
+                  <option value="Wound" {{#if (eq notes "Wound")}}selected{{/if}}>Wound</option>
+                </select>
+                {{else if (eq name "Magical Flavor")}}
+                <select class="adv-input" data-tech-id="{{../id}}" data-adv-index="{{@index}}" data-field="notes" title="Magical Flavor: select an Energy Profile — this Spell ST gains that Profile's effects, is treated as that Profile, and uses its Ki Point Cost (still a Magic ST)">
+                  <option value="">-- Energy Profile --</option>
+                  {{#each ../../energyProfileOptions}}
+                  <option value="{{this}}" {{#if (eq this ../notes)}}selected{{/if}}>{{this}}</option>
+                  {{/each}}
+                </select>
+                {{else}}
+                <input type="text" class="adv-input" data-tech-id="{{../id}}" data-adv-index="{{@index}}" data-field="notes" value="{{notes}}" />
+                {{/if}}
+              </td>
               <td class="adv-req">{{requirement}}</td>
               <td class="adv-tp">{{tpCost}}</td>
               <td><input type="number" class="adv-input adv-dtp" data-tech-id="{{../id}}" data-adv-index="{{@index}}" data-field="dynamicTP" value="{{dynamicTP}}" /></td>
@@ -237,7 +254,17 @@
                 </select>
               </td>
               <td><input type="number" class="disadv-input" data-tech-id="{{../id}}" data-disadv-index="{{@index}}" data-field="ranks" value="{{ranks}}" min="1" /></td>
-              <td><input type="text" class="disadv-input" data-tech-id="{{../id}}" data-disadv-index="{{@index}}" data-field="notes" value="{{notes}}" /></td>
+              <td>
+                {{#if (eq name "Dead-Link")}}
+                <select class="disadv-input" data-tech-id="{{../id}}" data-disadv-index="{{@index}}" data-field="notes" title="Dead-Link: choose Strike or Wound — that Combat Roll is rolled twice, keeping the lowest Dice Score">
+                  <option value="">-- Choose Roll --</option>
+                  <option value="Strike" {{#if (eq notes "Strike")}}selected{{/if}}>Strike</option>
+                  <option value="Wound" {{#if (eq notes "Wound")}}selected{{/if}}>Wound</option>
+                </select>
+                {{else}}
+                <input type="text" class="disadv-input" data-tech-id="{{../id}}" data-disadv-index="{{@index}}" data-field="notes" value="{{notes}}" />
+                {{/if}}
+              </td>
               <td class="disadv-req">{{requirement}}</td>
               <td class="disadv-tp">{{tpCost}}</td>
               <td><input type="number" class="disadv-input disadv-dtp" data-tech-id="{{../id}}" data-disadv-index="{{@index}}" data-field="dynamicTP" value="{{dynamicTP}}" /></td>

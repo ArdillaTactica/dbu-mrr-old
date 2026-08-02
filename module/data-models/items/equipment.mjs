@@ -46,6 +46,12 @@ export default class DBUEquipmentData extends foundry.abstract.TypeDataModel {
       weaponCategory: new StringField({ initial: "" }),
       weaponSize: new StringField({ initial: "standard" }),
       weaponLP: new NumberField({ initial: 0, integer: true, min: 0 }),
+      // Damage taken (weapons.txt "Damaging Weapons"): current LP = max − damage.
+      // Stored as damage so a fresh weapon is always intact and max scales with PL.
+      weaponLPDamage: new NumberField({ initial: 0, integer: true, min: 0 }),
+      // Hardness Value (weapons.txt): 3 by default, used only for throwing the
+      // weapon. Super Heavy quality raises the effective value to 4.
+      weaponHardness: new NumberField({ initial: 3, integer: true, min: 0 }),
 
       // ---- Accessory-specific ----
       accessoryKey: new StringField({ initial: "" }),

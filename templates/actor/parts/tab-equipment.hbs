@@ -241,10 +241,12 @@
   </div>
   <div class="eq-weapons-list">
     {{#each weaponItems}}
-    <div class="eq-item-card eq-weapon-card" data-item-id="{{_id}}">
+    <div class="eq-item-card eq-weapon-card{{#if _wBroken}} eq-weapon-broken{{/if}}" data-item-id="{{_id}}">
       <div class="eq-card-header">
         <span class="eq-card-name">{{name}}</span>
         <span class="eq-type-badge weapon-badge">Weapon</span>
+        {{#if _wBroken}}<span class="eq-type-badge eq-broken-badge" title="Life Points at 0 — this Weapon cannot be used for any Attacking Maneuvers until repaired">BROKEN</span>{{/if}}
+        {{#if _wUnbreakable}}<span class="eq-type-badge eq-unbreakable-badge" title="Unbreakable: this Weapon cannot be destroyed and its Life Points cannot be reduced"><i class="fas fa-infinity"></i></span>{{/if}}
         <div class="eq-card-controls">
           <label class="eq-worn-label"><input type="checkbox" class="eq-worn-toggle" data-item-id="{{_id}}" {{#if system.worn}}checked{{/if}} /> Equipped</label>
           <a class="item-delete" data-item-id="{{_id}}" title="Delete"><i class="fas fa-trash"></i></a>
@@ -298,6 +300,17 @@
               <option value="5" {{#if (eq system.craftsmanshipGrade 5)}}selected{{/if}}>5 - Grandmaster</option>
             </select>
           </div>
+        </div>
+        <div class="eq-weapon-durability">
+          <span class="eq-wd-item" title="Damaging Weapons: 32 Life Points + 8 per Power Level{{#if _wUnbreakable}} — Unbreakable: LP cannot be reduced{{/if}}. At 0 LP the Weapon is broken and cannot be used for Attacking Maneuvers.">
+            <i class="fas fa-heart"></i> LP
+            <input type="number" class="eq-weapon-lp" data-item-id="{{_id}}" value="{{_wLpCurrent}}" min="0" max="{{_wLpMax}}" {{#if _wUnbreakable}}disabled{{/if}} /> / {{_wLpMax}}
+          </span>
+          <span class="eq-wd-item" title="Weapons have Damage Reduction of 6(bT) against Called Shots targeting them"><i class="fas fa-shield-alt"></i> DR {{_wDR}}</span>
+          <span class="eq-wd-item" title="Hardness Value: 3 by default (4 with Super Heavy). Not added to Wound Rolls — used only when throwing the Weapon"><i class="fas fa-gem"></i> Hardness {{_wHardness}}</span>
+          {{#unless _wUnbreakable}}
+          <button type="button" class="eq-wd-repair" data-action="weapon-repair" data-item-id="{{_id}}" title="Repairing Weapons: one hour outside combat + a {{#if _wHasSpecial}}Master{{else}}Qualified{{/if}} Weapon Craft Skill Check restores the Weapon, even if destroyed"><i class="fas fa-wrench"></i> Repair</button>
+          {{/unless}}
         </div>
         <div class="eq-field full-width">
           <label>Description</label>

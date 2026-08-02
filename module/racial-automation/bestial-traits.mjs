@@ -77,6 +77,14 @@ export function getActiveBestialTraits(system) {
     }
   }
 
+  // Earthling "Part Beast" (Beastman subrace): gain two Bestial Traits at
+  // Character Creation — permanent, no transformation required. Added first
+  // so the Bestial Limit never cuts them.
+  const PART_BEAST_ID = "979b43c2cb80c474";
+  if (system.race === "earthling" && (system.racialTraits || []).includes(PART_BEAST_ID)) {
+    addTraits((mutState.partBeastBestialTraits || []).slice(0, 2), "partBeast");
+  }
+
   // Mutation-sourced traits require the Mutation transformation to be ACTIVE
   // with the matching Mutation Trait selected (mirrors the Dark Vassal LP
   // reduction guard in actor.mjs).

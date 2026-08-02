@@ -8344,6 +8344,88 @@
   border: 1px solid var(--accent-gold);
 }
 
+/* ---- Attack Ref weapon notes ---- */
+.dbu-old.sheet .ar-weapon-notes {
+  font-size: 0.76rem;
+  color: var(--text-secondary, #bbb);
+  padding: 2px 8px 4px;
+}
+.dbu-old.sheet .ar-weapon-notes i {
+  color: var(--danger-color);
+  opacity: 0.8;
+  margin-right: 4px;
+}
+.dbu-old.sheet .ar-weapon-notes .ar-weapon-note {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 1px 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+/* ---- Weapon durability (LP / DR / Hardness) ---- */
+.dbu-old.sheet .eq-weapon-durability {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 6px 0 2px;
+  padding: 5px 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  font-size: 0.82rem;
+}
+.dbu-old.sheet .eq-weapon-durability .eq-wd-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-secondary, #ccc);
+  white-space: nowrap;
+}
+.dbu-old.sheet .eq-weapon-durability .eq-wd-item i {
+  opacity: 0.7;
+}
+.dbu-old.sheet .eq-weapon-durability input.eq-weapon-lp {
+  width: 52px;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  color: inherit;
+}
+.dbu-old.sheet .eq-weapon-durability .eq-wd-repair {
+  margin-left: auto;
+  padding: 2px 8px;
+  font-size: 0.78rem;
+  background: rgba(120, 200, 220, 0.15);
+  color: #82d8ec;
+  border: 1px solid #82d8ec;
+  border-radius: 3px;
+  cursor: pointer;
+  line-height: 1.4;
+  width: auto;
+}
+.dbu-old.sheet .eq-weapon-durability .eq-wd-repair:hover {
+  background: rgba(120, 200, 220, 0.3);
+}
+.dbu-old.sheet .eq-type-badge.eq-broken-badge {
+  background: rgba(255, 68, 68, 0.35);
+  color: #fff;
+  border: 1px solid var(--danger-color);
+  font-weight: bold;
+}
+.dbu-old.sheet .eq-type-badge.eq-unbreakable-badge {
+  background: rgba(255, 215, 0, 0.2);
+  color: var(--accent-gold);
+  border: 1px solid var(--accent-gold);
+}
+.dbu-old.sheet .eq-weapon-card.eq-weapon-broken {
+  border-color: var(--danger-color);
+  box-shadow: inset 0 0 12px rgba(255, 68, 68, 0.15);
+}
+
 .dbu-old.sheet .eq-type-badge.basic-item-badge {
   background: rgba(150, 200, 100, 0.2);
   color: #a8e063;

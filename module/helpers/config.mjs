@@ -668,6 +668,7 @@ export function registerConfig() {
       "Aura Surge": { tpPerRank: 10, maxRanks: 1, hasNotes: false, requirement: "Ultimate Signature" },
       "Efficiency": { tpPerRank: [8, 7], maxRanks: 2, hasNotes: false, requirement: "No Inefficiency" },
       "Forceful Launch": { tpPerRank: [4, 6, 8], maxRanks: 3, hasNotes: false, requirement: "Launching Profile" },
+      "Magical Flavor": { tpPerRank: 2, maxRanks: 1, hasNotes: true, requirement: "Spell Profile" },
       "Precise Strike": { tpPerRank: 4, maxRanks: 1, hasNotes: false, requirement: "Launching Profile" },
       "Throwing Technique": { tpPerRank: 5, maxRanks: 1, hasNotes: false, requirement: "Simple Physical" },
       "Transformation Flare": { tpPerRank: 4, maxRanks: 1, hasNotes: false, requirement: "Restricted \u2013 Untransformed" },
