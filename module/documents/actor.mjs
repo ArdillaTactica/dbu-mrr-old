@@ -60,6 +60,18 @@ export class DBUActor extends Actor {
     // Cache gained active transformations from OSF once for all calculations
     system._gainedActiveTransformations = DBUActor._getActiveGainedTransformations(system);
 
+    // ---- Shapeshift (Unique Ability): Bestial-exchange effect ----
+    // While active, the chosen Body-Category Secondary Racial Trait is exchanged
+    // away — filter it from derived racialTraits so its automation doesn't apply.
+    // Original list stashed for the sheet's "give" dropdown (OSF pattern).
+    {
+      const ss = DBUActor.getShapeshiftState(system);
+      if (ss?.effects?.bestial && ss.giveTraitId) {
+        system._shapeshiftOriginalTraits = [...(system.racialTraits || [])];
+        system.racialTraits = (system.racialTraits || []).filter(id => id !== ss.giveTraitId);
+      }
+    }
+
     // ---- New Level of Power: +1 Tier while in a NLoP-marked transformation ----
     const nlopActive = system.transformationMeta?.nlopActiveEncounter || [];
     let nlopTierBoost = 0;
@@ -394,11 +406,44 @@ export class DBUActor extends Actor {
     });
     system._scalingByTransId = scalingByTransId;
 
+    // Knowledge passive (skills.txt:153-154): per Knowledge specialty, every 2
+    // ranks give +1 Dice Score to ALL Skill Checks (each specialty counted
+    // separately); a specialty's 5th rank instead gives +1 Scholarship Score.
+    {
+      let kSkillBonus = 0, kScScore = 0;
+      // Only specialty ranks count — Knowledge is Encompassing, so all its
+      // ranks live in specialties (legacy base ranks are ignored).
+      const kBuckets = (system.skillSpecialties?.science || []).map(s => Number(s.rank) || 0);
+      for (const r of kBuckets) {
+        kSkillBonus += Math.floor(Math.min(r, 4) / 2);
+        if (r >= 5) kScScore += 1;
+      }
+      system.aptitudes = system.aptitudes || {};
+      system.aptitudes.knowledgeSkillBonus = kSkillBonus;
+      system._knowledgeScScoreBonus = kScScore;
+    }
+
+    // Unification (Unify Maneuver): each Secondary Character granted 2(bT of the
+    // Secondary) Attribute Points, allocated to Attribute SCORES (tracked per
+    // secondary so Forced Spirit Fission can remove them).
+    const _unifyAttrBonus = { ag: 0, fo: 0, te: 0, sc: 0, in: 0, ma: 0, pe: 0 };
+    for (const sec of DBUActor.getUnificationSecondaries(system)) {
+      for (const [k, v] of Object.entries(sec.attrAlloc || {})) {
+        if (k in _unifyAttrBonus) _unifyAttrBonus[k] += Number(v) || 0;
+      }
+    }
+
     for (const key of ["ag", "fo", "te", "sc", "in", "ma", "pe"]) {
       const attr = system.attributes[key];
       if (!attr) continue;
 
       // Base score is already computed by TypeDataModel (racial + progression)
+      // Knowledge specialty 5th rank: +1 Scholarship Score (skills.txt:154)
+      if (key === "sc" && system._knowledgeScScoreBonus) {
+        attr.score += system._knowledgeScScoreBonus;
+      }
+      // Unification attribute points (applied to Score, subject to the cap)
+      if (_unifyAttrBonus[key]) attr.score += _unifyAttrBonus[key];
       // Score Limit: "At ToP 1, Attribute Scores cannot exceed 8. For every ToP
       // after the first, increase this limit by 3." (attributes.txt)
       const scoreCap = 8 + (tier - 1) * 3;
@@ -555,8 +600,8 @@ export class DBUActor extends Actor {
       attr.score += this._getBuffTotal(system, attrScoreKey);
       modifier += this._getBuffTotal(system, attrModKey);
 
-      // Aura "Boosting" advantage bonuses
-      const aura = this._getActiveAura(system);
+      // Aura "Boosting" advantage bonuses (benefits — skipped with Infusion)
+      const aura = this._getSelfBenefitAura(system);
       if (aura) {
         // Sparking aura base: +1(T) to FO and MA modifiers (modifiers only, skip score)
         if (aura.type === "Sparking" && (key === "fo" || key === "ma")) {
@@ -652,6 +697,12 @@ export class DBUActor extends Actor {
   // =============================================================
 
   _calculateResources(system, level, tier, baseTier) {
+    // Unification (Unify Maneuver): each Secondary Character increases Max LP,
+    // Max Ki Pool and Capacity "as if they had just gained a Power Level" —
+    // effective PL for those three formulas ONLY (not for other level-scaled effects).
+    const _unifyLevels = DBUActor.getUnificationSecondaries(system).length;
+    const resLevel = level + _unifyLevels;
+
     // --- Max Life Points ---
     // Formula: 48 + PL × (12 + RLM + 2×TE score) + modifyLife
     // Fusion: use stored highest RLM. Possession: host race. Normal: own race.
@@ -667,7 +718,7 @@ export class DBUActor extends Actor {
     const modifyLife = system.lifePoints?.modify || 0;
     // Custom buff "Racial Life Modifier" — added to rlm before the formula uses it (scales by level)
     rlm += this._getBuffTotal(system, "Racial Life Modifier");
-    system.lifePoints.max = 48 + (level * (12 + rlm + (2 * teScore))) + modifyLife;
+    system.lifePoints.max = 48 + (resLevel * (12 + rlm + (2 * teScore))) + modifyLife;
     // Custom buff "Max Life Points" (unified: flat + bT×baseTier + T×tier)
     system.lifePoints.max += this._getBuffTotal(system, "Max Life Points");
     // Custom buff "Max Life Points ±1/4" — each unit adds 1/4 of base max (pre-buff)
@@ -720,7 +771,7 @@ export class DBUActor extends Actor {
     // --- Max Ki Pool ---
     // Formula: 50 + (PL - 1) × 12 + modifyKi
     const modifyKi = system.kiPool?.modify || 0;
-    system.kiPool.max = 50 + ((level - 1) * 12) + modifyKi;
+    system.kiPool.max = 50 + ((resLevel - 1) * 12) + modifyKi;
     // Custom buff "Max Ki Points" / "Max Ki Pool" (unified: flat + bT×baseTier + T×tier)
     system.kiPool.max += this._getBuffTotal(system, "Max Ki Points");
     // Custom buff "Max Ki Pool ±1/4" — each unit adds 1/4 of base max (pre-buff)
@@ -745,7 +796,7 @@ export class DBUActor extends Actor {
     // Halved per Fatigued stack
     const powerStacks = system.tracking?.powerStacks || 0;
     const powerCapMult = 1 + 0.25 * powerStacks;
-    let capacity = Math.floor((20 + ((level - 1) * 4)) * powerCapMult);
+    let capacity = Math.floor((20 + ((resLevel - 1) * 4)) * powerCapMult);
     const fatiguedStacks = this._getConditionStacks(system, "fatigued");
     for (let i = 0; i < fatiguedStacks; i++) {
       capacity = Math.floor(capacity / 2);
@@ -1018,14 +1069,17 @@ export class DBUActor extends Actor {
 
     system.savingThrows = {};
 
-    // Loop-invariant values
-    const aura = this._getActiveAura(system);
+    // Loop-invariant values (Infusion: Protective benefit skipped, Dangerous kept)
+    const aura = this._getSelfBenefitAura(system);
+    const auraAny = this._getActiveAura(system);
     let auraBonus = 0;
     if (aura) {
       for (const adv of (aura.advantages || [])) {
         if (adv.name === "Protective") auraBonus += (adv.ranks || 1) * tier;
       }
-      for (const dis of (aura.disadvantages || [])) {
+    }
+    if (auraAny) {
+      for (const dis of (auraAny.disadvantages || [])) {
         if (dis.name === "Dangerous Aura") auraBonus -= (dis.ranks || 1) * tier;
       }
     }
@@ -1173,6 +1227,15 @@ export class DBUActor extends Actor {
         }
       }
     }
+    // Shapeshift size effect: "Change your Size Category to any other Size
+    // Category" — direct set (can raise OR lower, unlike Growth/King's Stature).
+    {
+      const ss = DBUActor.getShapeshiftState(system);
+      if (ss?.effects?.size && ss.sizeChoice && DBUActor.SIZE_DATA[ss.sizeChoice]) {
+        size = ss.sizeChoice;
+        if (system.status) system.status.currentSize = size;
+      }
+    }
     // Custom buff "Size Category" — shift size by N categories
     const sizeBuff = this._getBuffTotal(system, "Size Category");
     if (sizeBuff !== 0) {
@@ -1254,11 +1317,13 @@ export class DBUActor extends Actor {
     const brokenStacks = this._getConditionStacks(system, "broken");
     const brokenPenalty = brokenStacks * 2 * tier;
 
-    // Aura DR and Stat Loss
+    // Aura DR and Stat Loss. Infusion: benefits go to the ally (skip them for
+    // self via _getSelfBenefitAura) but the user still suffers disadvantages.
     let auraDR = 0;
     let statLossSoak = 0;
     let statLossDV = 0;
-    const aura = this._getActiveAura(system);
+    const aura = this._getSelfBenefitAura(system);
+    const auraAny = this._getActiveAura(system);
     if (aura) {
       // Absorption advantage
       for (const adv of (aura.advantages || [])) {
@@ -1266,9 +1331,10 @@ export class DBUActor extends Actor {
       }
       // Avatar type gets 2 free ranks of Absorption
       if (aura.type === "Avatar") auraDR += 2 * tier;
-
-      // Stat Loss: reduces the stat named in notes
-      for (const dis of (aura.disadvantages || [])) {
+    }
+    if (auraAny) {
+      // Stat Loss: reduces the stat named in notes (applies even with Infusion)
+      for (const dis of (auraAny.disadvantages || [])) {
         if (dis.name === "Stat Loss") {
           const lossAmount = (dis.ranks || 1) * tier;
           const notesLower = dis.notes?.toLowerCase() || "";
@@ -1299,14 +1365,17 @@ export class DBUActor extends Actor {
     let normalSpeed = Math.max(0, 2 + Math.floor(agTotal / 2) + sizeData.speedMod);
     if (this._isConditionActive(system, "prone")) normalSpeed = Math.floor(normalSpeed / 2);
 
-    // Aura Speed Bonus
+    // Aura Speed Bonus (benefit — skipped with Infusion)
     if (aura) {
       if (aura.type === "Sparking") {
         for (const adv of (aura.advantages || [])) {
           if (adv.name === "High Speed Aura") normalSpeed += (adv.ranks || 1) * tier;
         }
       }
-      for (const dis of (aura.disadvantages || [])) {
+    }
+    // Heavy Aura penalty applies even with Infusion
+    if (auraAny) {
+      for (const dis of (auraAny.disadvantages || [])) {
         if (dis.name === "Heavy Aura") normalSpeed -= (dis.ranks || 1) * tier;
       }
     }
@@ -1335,14 +1404,14 @@ export class DBUActor extends Actor {
     let boostedSpeed = Math.max(0, 2 + agTotal + sizeData.speedMod);
     if (this._isConditionActive(system, "prone")) boostedSpeed = Math.floor(boostedSpeed / 2);
 
-    // Aura Speed Bonus (Boosted)
-    if (aura) {
-      if (aura.type === "Sparking") {
-        for (const adv of (aura.advantages || [])) {
-          if (adv.name === "High Speed Aura") boostedSpeed += (adv.ranks || 1) * tier;
-        }
+    // Aura Speed Bonus (Boosted; benefit skipped with Infusion, penalty kept)
+    if (aura && aura.type === "Sparking") {
+      for (const adv of (aura.advantages || [])) {
+        if (adv.name === "High Speed Aura") boostedSpeed += (adv.ranks || 1) * tier;
       }
-      for (const dis of (aura.disadvantages || [])) {
+    }
+    if (auraAny) {
+      for (const dis of (auraAny.disadvantages || [])) {
         if (dis.name === "Heavy Aura") boostedSpeed -= (dis.ranks || 1) * tier;
       }
     }
@@ -1400,9 +1469,10 @@ export class DBUActor extends Actor {
     // --- Defense Value ---
     // Formula: AG totalScore + SizeMod(T) + AuraPenalties
     // Note: Sparking adds +1(T) to Strike, NOT to DV (per official sheet)
+    // Heavy Aura is a DISADVANTAGE — it applies even with Infusion (auraAny)
     let auraDefense = 0;
-    if (aura) {
-      for (const dis of (aura.disadvantages || [])) {
+    if (auraAny) {
+      for (const dis of (auraAny.disadvantages || [])) {
         if (dis.name === "Heavy Aura") auraDefense -= (dis.ranks || 1) * tier;
       }
     }
@@ -1461,7 +1531,9 @@ export class DBUActor extends Actor {
     const determination = peScore >= 8 ? 2 : (peScore >= 4 ? 1 : 0);
     system.aptitudes.stressBonus = (system.level || 1) + determination
       + (system.downtime?.gains?.stressBonus || 0)
-      - (system.thresholds?.stressPenalty || 0);
+      - (system.thresholds?.stressPenalty || 0)
+      // Unification: "+1 Stress Test Dice Score" per Secondary Character
+      + DBUActor.getUnificationSecondaries(system).length;
 
     // Gifted Student: "If SC Score 4+, +2 Dice Score on Skill Checks, +3 TP per Skill Improvement. Double if SC 8+."
     const scScoreGS = system.attributes.sc?.score ?? 0;
@@ -1567,6 +1639,27 @@ export class DBUActor extends Actor {
     system.aptitudes.woundPhysical = this._getBuffTotal(system, "Wound (Physical)");
     system.aptitudes.woundEnergy = this._getBuffTotal(system, "Wound (Energy)");
     system.aptitudes.woundMagic = this._getBuffTotal(system, "Wound (Magic)");
+
+    // Aura skill effects (auras.txt): Distracting Aura −1 Skill Dice per rank
+    // (disadvantage — applies even with Infusion); Sensory Refinement +1 to
+    // Insight-attribute Skill Checks per rank (benefit — Infusion-gated).
+    {
+      const sbAura = this._getSelfBenefitAura(system);
+      const anyAura = this._getActiveAura(system);
+      let distracting = 0, sensory = 0;
+      if (anyAura) {
+        for (const dis of (anyAura.disadvantages || [])) {
+          if (dis.name === "Distracting Aura") distracting += (dis.ranks || 1);
+        }
+      }
+      if (sbAura) {
+        for (const adv of (sbAura.advantages || [])) {
+          if (adv.name === "Sensory Refinement") sensory += (adv.ranks || 1);
+        }
+      }
+      system.aptitudes.auraSkillPenalty = distracting;
+      system.aptitudes.auraInSkillBonus = sensory;
+    }
     // Critical Target adjustments (subtract from CT threshold to widen crit range; default CT is 6)
     system.aptitudes.strikeCTBonus = this._getBuffTotal(system, "Strike CT (All)");
     system.aptitudes.strikeCTPhysical = this._getBuffTotal(system, "Strike CT (Physical)");
@@ -1577,11 +1670,6 @@ export class DBUActor extends Actor {
     system.aptitudes.woundCTPhysical = this._getBuffTotal(system, "Wound CT (Physical)");
     system.aptitudes.woundCTEnergy = this._getBuffTotal(system, "Wound CT (Energy)");
     system.aptitudes.woundCTMagic = this._getBuffTotal(system, "Wound CT (Magic)");
-    // Per-foundation Wound VALUE buffs — "Wound (Energy)"-style buffs from
-    // talents/traits that only boost one attack foundation's Wound Rolls.
-    system.aptitudes.woundBuffPhysical = this._getBuffTotal(system, "Wound (Physical)");
-    system.aptitudes.woundBuffEnergy = this._getBuffTotal(system, "Wound (Energy)");
-    system.aptitudes.woundBuffMagic = this._getBuffTotal(system, "Wound (Magic)");
 
     // --- Equipment Derived ---
     system.equipment = system.equipment || {};
@@ -3010,6 +3098,19 @@ export class DBUActor extends Actor {
     return found ? foundry.utils.deepClone(found) : null;
   }
 
+  /**
+   * Active aura whose benefits apply to THIS actor. Infusion (auras.txt:205)
+   * sends the aura's effects to an ally: the user pays the costs but gains no
+   * benefits — so bonus consumers (Sparking, Powerful Aura, skill effects)
+   * must use this instead of _getActiveAura.
+   */
+  _getSelfBenefitAura(system) {
+    const aura = this._getActiveAura(system);
+    if (!aura) return null;
+    const hasInfusion = (aura.advantages || []).some(a => a.name === "Infusion");
+    return hasInfusion ? null : aura;
+  }
+
   _isConditionActive(system, id) {
     const c = (system.conditions || []).find(c => c.id === id);
     return c ? c.active : false;
@@ -3275,6 +3376,31 @@ export class DBUActor extends Actor {
   };
 
   static SIZE_ORDER = ["nano", "tiny", "small", "medium", "large", "enormous", "gigantic", "colossal"];
+
+  /**
+   * Unification (Unify Maneuver): snapshot entries for this Primary Character's
+   * Secondary Characters. Uses stored snapshots — the secondary actors may no
+   * longer exist in the world ("stop existing as an individual character").
+   */
+  static getUnificationSecondaries(system) {
+    const f = system.fusion || {};
+    if (!f.isFusion || f.type !== "unification") return [];
+    const snaps = f.unifySecondaries || {};
+    return (f.secondaryCharacterIds || [])
+      .map(id => snaps[id] ? { id, ...snaps[id] } : null)
+      .filter(Boolean);
+  }
+
+  /**
+   * Shapeshift Unique Ability active-effects state, or null when inactive
+   * or the character doesn't own the Shapeshift UA.
+   */
+  static getShapeshiftState(system) {
+    const st = system.transformationMeta?.shapeshiftState;
+    if (!st?.active) return null;
+    if (!(system.uniqueAbilities || []).some(u => u.abilityKey === "shapeshift")) return null;
+    return st;
+  }
 
   // =============================================================
   // Battle Jacket Methods

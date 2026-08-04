@@ -265,6 +265,11 @@ export function applyBioAndroidBonuses(system, tier, baseTier) {
     });
   }
 
+  // Rapid Learner L1: +3 TP per Skill Improvement (consumed in the TP total calc)
+  if (has.rapidLearner && !disabled.has(TRAIT_IDS.rapidLearner)) {
+    system.aptitudes.rapidLearnerTPPerSI = 3;
+  }
+
   // Rapid Learner L2: Triggered/End of Combat Round
   if (has.rapidLearner && !disabled.has(TRAIT_IDS.rapidLearner)) {
     triggered.push({

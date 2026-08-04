@@ -742,54 +742,56 @@ export function registerConfig() {
       "Burning": { kpCost: 6, effect: "At end of turn, reduce Life Points of all characters in Minor Sphere AoE by 3(T)" },
       "Hazardous": { kpCost: 6, effect: "Create a Battle Weather at first Tier within Minor Sphere AoE (centered on you)" },
       "Avatar": { kpCost: 8, effect: "Increase Size Category to Gigantic + 2 free ranks of Absorption Advantage" },
-      "Energy Focus": { kpCost: 6, effect: "Choose Melee Weapon Category, Size, and 2 Weapon Qualities; benefit from them on Unarmed Physical Attacks" },
+      "Energy Focus": { kpCost: 8, effect: "Choose Melee Weapon Category, Size, and 2 Weapon Qualities; benefit from them on Unarmed Physical Attacks" },
       "Draining Focus": { kpCost: 8, effect: "Each time you deal Damage with Attacking Maneuver, reduce opponent's Life and Ki by 2(bT)" },
-      "Shield": { kpCost: 10, effect: "Create barrier that absorbs damage instead of losing Life Points; Shield Durability = 5x Might" }
+      "Shield": { kpCost: 12, effect: "Create barrier that absorbs damage instead of losing Life Points; Shield Durability = 5x Might" }
     },
 
     // ==================== AURA ADVANTAGES ====================
     auraAdvantagesData: {
       // Augmentation
       "Big Aura": { tpPerRank: [10, 6, 6], maxRanks: 3, hasNotes: false, requirement: "Burning or Hazardous Aura" },
-      "Boosting": { tpPerRank: 7, maxRanks: 4, hasNotes: true },
+      "Boosting": { tpPerRank: 7, maxRanks: 3, hasNotes: true },
       "Element Bound": { tpPerRank: 10, maxRanks: 3, hasNotes: true },
-      "Flashy Aura": { tpPerRank: [4, 5], maxRanks: 2, hasNotes: false },
-      "Range Extension": { tpPerRank: 2, maxRanks: 3, hasNotes: false },
+      "Flashy Aura": { tpPerRank: [4, 5, 6], maxRanks: 3, hasNotes: false },
+      "Range Extension": { tpPerRank: [2, 3, 4], maxRanks: 3, hasNotes: false },
       "Scaling": { tpPerRank: 10, maxRanks: 1, hasNotes: true, requirement: "No Boosting or Tiring" },
       "Skill Shield": { tpPerRank: 4, maxRanks: 1, hasNotes: false, requirement: "Shield Aura" },
       "Technical Aura": { tpPerRank: 15, maxRanks: 1, hasNotes: true },
       "Variable Energy Weapon": { tpPerRank: [3, 5, 7], maxRanks: 3, hasNotes: false, requirement: "Energy Focus Aura" },
       // Defensive
-      "Absorption": { tpPerRank: [6, 8], maxRanks: 2, hasNotes: false },
+      "Absorption": { tpPerRank: [6, 8, 10], maxRanks: 3, hasNotes: false },
       "Environmental Shielding": { tpPerRank: 6, maxRanks: 1, hasNotes: false, requirement: "Shield Aura" },
       "Expanded Shield": { tpPerRank: 10, maxRanks: 1, hasNotes: false, requirement: "Shield Aura" },
-      "Protective": { tpPerRank: [6, 8], maxRanks: 2, hasNotes: false },
+      "Protective": { tpPerRank: [6, 8, 10], maxRanks: 3, hasNotes: false },
       "Solid Shield": { tpPerRank: 6, maxRanks: 1, hasNotes: false, requirement: "Expanded Shield" },
       "Dynamic Shield": { tpPerRank: 6, maxRanks: 1, hasNotes: false, requirement: "Shield Aura" },
       // Offensive
-      "Burst Aura": { tpPerRank: 2, maxRanks: 1, hasNotes: false },
+      "Burst Aura": { tpPerRank: [7, 8, 9], maxRanks: 3, hasNotes: false },
       "Charging Aura": { tpPerRank: 8, maxRanks: 1, hasNotes: false },
       "Deadly Drain": { tpPerRank: [8, 8, 10], maxRanks: 3, hasNotes: false, requirement: "Draining Focus" },
       "Defiant Aura": { tpPerRank: [2, 3, 3], maxRanks: 3, hasNotes: false, effect: "+1(T) per rank to Combat Rolls when below Health Thresholds." },
       "Explosive Aura": { tpPerRank: 12, maxRanks: 1, hasNotes: false, requirement: "Burning Aura", effect: "When you Power Up, everyone in your Aura's AoE must dodge or take damage." },
       "Flaring Aura": { tpPerRank: [6, 6, 8], maxRanks: 3, hasNotes: false, requirement: "Burning Aura" },
-      "Powerful Aura": { tpPerRank: [4, 5, 6], maxRanks: 3, hasNotes: false },
-      "Push Through It": { tpPerRank: 8, maxRanks: 1, hasNotes: false, requirement: "Scaling Advantage" },
-      "Reactive Shield": { tpPerRank: 7, maxRanks: 1, hasNotes: false, requirement: "Shield Aura" },
+      "Powerful Aura": { tpPerRank: 4, maxRanks: 3, hasNotes: false },
+      "Persistent Aura": { tpPerRank: [7, 8], maxRanks: 2, hasNotes: false },
+      "Push Through It": { tpPerRank: 10, maxRanks: 1, hasNotes: false, requirement: "Scaling Advantage" },
+      "Reaction": { tpPerRank: 6, maxRanks: 1, hasNotes: false },
+      "Reactive Shield": { tpPerRank: 10, maxRanks: 1, hasNotes: false, requirement: "Shield Aura" },
       // Exceptional
       "Offensive Shield": { tpPerRank: 8, maxRanks: 1, hasNotes: false, requirement: "Shield Aura" },
       "Selective": { tpPerRank: 7, maxRanks: 1, hasNotes: false, requirement: "Burning Aura" },
       "Strainless Aura": { tpPerRank: 7, maxRanks: 1, hasNotes: false },
-      "Tax Exempt": { tpPerRank: 5, maxRanks: 1, hasNotes: false, requirement: "Efficiency rank 1+" },
+      "Tax Exempt": { tpPerRank: 5, maxRanks: 1, hasNotes: false },
       // Utility
       "Efficiency": { tpPerRank: [8, 7], maxRanks: 2, hasNotes: false },
       "Hefty Aura": { tpPerRank: [6, 6, 8], maxRanks: 3, hasNotes: false },
-      "High Speed Aura": { tpPerRank: [2, 2, 1], maxRanks: 3, hasNotes: false, requirement: "Sparking Aura" },
+      "High Speed Aura": { tpPerRank: 2, maxRanks: 3, hasNotes: false, requirement: "Sparking Aura" },
       "Infusion": { tpPerRank: 6, maxRanks: 1, hasNotes: false },
       "Restorative Shield": { tpPerRank: 6, maxRanks: 1, hasNotes: false, requirement: "Shield Aura" },
       "Sensory Refinement": { tpPerRank: [1, 2, 2], maxRanks: 3, hasNotes: false },
       "Shockwave": { tpPerRank: 4, maxRanks: 1, hasNotes: false },
-      "State of Mind": { tpPerRank: 12, maxRanks: 1, hasNotes: true, requirement: "Sparking Aura" }
+      "State of Mind": { tpPerRank: 14, maxRanks: 1, hasNotes: true, requirement: "Sparking Aura" }
     },
 
     // ==================== AURA DISADVANTAGES ====================
@@ -803,12 +805,13 @@ export function registerConfig() {
       "Immolate Self": { tpPerRank: -10, maxRanks: 1, hasNotes: false, requirement: "Burning Aura" },
       "Life Drain": { tpPerRank: [-2, -3, -4, -4, -4], maxRanks: 5, hasNotes: false },
       "Stat Loss": { tpPerRank: [-6, -6], maxRanks: 2, hasNotes: true },
+      "Stat Drain": { tpPerRank: -5, maxRanks: 3, hasNotes: true },
       "Tiring": { tpPerRank: [-4, -5, -6], maxRanks: 3, hasNotes: false },
       "Vulnerable Aura": { tpPerRank: [-6, -8, -8], maxRanks: 3, hasNotes: false },
       // Prohibitive
       "Base Aura": { tpPerRank: -8, maxRanks: 1, hasNotes: false },
       "Climactic": { tpPerRank: [-2, -3, -4], maxRanks: 3, hasNotes: false },
-      "Focused": { tpPerRank: [-8, -10, -12], maxRanks: 3, hasNotes: false },
+      "Focused": { tpPerRank: [-8, -8, -9], maxRanks: 3, hasNotes: false },
       "Fragile State": { tpPerRank: [-2, -3, -4], maxRanks: 3, hasNotes: false, requirement: "Required State" },
       "Harsh Focus": { tpPerRank: -5, maxRanks: 1, hasNotes: false },
       "Numb": { tpPerRank: [-3, -4, -4], maxRanks: 3, hasNotes: false },

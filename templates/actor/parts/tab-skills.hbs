@@ -5,24 +5,74 @@
       <tr>
         <th>Skill</th>
         <th>Attr</th>
-        <th>Ranks</th>
-        <th>Bonus</th>
+        <th title="Attribute Bonus: 1/2 of the assigned Attribute Score">Attr ½</th>
+        <th title="+2 per Skill Rank">Ranks</th>
+        <th title="Gifted Student + Equipment + Traits + Buffs">Extra</th>
+        <th title="Flat manual modifier">Misc</th>
+        <th title="Hover a row's Total for the full breakdown">Total</th>
         <th>Roll</th>
       </tr>
     </thead>
     <tbody>
       {{#each skills}}
-      <tr data-skill="{{key}}">
-        <td class="skill-name">{{name}}</td>
+      <tr data-skill="{{key}}" class="{{#if isEncompassing}}skill-encompassing{{/if}}">
+        <td class="skill-name">{{name}}{{#if isEncompassing}} <span class="skill-enc-tag" title="Encompassing Skill: ranks are placed into Specialties (each rolled separately)">(E)</span>{{/if}}</td>
         <td class="skill-attr"><span class="attr-badge">{{abbr}}</span></td>
-        <td class="skill-ranks">{{rank}}</td>
-        <td class="skill-bonus">{{bonusStr}}</td>
+        <td class="skill-attr-half">+{{attrHalf}}</td>
+        {{#if isEncompassing}}
+        <td class="skill-ranks skill-enc-note" colspan="3">
+          Specialties
+          <button type="button" class="add-btn skill-spec-add" data-skill="{{key}}" title="Add Specialty"><i class="fas fa-plus"></i></button>
+          {{#if showGeniusSelect}}
+          <label class="skill-genius-label" title="Genius Designer: use the chosen Specialization's Skill Bonus for any Craft Skill Check">GD:
+            <select class="skill-genius-select">
+              <option value="">-- none --</option>
+              {{#each specialties}}
+              <option value="{{name}}" {{#if (eq name ../geniusChoice)}}selected{{/if}}>{{name}}</option>
+              {{/each}}
+            </select>
+          </label>
+          {{/if}}
+        </td>
+        <td class="skill-bonus"></td>
+        <td class="skill-roll"></td>
+        {{else}}
+        <td class="skill-ranks">{{rank}} <span class="skill-rank-bonus">(+{{ranksBonus}})</span></td>
+        <td class="skill-extra">{{extraStr}}</td>
+        <td class="skill-misc"><input type="number" class="skill-misc-input" data-skill="{{key}}" value="{{misc}}" /></td>
+        <td class="skill-bonus" title="{{breakdownTitle}}">{{bonusStr}}</td>
         <td class="skill-roll">
           <button type="button" class="roll-btn" data-action="roll-skill" data-skill="{{key}}" title="Roll {{name}}">
             <i class="fas fa-dice-d10"></i>
           </button>
         </td>
+        {{/if}}
       </tr>
+      {{#if isEncompassing}}
+      {{#each specialties}}
+      <tr class="skill-specialty-row" data-skill="{{../key}}" data-specialty="{{name}}">
+        <td class="skill-name skill-spec-name">
+          <i class="fas fa-level-up-alt fa-rotate-90"></i>
+          <input type="text" class="skill-spec-name-input" data-skill="{{../key}}" data-index="{{index}}" value="{{name}}" list="spec-options-{{../key}}" />
+          <button type="button" class="delete-btn skill-spec-delete" data-skill="{{../key}}" data-index="{{index}}" title="Remove Specialty"><i class="fas fa-times"></i></button>
+        </td>
+        <td class="skill-attr"><span class="attr-badge">{{../abbr}}</span></td>
+        <td class="skill-attr-half">+{{../attrHalf}}</td>
+        <td class="skill-ranks"><input type="number" class="skill-spec-rank-input" data-skill="{{../key}}" data-index="{{index}}" value="{{rank}}" min="0" /></td>
+        <td class="skill-extra">{{#if geniusApplied}}<span title="Genius Designer: using {{geniusApplied}}'s Skill Bonus"><i class="fas fa-lightbulb"></i></span>{{/if}}</td>
+        <td class="skill-misc"><input type="number" class="skill-misc-input" data-skill="{{../key}}" data-specialty="{{name}}" value="{{misc}}" /></td>
+        <td class="skill-bonus" title="{{breakdownTitle}}">{{bonusStr}}</td>
+        <td class="skill-roll">
+          <button type="button" class="roll-btn" data-action="roll-skill" data-skill="{{../key}}" data-specialty="{{name}}" title="Roll {{../name}}: {{name}}">
+            <i class="fas fa-dice-d10"></i>
+          </button>
+        </td>
+      </tr>
+      {{/each}}
+      <datalist id="spec-options-{{key}}">
+        {{#each suggestedSpecialties}}<option value="{{this}}"></option>{{/each}}
+      </datalist>
+      {{/if}}
       {{/each}}
     </tbody>
   </table>

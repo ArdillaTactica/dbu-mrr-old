@@ -73,7 +73,8 @@
           </div>
           <div class="unique-field">
             <label>KP Cost</label>
-            <span class="unique-auto-field">{{data.kpCost}}</span>
+            <span class="unique-auto-field">{{data.kpCost}}{{#if kpResolved}} = {{#if ecApplies}}<s>{{kpResolved}}</s> <b title="Energy Control{{#if data.abilityType}} (Technical){{/if}}: −2(T) Ki Point Cost">{{kpEffective}} KP</b>{{else}}<b>{{kpResolved}} KP</b>{{/if}}{{/if}}</span>
+            {{#if isSustained}}<span class="unique-sustained-tag" title="Sustained: this ability requires paying its KP Cost again at the start of your turns to maintain its effect (see effect text)"><i class="fas fa-sync-alt"></i> Sustained</span>{{/if}}
           </div>
           <div class="unique-field">
             <label>Base TP</label>
@@ -92,6 +93,152 @@
           <label>Effect</label>
           <span class="unique-effect-text">{{{data.effect}}}</span>
         </div>
+
+        {{#if shapeshift}}
+        <div class="shapeshift-config {{#if shapeshift.active}}ss-active{{/if}}">
+          <div class="ss-header">
+            <span class="ss-title"><i class="fas fa-random"></i> Shapeshift Form</span>
+            <span class="ss-costs">
+              Cost <b>{{shapeshift.kpActivate}} KP</b> · Sustain <b>{{shapeshift.kpSustain}} KP/turn</b> ·
+              End: regain <b>{{shapeshift.kpRegain}} KP</b> · Duration: <b>{{shapeshift.duration}}</b>
+              {{#if shapeshift.mgL5}}<span class="ss-mg-tag" title="Magical Girl — A Different Me (L5): Diploma granted + second Bestial Trait on exchange">A Different Me</span>{{/if}}
+            </span>
+            <button type="button" class="ss-toggle-btn {{#if shapeshift.active}}ss-on{{/if}}">
+              {{#if shapeshift.active}}<i class="fas fa-undo"></i> Revert{{else}}<i class="fas fa-play"></i> Shapeshift{{/if}}
+            </button>
+          </div>
+
+          <div class="ss-row">
+            {{#if shapeshift.hasQuickShift}}
+            <span class="ss-note"><i class="fas fa-bolt"></i> Quick Shift: 1 Standard Action, up to 3 effects</span>
+            {{else}}
+            <label>Actions spent
+              <select class="ss-field" data-field="actions">
+                <option value="1" {{#if (eq shapeshift.actions 1)}}selected{{/if}}>1</option>
+                <option value="2" {{#if (eq shapeshift.actions 2)}}selected{{/if}}>2</option>
+                <option value="3" {{#if (eq shapeshift.actions 3)}}selected{{/if}}>3</option>
+              </select>
+            </label>
+            {{/if}}
+            <span class="ss-count {{#if shapeshift.overLimit}}ss-over{{/if}}">Effects: {{shapeshift.chosenCount}}/{{shapeshift.maxEffects}}</span>
+          </div>
+
+          <div class="ss-effect {{#if shapeshift.effects.bestial}}ss-effect-on{{/if}}">
+            <label class="ss-effect-label">
+              <input type="checkbox" class="ss-effect-check" data-effect="bestial" {{#if shapeshift.effects.bestial}}checked{{/if}} />
+              Bestial Exchange
+            </label>
+            {{#if shapeshift.effects.bestial}}
+            <div class="ss-effect-body">
+              <label>Give (Body Secondary)
+                <select class="ss-field" data-field="giveTraitId">
+                  <option value="">— choose —</option>
+                  {{#each shapeshift.bodyTraitOptions}}
+                  <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
+                  {{/each}}
+                </select>
+              </label>
+              <label>Gain Bestial Trait
+                <select class="ss-field" data-field="bestialTraitId">
+                  <option value="">— choose —</option>
+                  {{#each shapeshift.bestialList}}
+                  <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
+                  {{/each}}
+                </select>
+              </label>
+              {{#each shapeshift.bestialList}}
+              {{#if options}}
+              <label>Option
+                <select class="ss-bestial-option" data-trait-id="{{id}}">
+                  <option value="">— option —</option>
+                  {{#each options}}
+                  <option value="{{key}}" {{#if selected}}selected{{/if}}>{{name}}</option>
+                  {{/each}}
+                </select>
+              </label>
+              {{/if}}
+              {{/each}}
+              {{#if shapeshift.bestialList2}}
+              <label>Second Bestial Trait (A Different Me)
+                <select class="ss-field" data-field="bestialTraitId2">
+                  <option value="">— choose —</option>
+                  {{#each shapeshift.bestialList2}}
+                  <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
+                  {{/each}}
+                </select>
+              </label>
+              {{#each shapeshift.bestialList2}}
+              {{#if options}}
+              <label>Option
+                <select class="ss-bestial-option" data-trait-id="{{id}}">
+                  <option value="">— option —</option>
+                  {{#each options}}
+                  <option value="{{key}}" {{#if selected}}selected{{/if}}>{{name}}</option>
+                  {{/each}}
+                </select>
+              </label>
+              {{/if}}
+              {{/each}}
+              {{/if}}
+            </div>
+            {{/if}}
+          </div>
+
+          <div class="ss-effect {{#if shapeshift.effects.size}}ss-effect-on{{/if}}">
+            <label class="ss-effect-label">
+              <input type="checkbox" class="ss-effect-check" data-effect="size" {{#if shapeshift.effects.size}}checked{{/if}} />
+              Size Change
+            </label>
+            {{#if shapeshift.effects.size}}
+            <div class="ss-effect-body">
+              <label>New Size
+                <select class="ss-field" data-field="sizeChoice">
+                  <option value="">— choose —</option>
+                  {{#each shapeshift.sizeOptions}}
+                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </label>
+              <span class="ss-note">Does not destroy equipped Apparel.</span>
+            </div>
+            {{/if}}
+          </div>
+
+          <div class="ss-effect {{#if shapeshift.effects.vehicle}}ss-effect-on{{/if}}">
+            <label class="ss-effect-label">
+              <input type="checkbox" class="ss-effect-check" data-effect="vehicle" {{#if shapeshift.effects.vehicle}}checked{{/if}} />
+              Vehicle Form (BP 8)
+            </label>
+            {{#if shapeshift.effects.vehicle}}
+            <div class="ss-effect-body">
+              <span class="ss-note">You are the Pilot. Attacks limited to Basic Attack (Blitz) unless the Vehicle has Weapon(s). Damage to the Vehicle hits your LP.</span>
+            </div>
+            {{/if}}
+          </div>
+
+          <div class="ss-effect {{#if shapeshift.effects.weapon}}ss-effect-on{{/if}}">
+            <label class="ss-effect-label">
+              <input type="checkbox" class="ss-effect-check" data-effect="weapon" {{#if shapeshift.effects.weapon}}checked{{/if}} />
+              Weapon Form (3 Qualities)
+            </label>
+            {{#if shapeshift.effects.weapon}}
+            <div class="ss-effect-body">
+              <label>Foundation
+                <select class="ss-field" data-field="weaponFoundation">
+                  {{#each shapeshift.foundationOptions}}
+                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{value}}</option>
+                  {{/each}}
+                </select>
+              </label>
+              <label>Qualities
+                <input type="text" class="ss-field ss-qualities" data-field="weaponQualities" value="{{shapeshift.weaponQualities}}" placeholder="3 Qualities…" />
+              </label>
+              <span class="ss-note">Wielder: Integrated; +<b>{{shapeshift.might}}</b> Wound (your Might); Ki Wager up to 1/5 of your Max Capacity. You can only use the Shapeshift Maneuver.</span>
+            </div>
+            {{/if}}
+          </div>
+        </div>
+        {{/if}}
       </div>
 
       {{!-- Advancements --}}

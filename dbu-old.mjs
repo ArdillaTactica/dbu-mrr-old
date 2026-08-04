@@ -44,6 +44,7 @@ import { APPAREL_QUALITIES_CATALOG } from "./module/data/apparel-qualities-catal
 import { WEAPON_QUALITIES_CATALOG } from "./module/data/weapon-qualities-catalog.mjs";
 import { EVIL_AURA_TECHNIQUES } from "./module/data/evil-aura-techniques-catalog.mjs";
 import { BASIC_ITEMS_CATALOG, CRAFT_DC_LABELS } from "./module/data/basic-items-catalog.mjs";
+import { BASE_QUALITIES_CATALOG, BASE_SIZES, BASE_HARDNESS } from "./module/data/base-qualities-catalog.mjs";
 
 // Battle Jacket
 import DBUBattleJacketData from "./module/data-models/battle-jacket.mjs";
@@ -86,6 +87,9 @@ Hooks.once("init", () => {
   CONFIG.DBU.evilAuraTechniques = EVIL_AURA_TECHNIQUES;
   CONFIG.DBU.basicItemsCatalog = BASIC_ITEMS_CATALOG;
   CONFIG.DBU.craftDCLabels = CRAFT_DC_LABELS;
+  CONFIG.DBU.baseQualitiesCatalog = BASE_QUALITIES_CATALOG;
+  CONFIG.DBU.baseSizes = BASE_SIZES;
+  CONFIG.DBU.baseHardness = BASE_HARDNESS;
 
   // Set custom document classes
   CONFIG.Actor.documentClass = DBUActor;

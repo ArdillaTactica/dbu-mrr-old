@@ -85,6 +85,19 @@ export function getActiveBestialTraits(system) {
     addTraits((mutState.partBeastBestialTraits || []).slice(0, 2), "partBeast");
   }
 
+  // Shapeshift Unique Ability: exchange a Body-Category Secondary Racial Trait
+  // for a chosen Bestial Trait while the Shapeshift effects are active.
+  // Magical Girl "A Different Me" (trait level 5+): may gain a second trait.
+  const ssState = system.transformationMeta?.shapeshiftState || {};
+  if (ssState.active && ssState.effects?.bestial && ssState.giveTraitId
+      && (system.uniqueAbilities || []).some(u => u.abilityKey === "shapeshift")) {
+    const ssTraits = [ssState.bestialTraitId];
+    const mgL5 = (system.transformations || []).some(t =>
+      t?.active && t?.catalogKey === "magical_girl" && (t.level || 0) >= 5);
+    if (mgL5 && ssState.bestialTraitId2) ssTraits.push(ssState.bestialTraitId2);
+    addTraits(ssTraits.filter(Boolean), "shapeshift");
+  }
+
   // Mutation-sourced traits require the Mutation transformation to be ACTIVE
   // with the matching Mutation Trait selected (mirrors the Dark Vassal LP
   // reduction guard in actor.mjs).
@@ -103,10 +116,27 @@ export function getActiveBestialTraits(system) {
     addTraits(mutState.wereCreatureBestialTraits, "wereCreature");
   }
 
-  // Crusher Form / Dragon Force / Monster Form bestial traits
-  addTraits(mutState.crusherFormBestialTraits, "crusherForm");
-  addTraits(mutState.dragonForceBestialTraits, "dragonForce");
-  addTraits(mutState.monsterFormBestialTraits, "monsterForm");
+  // Dark Evolution mutation with the "Bestial Monster" Monster Trait chosen
+  if (mutTrait === "dark_evolution"
+      && (mutState.darkEvolutionMonsterTraits || []).includes("Bestial Monster")) {
+    addTraits((mutState.darkEvolutionBestialTraits || []).slice(0, 1), "darkEvolution");
+  }
+
+  // Dragon Force "Draconization": 1 chosen bestial trait, only while the form
+  // is active (transformations-catalog: "While in the Dragon Force
+  // Transformation, you have access to your selected Bestial Trait").
+  const _formActive = (key) => (system.transformations || []).some(t => t?.active && t?.catalogKey === key);
+  if (_formActive("dragon_force")) {
+    addTraits((mutState.dragonForceBestialTraits || []).slice(0, 1), "dragonForce");
+  }
+
+  // Monster Form "Bestial Monster" Monster Trait: 1 chosen bestial trait while
+  // Monster Form is active. (Crusher Form grants NO bestial traits — it only
+  // enhances ones you already have, so it is not a source here.)
+  if (_formActive("monster_form")
+      && (mutState.monsterFormMonsterTraits || []).includes("Bestial Monster")) {
+    addTraits((mutState.monsterFormBestialTraits || []).slice(0, 1), "monsterForm");
+  }
 
   // Arcosian Meta Trait "Bestial Evolution": grants one chosen bestial trait
   // while its Metamorphosis stage is active (or via Divergent Evolution).

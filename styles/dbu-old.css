@@ -8344,6 +8344,120 @@
   border: 1px solid var(--accent-gold);
 }
 
+/* ---- Skills table breakdown columns ---- */
+.dbu-old.sheet .skills-table .skill-misc-input {
+  width: 48px;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  color: inherit;
+}
+.dbu-old.sheet .skills-table .skill-rank-bonus {
+  opacity: 0.6;
+  font-size: 0.78em;
+}
+.dbu-old.sheet .skills-table .skill-extra,
+.dbu-old.sheet .skills-table .skill-attr-half {
+  color: var(--text-secondary, #bbb);
+}
+.dbu-old.sheet .skills-table .skill-bonus {
+  font-weight: bold;
+  cursor: help;
+}
+/* Unique Ability sustained tag */
+.dbu-old.sheet .unique-sustained-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-size: 0.72rem;
+  background: rgba(120, 200, 220, 0.15);
+  color: #82d8ec;
+  border: 1px solid #82d8ec;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+/* Energy Control talent row (techniques tab) */
+.dbu-old.sheet .ec-talent-row {
+  padding: 5px 8px;
+  margin-bottom: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+.dbu-old.sheet .ec-talent-row select.ec-tech-select {
+  width: 200px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  color: inherit;
+}
+.dbu-old.sheet .ec-talent-row .ec-all-note {
+  color: var(--text-secondary, #bbb);
+  font-style: italic;
+}
+
+/* Encompassing skill specialty rows */
+.dbu-old.sheet .skills-table .skill-specialty-row td {
+  background: rgba(255, 255, 255, 0.025);
+}
+.dbu-old.sheet .skills-table .skill-spec-name {
+  padding-left: 18px;
+}
+.dbu-old.sheet .skills-table .skill-spec-name i {
+  opacity: 0.5;
+  margin-right: 4px;
+}
+.dbu-old.sheet .skills-table .skill-spec-name-input {
+  width: 110px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  color: inherit;
+}
+.dbu-old.sheet .skills-table .skill-spec-rank-input {
+  width: 44px;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  color: inherit;
+}
+.dbu-old.sheet .skills-table .skill-enc-tag {
+  opacity: 0.6;
+  font-size: 0.8em;
+}
+.dbu-old.sheet .skills-table .skill-enc-note {
+  color: var(--text-secondary, #bbb);
+  font-size: 0.85em;
+}
+.dbu-old.sheet .skills-table .skill-spec-add,
+.dbu-old.sheet .skills-table .skill-spec-delete {
+  width: auto;
+  padding: 0 6px;
+  margin-left: 6px;
+}
+.dbu-old.sheet .skills-table .skill-genius-label {
+  margin-left: 10px;
+  white-space: nowrap;
+}
+.dbu-old.sheet .skills-table .skill-genius-select {
+  width: 110px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  color: inherit;
+}
+
+/* Skill roll chat card: DC quick-reference footer */
+.dbu-attack-roll .dbu-skill-dcs {
+  margin-top: 4px;
+  font-size: 0.72rem;
+  opacity: 0.65;
+}
+
 /* ---- Attack Ref weapon notes ---- */
 .dbu-old.sheet .ar-weapon-notes {
   font-size: 0.76rem;
@@ -14441,4 +14555,432 @@
   color: #999;
   margin-top: 1px;
   white-space: nowrap;
+}
+
+/* === Shapeshift Unique Ability config panel (combat-card palette) === */
+.shapeshift-config {
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: linear-gradient(165deg, rgba(13, 17, 23, 0.55) 0%, rgba(26, 38, 54, 0.55) 100%);
+  border: 1px solid #2a4a6a;
+  border-radius: 5px;
+}
+.shapeshift-config.ss-active {
+  border-color: #00bfff;
+  box-shadow: 0 0 4px rgba(0, 191, 255, 0.25);
+}
+.shapeshift-config .ss-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.shapeshift-config .ss-title {
+  font-weight: 700;
+  color: #00bfff;
+  white-space: nowrap;
+}
+.shapeshift-config .ss-costs {
+  flex: 1 1 auto;
+  font-size: 10.5px;
+  color: #8899aa;
+}
+.shapeshift-config .ss-costs b {
+  color: var(--accent-gold, #ffd700);
+}
+.shapeshift-config .ss-mg-tag {
+  margin-left: 4px;
+  padding: 1px 6px;
+  background: rgba(156, 39, 176, 0.18);
+  border: 1px solid #9c27b0;
+  border-radius: 2px;
+  color: #ce93d8;
+  font-size: 9.5px;
+  font-weight: 600;
+}
+.shapeshift-config .ss-toggle-btn {
+  flex: 0 0 auto;
+  width: auto;
+  padding: 2px 10px;
+  background: linear-gradient(90deg, #006d9e 0%, #00bfff 150%);
+  border: 0;
+  border-radius: 3px;
+  color: #fff;
+  font-size: 11px;
+  cursor: pointer;
+  line-height: 1.6;
+}
+.shapeshift-config .ss-toggle-btn.ss-on {
+  background: linear-gradient(90deg, #a34a00 0%, #ff9800 150%);
+}
+.shapeshift-config .ss-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 5px 0 3px;
+  font-size: 11px;
+  color: #b9c4cf;
+}
+.shapeshift-config .ss-count {
+  padding: 1px 6px;
+  background: rgba(41, 53, 68, 0.7);
+  border: 1px solid #2a4a6a;
+  border-radius: 2px;
+  color: #8899aa;
+  font-size: 10px;
+  font-weight: 600;
+}
+.shapeshift-config .ss-count.ss-over {
+  border-color: #e53935;
+  color: #ef9a9a;
+}
+.shapeshift-config .ss-effect {
+  margin: 3px 0;
+  padding: 3px 6px;
+  border-left: 2px solid #2a4a6a;
+  font-size: 11px;
+}
+.shapeshift-config .ss-effect.ss-effect-on {
+  border-left-color: #00bfff;
+  background: rgba(0, 191, 255, 0.05);
+}
+.shapeshift-config .ss-effect-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 600;
+  color: #e8ecf1;
+  cursor: pointer;
+}
+.shapeshift-config .ss-effect-body {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 3px;
+  padding-left: 18px;
+}
+.shapeshift-config .ss-effect-body label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  color: #8899aa;
+}
+.shapeshift-config .ss-effect-body select,
+.shapeshift-config .ss-field {
+  width: auto;
+  min-width: 90px;
+  font-size: 11px;
+}
+.shapeshift-config .ss-qualities {
+  min-width: 180px;
+}
+.shapeshift-config .ss-note {
+  font-size: 10px;
+  color: #8899aa;
+  font-style: italic;
+}
+
+/* === Bases (Bio tab) — combat-card palette === */
+.bases-section {
+  margin-top: 8px;
+}
+.base-card {
+  margin: 6px 0;
+  padding: 6px 8px;
+  background: linear-gradient(165deg, rgba(13, 17, 23, 0.55) 0%, rgba(26, 38, 54, 0.55) 100%);
+  border: 1px solid #2a4a6a;
+  border-radius: 5px;
+}
+.base-card.base-destroyed {
+  border-color: rgba(229, 57, 53, 0.6);
+}
+.base-header-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.base-header-bar .base-name {
+  flex: 1 1 auto;
+  font-weight: 700;
+  color: #e8ecf1;
+}
+.base-header-bar select {
+  width: auto;
+  font-size: 11px;
+}
+.base-destroyed-badge {
+  padding: 1px 6px;
+  background: rgba(229, 57, 53, 0.18);
+  border: 1px solid #e53935;
+  border-radius: 2px;
+  color: #ef9a9a;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+.base-metal-badge {
+  padding: 1px 6px;
+  background: rgba(41, 53, 68, 0.7);
+  border: 1px solid #2a4a6a;
+  border-radius: 2px;
+  color: #b0bec5;
+  font-size: 9.5px;
+  font-weight: 600;
+}
+.base-stats-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 5px;
+  font-size: 11px;
+  color: #8899aa;
+}
+.base-stats-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  color: #8899aa;
+}
+.base-stats-row select {
+  width: auto;
+  max-width: 230px;
+  font-size: 10.5px;
+}
+.base-num {
+  width: 55px;
+  text-align: center;
+}
+.base-stat b {
+  color: var(--accent-gold, #ffd700);
+}
+.base-stat.base-dev-over b {
+  color: #ef9a9a;
+}
+.base-substat {
+  font-size: 9.5px;
+  color: #5a6a7a;
+}
+.base-lp-bar {
+  flex: 1 1 60px;
+  max-width: 140px;
+  height: 8px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid #2a4a6a;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.base-lp-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #006d9e, #00bfff);
+}
+.base-lp-fill.base-lp-zero {
+  background: #e53935;
+}
+.base-repair-btn {
+  width: auto;
+  padding: 1px 8px;
+  background: linear-gradient(90deg, #2e6b31 0%, #4caf50 150%);
+  border: 0;
+  border-radius: 3px;
+  color: #fff;
+  font-size: 10.5px;
+  cursor: pointer;
+  line-height: 1.6;
+}
+.base-qualities {
+  margin-top: 6px;
+  padding: 4px 6px;
+  border-left: 2px solid #2a4a6a;
+}
+.base-qualities-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #00bfff;
+}
+.base-quality-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 4px 0;
+  font-size: 11px;
+}
+.base-quality-row select {
+  width: auto;
+  min-width: 170px;
+  font-size: 10.5px;
+}
+.base-q-cost {
+  padding: 1px 6px;
+  background: rgba(41, 53, 68, 0.7);
+  border: 1px solid #2a4a6a;
+  border-radius: 2px;
+  color: var(--accent-gold, #ffd700);
+  font-size: 9.5px;
+  font-weight: 600;
+}
+.base-q-occ {
+  font-size: 9.5px;
+  color: #5a6a7a;
+}
+.base-q-notes {
+  flex: 1 1 120px;
+  font-size: 10.5px;
+}
+.base-q-detail {
+  flex: 1 1 100%;
+  padding-left: 6px;
+  font-size: 9.5px;
+  color: #8899aa;
+}
+.base-q-prereq {
+  display: block;
+  color: #b0885a;
+}
+.base-notes-area {
+  width: 100%;
+  margin-top: 5px;
+  font-size: 10.5px;
+}
+
+/* === Unification panel (Fusion tab) — combat-card palette === */
+.fusion-unify-panel {
+  margin-top: 8px;
+  background: linear-gradient(165deg, rgba(13, 17, 23, 0.55) 0%, rgba(26, 38, 54, 0.55) 100%);
+  border: 1px solid #2a4a6a;
+  border-radius: 5px;
+  overflow: hidden;
+}
+.fusion-unify-body {
+  padding: 6px 8px;
+}
+.unify-summary {
+  font-size: 10.5px;
+  color: #8899aa;
+}
+.unify-summary b {
+  color: var(--accent-gold, #ffd700);
+}
+.unify-count-chip {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  background: rgba(0, 191, 255, 0.1);
+  border: 1px solid #00bfff;
+  border-radius: 2px;
+  color: #00bfff;
+  font-size: 9.5px;
+  font-weight: 600;
+}
+.unify-secondary-card {
+  margin: 6px 0;
+  padding: 4px 6px;
+  border-left: 2px solid #00bfff;
+  background: rgba(0, 191, 255, 0.04);
+}
+.unify-sec-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.unify-sec-name {
+  font-weight: 700;
+  color: #e8ecf1;
+}
+.unify-sec-meta {
+  font-size: 10px;
+  color: #8899aa;
+}
+.unify-sec-alloc {
+  margin-left: auto;
+  padding: 1px 6px;
+  background: rgba(41, 53, 68, 0.7);
+  border: 1px solid #2a4a6a;
+  border-radius: 2px;
+  color: var(--accent-gold, #ffd700);
+  font-size: 10px;
+  font-weight: 600;
+}
+.unify-sec-alloc.unify-over {
+  border-color: #e53935;
+  color: #ef9a9a;
+}
+.unify-sec-header .action-btn {
+  width: auto;
+  flex: 0 0 auto;
+}
+.unify-attr-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.unify-attr {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: #8899aa;
+  font-weight: 600;
+}
+.unify-attr-input {
+  width: 42px;
+  text-align: center;
+}
+.unify-recombine-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+  font-size: 10.5px;
+  color: #b9c4cf;
+}
+.unify-mp-hook {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 4px 6px;
+  border-left: 2px solid #9c27b0;
+  background: rgba(156, 39, 176, 0.06);
+  font-size: 10.5px;
+  color: #b9c4cf;
+}
+.unify-mp-hook .action-btn {
+  width: auto;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+.unify-mp-owned {
+  margin-left: 6px;
+  padding: 1px 6px;
+  background: rgba(41, 53, 68, 0.7);
+  border: 1px solid #2a4a6a;
+  border-radius: 2px;
+  color: #8899aa;
+  font-size: 9.5px;
+}
+.unify-mp-pending {
+  margin-left: 6px;
+  padding: 1px 6px;
+  background: rgba(255, 152, 0, 0.12);
+  border: 1px solid #ff9800;
+  border-radius: 2px;
+  color: #ffb74d;
+  font-size: 9.5px;
+}
+.unify-notes {
+  margin-top: 6px;
+  font-size: 9.5px;
+  color: #5a6a7a;
+  font-style: italic;
 }

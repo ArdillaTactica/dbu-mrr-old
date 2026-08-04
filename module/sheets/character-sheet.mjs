@@ -140,7 +140,7 @@ export class DBUCharacterSheet extends ActorSheet {
       if (v === "" || v === null || v === undefined) {
         formData[field] = 0;
       } else {
-        formData[field] = Math.clamped(Math.round(Number(v)) || 0, 0, max);
+        formData[field] = Math.clamp(Math.round(Number(v)) || 0, 0, max);
       }
     }
 
@@ -287,44 +287,57 @@ export class DBUCharacterSheet extends ActorSheet {
       totalScore: attr.totalScore ?? (attr.score ?? 0)
     }));
 
-    // Prepare skills array for tab-skills.hbs (floor(attrScore/2) + ranks*2 + Gifted Student + equipment qualities + custom buffs)
+    // Prepare skills array for tab-skills.hbs — full breakdown via _calcSkillBreakdown
     const skillsData = CONFIG.DBU?.skillsData ?? [];
-    const gsSkillBonus = system.aptitudes?.giftedStudentSkillBonus || 0;
-    const equipSkillBonuses = system.equipmentFlags?.skillBonuses || {};
-    // Custom buff: skill group bonuses (per attribute) — match spreadsheet category names
-    const skillGroupBuff = (attrKey) => {
-      const groupNameMap = {
-        ag: "Agility Skills", fo: "Force Skills", sc: "Scholarship Skills",
-        in: "Insight Skills", ma: "Magic Skills", pe: "Personality Skills"
-      };
-      return this.actor._getBuffTotal(system, groupNameMap[attrKey] || "");
-    };
     context.skills = skillsData.map((def) => {
-      const key = def.id;
-      const rank = system.skills?.[key]?.rank ?? system.skills?.[key] ?? 0;
-      const attrKey = def.attribute || "ag";
-      const attrData = system.attributes?.[attrKey];
-      const attrScore = attrData?.score ?? 0;
-      const rankNum = Number(rank) || 0;
-      const equipBonus = Number(equipSkillBonuses[key]) || 0;
-      // Per-skill buff (matches the skill's display name from spreadsheet)
-      const perSkillBuff = this.actor._getBuffTotal(system, def.name || "");
-      const groupBuff = skillGroupBuff(attrKey);
-      // Trait bonuses: Alternate Sight (bestial) +1 Perception, Cloaking System (cybernetic) +1 Stealth,
-      // racial Perception bonuses (Part Beast, Lock-On, Red Eye, Feline Senses…) via aptitudes.perceptionBonus
-      const traitBonus = (key === "perception" ? (Number(system._bestialPerceptionBonus) || 0) + (Number(system.aptitudes?.perceptionBonus) || 0) : 0)
-        + (key === "stealth" ? (Number(system._cyberStealthBonus) || 0) : 0);
-      const bonus = Math.floor(attrScore / 2) + (rankNum * 2) + gsSkillBonus + equipBonus + perSkillBuff + groupBuff + traitBonus;
+      const bd = this._calcSkillBreakdown(def.id);
+      const bonus = bd.total;
+      const extra = bd.gs + bd.equip + bd.traits + bd.buffs + (Number(this.actor.system.aptitudes?.knowledgeSkillBonus) || 0);
       return {
-        key,
-        name: def.name || key,
-        attribute: attrKey,
-        abbr: attrKey.toUpperCase(),
-        rank: rankNum,
+        key: def.id,
+        name: def.name || def.id,
+        attribute: bd.attrKey,
+        abbr: bd.attrKey.toUpperCase(),
+        rank: bd.rankNum,
+        attrHalf: bd.attr,
+        ranksBonus: bd.ranks,
+        extra,
+        extraStr: extra >= 0 ? `+${extra}` : `${extra}`,
+        misc: bd.misc,
         bonus,
-        bonusStr: bonus >= 0 ? `+${bonus}` : `${bonus}`
+        bonusStr: bonus >= 0 ? `+${bonus}` : `${bonus}`,
+        breakdownTitle: bd.parts.map(p => `${p.label}: ${p.value >= 0 ? "+" : ""}${p.value}`).join("  |  ")
       };
     });
+    // Encompassing Skills (Craft/Knowledge): per-specialty rows (skills.txt:52-56)
+    const ENCOMPASSING = {
+      crafting: ["Basic Item", "Apparel", "Weapons", "Vehicles"],
+      science: ["Science", "Profession", "History"]
+    };
+    const hasGeniusDesigner = (system.talents || []).includes("genius_designer");
+    for (const s of context.skills) {
+      if (!(s.key in ENCOMPASSING)) continue;
+      s.isEncompassing = true;
+      s.suggestedSpecialties = ENCOMPASSING[s.key];
+      s.specialties = (system.skillSpecialties?.[s.key] || []).map((row, idx) => {
+        const bd = this._calcSkillBreakdown(s.key, row.name);
+        return {
+          index: idx,
+          name: row.name,
+          rank: Number(row.rank) || 0,
+          misc: bd.misc,
+          bonus: bd.total,
+          bonusStr: bd.total >= 0 ? `+${bd.total}` : `${bd.total}`,
+          geniusApplied: bd.geniusApplied,
+          breakdownTitle: bd.parts.map(p => `${p.label}: ${p.value >= 0 ? "+" : ""}${p.value}`).join("  |  ")
+        };
+      });
+      if (s.key === "crafting" && hasGeniusDesigner) {
+        s.showGeniusSelect = true;
+        s.geniusChoice = system.talentSelections?.geniusDesignerSpecialty || "";
+      }
+    }
+
     // Expose for testability
     system._skillBonuses = Object.fromEntries(context.skills.map(s => [s.key, s.bonus]));
 
@@ -422,6 +435,10 @@ export class DBUCharacterSheet extends ActorSheet {
     // ---- Unique Abilities tab data ----
     try { this._prepareUniqueData(context, system); }
     catch (err) { console.error("DBU-OLD | _prepareUniqueData failed:", err); }
+
+    // ---- Bases (Bio tab) ----
+    try { this._prepareBasesData(context, system); }
+    catch (err) { console.error("DBU-OLD | _prepareBasesData failed:", err); }
 
     // ---- Equipment tab data ----
     // equipmentItems already prepared by _prepareItems -> context.equipment
@@ -693,8 +710,10 @@ export class DBUCharacterSheet extends ActorSheet {
       }
     }
 
-    // Gifted Student: +3 TP per Skill Improvement (retroactive); +6 if SC 8+
-    const gsTPPerSI = system.aptitudes?.giftedStudentTPPerSI || 0;
+    // Gifted Student: +3 TP per Skill Improvement (retroactive); +6 if SC 8+.
+    // Rapid Learner (Bio-Android Familiar): +3 TP per Skill Improvement.
+    const gsTPPerSI = (system.aptitudes?.giftedStudentTPPerSI || 0)
+      + (system.aptitudes?.rapidLearnerTPPerSI || 0);
     const giftedStudentTP = gsTPPerSI * skillImprovementCount;
 
     // Custom buff: +X TP per Skill Improvement (multiplied by SI count)
@@ -859,7 +878,11 @@ export class DBUCharacterSheet extends ActorSheet {
         if (row.perkType === "skill_improvement") siCount++;
       }
     }
-    const gsTPBonus = (system.aptitudes?.giftedStudentTPPerSI || 0) * siCount;
+    // TP per Skill Improvement: Gifted Student (+3/+6) and Rapid Learner (+3) —
+    // both derived live from CURRENT rows, so retyping a row away from Skill
+    // Improvement automatically drops its TP (no stale awards).
+    const gsTPBonus = ((system.aptitudes?.giftedStudentTPPerSI || 0)
+      + (system.aptitudes?.rapidLearnerTPPerSI || 0)) * siCount;
     const tpTotal = 25 + tpFromProgression + gsTPBonus + (system.downtime?.gains?.tp || 0);
     const tpSpentSignatures = preparedTechniques.reduce((sum, t) => sum + t.tpCost, 0);
     const tpSpentAuras = this._calcAurasTotalTP(system);
@@ -992,6 +1015,23 @@ export class DBUCharacterSheet extends ActorSheet {
     context.disadvantageOptions = Object.keys(disadvData).sort();
     // Energy profiles for the Magical Flavor selector
     context.energyProfileOptions = foundations["Energy"] || [];
+
+    // Energy Control talent: selector for the reduced technique — the rules
+    // allow choosing a Signature Technique OR a Technical Unique Ability.
+    const ecTalents = system.talents || [];
+    if (ecTalents.includes("energy_control")) {
+      context.showEnergyControl = true;
+      context.energyControlAll = ecTalents.includes("technique_master");
+      context.energyControlChoice = String(system.talentSelections?.energyControlTechniqueId ?? "");
+      const uaCatalog = CONFIG.DBU?.uniqueAbilitiesCatalog || {};
+      const technicalUAs = (system.uniqueAbilities || [])
+        .filter(ua => /technical/i.test(uaCatalog[ua.abilityKey]?.abilityType || ""))
+        .map(ua => ({ id: `ua:${ua.abilityKey}`, name: `${uaCatalog[ua.abilityKey]?.name || ua.abilityKey} (UA)` }));
+      context.energyControlOptions = [
+        ...techniques.filter(t => t.name).map(t => ({ id: String(t.id), name: t.name })),
+        ...technicalUAs
+      ];
+    }
   }
 
   /**
@@ -1029,8 +1069,19 @@ export class DBUCharacterSheet extends ActorSheet {
     for (const dis of (tech.disadvantages || [])) {
       if (dis.name === "Inefficiency") kpIncrease += 4 * (dis.ranks || 1);
     }
-    const finalKP = Math.max(profileBaseKP, kpCost + kpIncrease - kpReduction);
-    return { profileBaseKP, tpFull, kpCost, kpReduction, kpIncrease, finalKP };
+    // Energy Control talent: −2(T) KP for the SELECTED technique; Technique
+    // Master L2 extends that reduction to ALL Signature Techniques.
+    const talents = this.actor.system.talents || [];
+    let talentKpReduction = 0;
+    if (talents.includes("energy_control")) {
+      const chosen = this.actor.system.talentSelections?.energyControlTechniqueId;
+      if (talents.includes("technique_master")
+          || (chosen != null && chosen !== "" && String(chosen) === String(tech.id))) {
+        talentKpReduction = 2;
+      }
+    }
+    const finalKP = Math.max(profileBaseKP, kpCost + kpIncrease - kpReduction - talentKpReduction);
+    return { profileBaseKP, tpFull, kpCost, kpReduction: kpReduction + talentKpReduction, kpIncrease, finalKP };
   }
 
   _calcTechTPCost(tech) {
@@ -1073,11 +1124,17 @@ export class DBUCharacterSheet extends ActorSheet {
     const ssPenStrike = system.aptitudes?.superStackStrikePenalty ?? 0;
     // Unified strike buff total (talents, states, maneuvers, custom buffs)
     const strikeBuffTotal = system.aptitudes?.strikeBuffTotal ?? 0;
-    let totalMod = haste + awareness + accurateBonus - inaccuratePenalty - ssPenStrike + strikeBuffTotal;
+    // Per-foundation strike bonuses ("Strike (Physical/Energy/Magic)" buffs)
+    const foundationStrikeBuff = Number({
+      Physical: system.aptitudes?.strikePhysical,
+      Energy: system.aptitudes?.strikeEnergy,
+      Magic: system.aptitudes?.strikeMagic
+    }[tech.foundation]) || 0;
+    let totalMod = haste + awareness + accurateBonus - inaccuratePenalty - ssPenStrike + strikeBuffTotal + foundationStrikeBuff;
     const baseTier = system.baseTier || 1;
 
     // Aura combat roll bonus (Sparking type)
-    const activeAura = this.actor._getActiveAura(system);
+    const activeAura = this.actor._getSelfBenefitAura(system);
     if (activeAura && activeAura.type === "Sparking") {
       totalMod += tier;
     }
@@ -1139,16 +1196,17 @@ export class DBUCharacterSheet extends ActorSheet {
     const charges = (tech.baseEnergyCharges || 0) + (tech.extraEnergyCharges || 0);
     // Unified wound buff total (talents, states, maneuvers, custom buffs)
     const woundBuffTotal = system.aptitudes?.woundBuffTotal ?? 0;
-    // Per-foundation wound buffs ("Wound (Physical/Energy/Magic)")
+    // Per-foundation wound bonuses — buffs "Wound (Physical/Energy/Magic)" plus
+    // talent automation (Magic Blaster/Warrior variants write into these).
     const foundationWoundBuff = Number({
-      Physical: system.aptitudes?.woundBuffPhysical,
-      Energy: system.aptitudes?.woundBuffEnergy,
-      Magic: system.aptitudes?.woundBuffMagic
+      Physical: system.aptitudes?.woundPhysical,
+      Energy: system.aptitudes?.woundEnergy,
+      Magic: system.aptitudes?.woundMagic
     }[tech.foundation]) || 0;
     let totalMod = damageAttr + extraDamageAttr + powerShotBonus - lowPenPenalty + woundBuffTotal + foundationWoundBuff;
 
     // Aura wound bonus (Powerful Aura advantage)
-    const activeAura = this.actor._getActiveAura(system);
+    const activeAura = this.actor._getSelfBenefitAura(system);
     if (activeAura) {
       for (const adv of (activeAura.advantages || [])) {
         if (adv.name === "Powerful Aura") {
@@ -1170,8 +1228,11 @@ export class DBUCharacterSheet extends ActorSheet {
     const grCatBonus = (grCat.global || 0) + (grCat.wound || 0);
     const greaterDice = hasGreater ? this._resolveExtraDice(tier, 1, grCatBonus) : "";
     // Sig Techs use d8 for energy charges: "1d8(T) if that Attacking Maneuver is a
-    // Signature Technique" (attacking.txt)
-    let chargesExtra = charges > 0 ? `+${charges * tier}d8` : "";
+    // Signature Technique" (attacking.txt). Maximum Charge (signature.txt:765,
+    // Ultimate only): charge Extra Dice go up one Dice Category (d8 → d10).
+    const hasMaxCharge = (tech.advantages || []).some(a => a.name === "Maximum Charge");
+    const chargeDie = hasMaxCharge ? "d10" : "d8";
+    let chargesExtra = charges > 0 ? `+${charges * tier}${chargeDie}` : "";
     if (tech.profile === "Mega Flare" && charges > 0) chargesExtra += `+${charges * tier}`;
     // Super Stack wound extra dice (Physical/Energy foundations only)
     const ssWoundDice = (tech.foundation === "Physical" || tech.foundation === "Energy")
@@ -1764,15 +1825,41 @@ export class DBUCharacterSheet extends ActorSheet {
   // Data Prep: Unique Abilities
   // -------------------------------------------------------
 
+  /**
+   * Resolve a catalog KP-cost string like "2(T)", "10(T)", "4(bT)" into flat
+   * KP at the actor's current tiers. Returns null for non-numeric costs.
+   */
+  _resolveUAKpCost(kpStr, tier, baseTier) {
+    const m = String(kpStr || "").trim().match(/^(\d+)\s*\((bT|T)\)$/i);
+    if (!m) return null;
+    const n = Number(m[1]);
+    return m[2].toLowerCase() === "bt" ? n * baseTier : n * tier;
+  }
+
   _prepareUniqueData(context, system) {
     const uniques = system.uniqueAbilities || [];
     const catalog = CONFIG.DBU?.uniqueAbilitiesCatalog || {};
+    const uaTier = system.tier || 1;
+    const uaBaseTier = system.baseTier || 1;
+    const uaTalents = system.talents || [];
+    const ecSelection = system.talentSelections?.energyControlTechniqueId;
 
     const prepared = uniques.map((ua, index) => {
       const data = catalog[ua.abilityKey] || { name: ua.abilityKey, tpCost: 0, advancements: [], restrictions: [] };
 
       // Calculate TP cost for this unique
       const tpCost = this._calcUniqueTPCost(ua, data);
+
+      // KP Cost resolved at current tier + Energy Control / Technique Master
+      // reduction (−2(T)) for Technical Unique Abilities (talents-catalog).
+      const kpResolved = this._resolveUAKpCost(data.kpCost, uaTier, uaBaseTier);
+      const isTechnical = /technical/i.test(data.abilityType || "");
+      const ecApplies = isTechnical && uaTalents.includes("energy_control")
+        && (uaTalents.includes("technique_master") || String(ecSelection) === `ua:${ua.abilityKey}`);
+      const kpEffective = (kpResolved != null && ecApplies)
+        ? Math.max(0, kpResolved - 2 * uaTier) : kpResolved;
+      // Sustained heuristic: effects that require paying the KP Cost each turn
+      const isSustained = /pay the (KP|Ki Point) Cost/i.test(data.effect || "");
 
       // Prepare selected advancements with resolved data
       // Collect locked advancement names from selected restrictions
@@ -1811,11 +1898,26 @@ export class DBUCharacterSheet extends ActorSheet {
         .map(a => ({ id: a.id, name: a.name || a.id }));
       const availableRestrictions = (data.restrictions || []).map(r => ({ id: r.id, name: r.name || r.id }));
 
+      // Shapeshift: interactive effects-config panel (own ability only —
+      // the state lives on this actor; gained clones don't get the panel)
+      let shapeshift = null;
+      if (ua.abilityKey === "shapeshift") {
+        shapeshift = this._prepareShapeshiftConfig(system, {
+          hasDiploma: (ua.advancements || []).some(a => a.advancementId === "shapeshift_diploma"),
+          hasQuickShift: (ua.advancements || []).some(a => a.advancementId === "quick_shift")
+        });
+      }
+
       return {
         ...ua,
         uniqueIndex: index,
         data,
         tpCost,
+        kpResolved,
+        kpEffective,
+        ecApplies,
+        isSustained,
+        shapeshift,
         selectedAdvancements,
         selectedRestrictions,
         availableAdvancements,
@@ -1891,6 +1993,429 @@ export class DBUCharacterSheet extends ActorSheet {
     }
 
     context.characterUniques = prepared;
+  }
+
+  /**
+   * Build the Shapeshift effects-config panel context (unique-abilities.txt:1786).
+   * Effects (1 per Action spent, max 3): bestial exchange / size change /
+   * vehicle form (BP 8) / weapon form (3 Qualities, +Might Wound).
+   */
+  _prepareShapeshiftConfig(system, { hasDiploma, hasQuickShift }) {
+    const tier = system.tier || 1;
+    const st = system.transformationMeta?.shapeshiftState || {};
+    const effects = st.effects || {};
+    // Magical Girl "A Different Me" (trait level 5+): Diploma granted while
+    // transformed + a second Bestial Trait allowed on the exchange.
+    const mgL5 = (system.transformations || []).some(t =>
+      t?.active && t?.catalogKey === "magical_girl" && (t.level || 0) >= 5);
+    const diploma = hasDiploma || mgL5;
+    const kpActivate = Math.max(0, (8 - (diploma ? 2 : 0)) * tier);
+    const chosen = ["bestial", "size", "vehicle", "weapon"].filter(k => effects[k]);
+    const actions = hasQuickShift ? 3 : Math.min(3, Math.max(1, st.actions || 1));
+
+    // Body-Category Secondary Racial Traits owned (pre-exchange list when active)
+    const ownedIds = system._shapeshiftOriginalTraits || system.racialTraits || [];
+    const allTraits = Object.values(CONFIG.DBU?.racialTraitsCatalog || {}).flat();
+    const bodyTraitOptions = ownedIds
+      .map(id => allTraits.find(t => t.id === id))
+      .filter(t => t && t.traitCategory === "secondary" && t.category === "body")
+      .map(t => ({ id: t.id, name: t.name, selected: t.id === st.giveTraitId }));
+
+    const btConfig = system.transformationMeta?.mutationState?.bestialTraitConfig || {};
+    const mkBestialList = (chosenId) => (CONFIG.DBU?.bestialTraitsCatalog || []).map(bt => {
+      const optEffect = (bt.effects || []).find(e => e.activationType === "option");
+      const selected = bt.id === chosenId;
+      return {
+        id: bt.id, name: bt.name, selected,
+        options: (selected && optEffect) ? optEffect.options.map(o => {
+          const key = o.name.toLowerCase().replace(/\s+/g, "_");
+          return { key, name: o.name, selected: (btConfig[bt.id]?.option) === key };
+        }) : null
+      };
+    });
+    const chosenBestial = mkBestialList(st.bestialTraitId || "");
+    const chosenBestial2 = mgL5 ? mkBestialList(st.bestialTraitId2 || "") : null;
+
+    const sizeOptions = (this.actor.constructor.SIZE_ORDER || []).map(s => ({
+      value: s, label: s.charAt(0).toUpperCase() + s.slice(1),
+      selected: s === (st.sizeChoice || "")
+    }));
+    const foundationOptions = ["Physical", "Energy", "Magic"].map(f => ({
+      value: f, selected: f === (st.weaponFoundation || "Physical")
+    }));
+
+    return {
+      active: !!st.active,
+      actions, hasQuickShift, diploma, mgL5,
+      kpActivate,
+      kpSustain: Math.ceil(kpActivate / 2),
+      kpRegain: 6 * tier,
+      duration: diploma ? "Unlimited (Diploma)" : "5 rounds",
+      effects: {
+        bestial: !!effects.bestial, size: !!effects.size,
+        vehicle: !!effects.vehicle, weapon: !!effects.weapon
+      },
+      chosenCount: chosen.length,
+      maxEffects: actions,
+      overLimit: chosen.length > actions,
+      bodyTraitOptions,
+      bestialList: chosenBestial,
+      bestialList2: chosenBestial2,
+      sizeOptions,
+      foundationOptions,
+      weaponQualities: st.weaponQualities || "",
+      might: system.status?.might ?? 0
+    };
+  }
+
+  /** Shapeshift activation/sustain/regain KP costs at the actor's current state. */
+  _shapeshiftCosts(system) {
+    const tier = system.tier || 1;
+    const ua = (system.uniqueAbilities || []).find(u => u.abilityKey === "shapeshift");
+    const hasDiploma = (ua?.advancements || []).some(a => a.advancementId === "shapeshift_diploma");
+    const mgL5 = (system.transformations || []).some(t =>
+      t?.active && t?.catalogKey === "magical_girl" && (t.level || 0) >= 5);
+    const kpActivate = Math.max(0, (8 - ((hasDiploma || mgL5) ? 2 : 0)) * tier);
+    return { kpActivate, kpSustain: Math.ceil(kpActivate / 2), kpRegain: 6 * tier };
+  }
+
+  /** Shapeshift config field change (actions, trait/size/weapon selections). */
+  async _onShapeshiftField(event) {
+    const field = event.currentTarget.dataset.field;
+    if (!field) return;
+    let value = event.currentTarget.value;
+    if (field === "actions") value = Math.min(3, Math.max(1, Number(value) || 1));
+    await this.actor.update({ [`system.transformationMeta.shapeshiftState.${field}`]: value });
+  }
+
+  /** Shapeshift effect checkbox — enforce max effects = Actions spent. */
+  async _onShapeshiftEffect(event) {
+    const el = event.currentTarget;
+    const effect = el.dataset.effect;
+    if (!effect) return;
+    const st = foundry.utils.deepClone(this.actor.system.transformationMeta?.shapeshiftState || {});
+    const effects = st.effects || {};
+    if (el.checked) {
+      const ua = (this.actor.system.uniqueAbilities || []).find(u => u.abilityKey === "shapeshift");
+      const quickShift = (ua?.advancements || []).some(a => a.advancementId === "quick_shift");
+      const max = quickShift ? 3 : Math.min(3, Math.max(1, st.actions || 1));
+      const count = ["bestial", "size", "vehicle", "weapon"].filter(k => effects[k]).length;
+      if (count >= max) {
+        el.checked = false;
+        ui.notifications.warn(`Shapeshift: max ${max} effect(s) for ${max} Action(s) spent.`);
+        return;
+      }
+    }
+    effects[effect] = el.checked;
+    await this.actor.update({ "system.transformationMeta.shapeshiftState.effects": effects });
+  }
+
+  /** Toggle Shapeshift effects on/off, paying/regaining KP per the rules. */
+  async _onShapeshiftToggle(event) {
+    event.preventDefault();
+    const system = this.actor.system;
+    const st = foundry.utils.deepClone(system.transformationMeta?.shapeshiftState || {});
+    const { kpActivate, kpSustain, kpRegain } = this._shapeshiftCosts(system);
+    const ki = system.kiPool?.value ?? 0;
+    const updates = {};
+    let card;
+
+    const EFFECT_LABELS = {
+      bestial: "Bestial Exchange", size: "Size Change",
+      vehicle: "Vehicle Form (BP 8)", weapon: "Weapon Form (3 Qualities)"
+    };
+    const chosen = ["bestial", "size", "vehicle", "weapon"]
+      .filter(k => st.effects?.[k]).map(k => EFFECT_LABELS[k]);
+
+    if (!st.active) {
+      if (chosen.length === 0) {
+        ui.notifications.warn("Shapeshift: select at least one effect before activating.");
+        return;
+      }
+      st.active = true;
+      updates["system.kiPool.value"] = Math.max(0, ki - kpActivate);
+      const chips = chosen.map(c => `<span class="dbu-meta-chip">${c}</span>`).join(" ");
+      card = `<div class="dbu-attack-roll">
+        <div class="dbu-attack-title"><i class="fas fa-random"></i> ${this.actor.name} — Shapeshift</div>
+        <div class="dbu-attack-meta">
+          <span class="dbu-meta-chip">Cost ${kpActivate} KP</span>
+          <span class="dbu-meta-chip">Sustain ${kpSustain} KP/turn</span>
+          <span class="dbu-meta-chip">Duration: ${this._shapeshiftDurationLabel(system)}</span>
+        </div>
+        <div class="dbu-attack-buffs">Effects: ${chips}</div>
+      </div>`;
+    } else {
+      st.active = false;
+      const kiMax = system.kiPool?.max ?? Infinity;
+      updates["system.kiPool.value"] = Math.min(kiMax, ki + kpRegain);
+      card = `<div class="dbu-attack-roll">
+        <div class="dbu-attack-title"><i class="fas fa-random"></i> ${this.actor.name} — Shapeshift ended</div>
+        <div class="dbu-attack-meta">
+          <span class="dbu-meta-chip">Regain ${kpRegain} KP</span>
+        </div>
+        <div class="dbu-attack-buffs">Effects removed${chosen.length ? `: ${chosen.join(", ")}` : ""}. Spend ${kpRegain} KP to re-apply immediately (re-shift).</div>
+      </div>`;
+    }
+
+    updates["system.transformationMeta.shapeshiftState"] = st;
+    await this.actor.update(updates);
+    ChatMessage.create({
+      content: card,
+      speaker: ChatMessage.getSpeaker({ actor: this.actor })
+    });
+  }
+
+  _shapeshiftDurationLabel(system) {
+    const ua = (system.uniqueAbilities || []).find(u => u.abilityKey === "shapeshift");
+    const hasDiploma = (ua?.advancements || []).some(a => a.advancementId === "shapeshift_diploma");
+    const mgL5 = (system.transformations || []).some(t =>
+      t?.active && t?.catalogKey === "magical_girl" && (t.level || 0) >= 5);
+    return (hasDiploma || mgL5) ? "Unlimited (Diploma)" : "5 rounds";
+  }
+
+  // =============================================================
+  // Bases (Bio tab) — bases.txt
+  // =============================================================
+
+  _prepareBasesData(context, system) {
+    const bT = system.baseTier || 1;
+    const sizes = CONFIG.DBU?.baseSizes || {};
+    const hardTable = CONFIG.DBU?.baseHardness || {};
+    const catalog = CONFIG.DBU?.baseQualitiesCatalog || {};
+
+    context.baseSizeOptions = Object.entries(sizes).map(([k, v]) => ({
+      value: k, label: `${v.label} — ${v.squares}, DR ${v.dr}(bT), +${v.lp}(bT) LP, ${v.devCost} Dev`
+    }));
+    context.baseHardnessOptions = Object.entries(hardTable).map(([k, v]) => ({
+      value: Number(k), label: `${k} — DR ${v.dr}(bT)${v.metal ? ", Metal" : ""}, ${v.devCost} Dev`
+    }));
+    context.baseQualityOptions = Object.entries(catalog)
+      .map(([k, v]) => ({ value: k, label: v.special ? `★ ${v.name} (Special)` : v.name }));
+
+    context.characterBases = (system.bases || []).map((b, index) => {
+      const sz = sizes[b.size] || sizes.minor;
+      const hd = hardTable[b.hardness] || hardTable[1];
+      // Base Health: 40(bT) + Base Size LP (bases.txt:19 + Size table)
+      const lpMax = (40 + (sz?.lp || 0)) * bT;
+      const lpCurrent = Math.max(0, lpMax - (b.damage || 0));
+      const destroyed = lpCurrent <= 0;
+
+      const qualities = (b.qualities || []).map((q, qIndex) => {
+        const qd = catalog[q.qualityKey] || null;
+        const cost = qd?.special ? 0 : (qd?.variable ? (q.devSpent || 0) : (parseInt(qd?.devCost) || 0));
+        return {
+          ...q, qIndex, data: qd, cost,
+          costDisplay: qd?.special ? "★" : (qd?.variable ? `${q.devSpent || 0} (${qd.devCost})` : String(qd?.devCost ?? ""))
+        };
+      });
+      const qualitySpent = qualities.reduce((s, q) => s + q.cost, 0);
+      const devSpent = (sz?.devCost || 0) + (hd?.devCost || 0) + qualitySpent;
+      const hasQuality = (key) => qualities.some(q => q.qualityKey === key);
+
+      // New-Entrance threshold: below 3/4 Max LP (1/2 with Reinforced Entrance)
+      const entranceFrac = hasQuality("reinforced_entrance") ? 0.5 : 0.75;
+
+      return {
+        ...b, baseIndex: index,
+        sizeLabel: sz?.label || b.size, squares: sz?.squares || "",
+        drFormula: `${(sz?.dr || 0) + (hd?.dr || 0)}(bT)`,
+        drResolved: ((sz?.dr || 0) + (hd?.dr || 0)) * bT,
+        metal: !!hd?.metal,
+        lpMax, lpCurrent, destroyed,
+        lpPct: lpMax > 0 ? Math.round(lpCurrent / lpMax * 100) : 0,
+        devSpent, devRemaining: (b.devPointsTotal || 0) - devSpent,
+        devOver: devSpent > (b.devPointsTotal || 0),
+        structural: hasQuality("structural_reinforcement"),
+        entranceLP: Math.ceil(lpMax * entranceFrac),
+        limitedDestructionLP: Math.floor(lpMax / 10),
+        qualities
+      };
+    });
+  }
+
+  async _onAddBase(event) {
+    event.preventDefault();
+    const bases = foundry.utils.deepClone(this.actor.system.bases || []);
+    const nextId = bases.length > 0 ? Math.max(...bases.map(b => b.id || 0)) + 1 : 1;
+    bases.push({ id: nextId, name: "New Base", category: "constructed", devPointsTotal: 8, size: "minor", hardness: 1, damage: 0, qualities: [], notes: "" });
+    await this.actor.update({ "system.bases": bases });
+  }
+
+  async _onDeleteBase(event) {
+    event.preventDefault();
+    const index = Number(event.currentTarget.dataset.baseIndex);
+    const bases = foundry.utils.deepClone(this.actor.system.bases || []);
+    if (!(index >= 0 && index < bases.length)) return;
+    if (!(await this._confirmDelete("Base", bases[index].name))) return;
+    bases.splice(index, 1);
+    await this.actor.update({ "system.bases": bases });
+  }
+
+  async _onBaseField(event) {
+    const el = event.currentTarget;
+    const index = Number(el.dataset.baseIndex);
+    const field = el.dataset.field;
+    if (!field || !(index >= 0)) return;
+    const bases = foundry.utils.deepClone(this.actor.system.bases || []);
+    if (!bases[index]) return;
+    let value = el.value;
+    if (["devPointsTotal", "hardness", "damage"].includes(field)) value = Math.max(0, Number(value) || 0);
+    if (field === "hardness") value = Math.min(4, Math.max(1, value));
+    bases[index][field] = value;
+    await this.actor.update({ "system.bases": bases });
+  }
+
+  async _onBaseAddQuality(event) {
+    event.preventDefault();
+    const index = Number(event.currentTarget.dataset.baseIndex);
+    const bases = foundry.utils.deepClone(this.actor.system.bases || []);
+    if (!bases[index]) return;
+    const qs = bases[index].qualities || [];
+    const nextId = qs.length > 0 ? Math.max(...qs.map(q => q.id || 0)) + 1 : 1;
+    qs.push({ id: nextId, qualityKey: "", devSpent: 0, notes: "" });
+    bases[index].qualities = qs;
+    await this.actor.update({ "system.bases": bases });
+  }
+
+  async _onBaseDeleteQuality(event) {
+    event.preventDefault();
+    const index = Number(event.currentTarget.dataset.baseIndex);
+    const qIndex = Number(event.currentTarget.dataset.qIndex);
+    const bases = foundry.utils.deepClone(this.actor.system.bases || []);
+    if (!bases[index]?.qualities?.[qIndex]) return;
+    bases[index].qualities.splice(qIndex, 1);
+    await this.actor.update({ "system.bases": bases });
+  }
+
+  async _onBaseQualityField(event) {
+    const el = event.currentTarget;
+    const index = Number(el.dataset.baseIndex);
+    const qIndex = Number(el.dataset.qIndex);
+    const field = el.dataset.field;
+    if (!field) return;
+    const bases = foundry.utils.deepClone(this.actor.system.bases || []);
+    const row = bases[index]?.qualities?.[qIndex];
+    if (!row) return;
+    let value = el.value;
+    if (field === "devSpent") value = Math.max(0, Number(value) || 0);
+    row[field] = value;
+    await this.actor.update({ "system.bases": bases });
+  }
+
+  /** Repair the Base (a week of work outside Combat fully repairs it). */
+  async _onBaseRepair(event) {
+    event.preventDefault();
+    const index = Number(event.currentTarget.dataset.baseIndex);
+    const bases = foundry.utils.deepClone(this.actor.system.bases || []);
+    if (!bases[index]) return;
+    if (!(bases[index].damage > 0)) return;
+    bases[index].damage = 0;
+    await this.actor.update({ "system.bases": bases });
+    ChatMessage.create({
+      content: `<div class="dbu-attack-roll">
+        <div class="dbu-attack-title"><i class="fas fa-tools"></i> ${this.actor.name} — Base Repaired</div>
+        <div class="dbu-attack-buffs"><b>${Handlebars.escapeExpression(bases[index].name)}</b> fully repaired (a week of work outside Combat).</div>
+      </div>`,
+      speaker: ChatMessage.getSpeaker({ actor: this.actor })
+    });
+  }
+
+  // =============================================================
+  // Unification (Unify Maneuver) — special-maneuvers.txt:315
+  // =============================================================
+
+  /** Allocate a Secondary's Unify Attribute Points (max 2×their bT, tracked per secondary). */
+  async _onUnifyAttrAlloc(event) {
+    const el = event.currentTarget;
+    const secId = el.dataset.secondaryId;
+    const attr = el.dataset.attr;
+    if (!secId || !attr) return;
+    const snaps = foundry.utils.deepClone(this.actor.system.fusion?.unifySecondaries || {});
+    const snap = snaps[secId];
+    if (!snap) return;
+    const allocMax = 2 * (snap.baseTier || 1);
+    const alloc = snap.attrAlloc || {};
+    const othersTotal = Object.entries(alloc)
+      .reduce((s, [k, v]) => (k === attr ? s : s + (Number(v) || 0)), 0);
+    let value = Math.max(0, Number(el.value) || 0);
+    if (othersTotal + value > allocMax) {
+      value = Math.max(0, allocMax - othersTotal);
+      ui.notifications.warn(`Unify: max ${allocMax} Attribute Points from ${snap.name}.`);
+    }
+    alloc[attr] = value;
+    snap.attrAlloc = alloc;
+    await this.actor.update({ "system.fusion.unifySecondaries": snaps });
+  }
+
+  /** Remove a Secondary Character and all Unify benefits (e.g. Forced Spirit Fission). */
+  async _onUnifyUnlink(event) {
+    event.preventDefault();
+    const secId = event.currentTarget.dataset.secondaryId;
+    if (!secId) return;
+    const fusion = this.actor.system.fusion || {};
+    const snap = (fusion.unifySecondaries || {})[secId];
+    const secName = snap?.name || "Secondary Character";
+    const ok = await Dialog.confirm({
+      title: "Separate Secondary Character",
+      content: `<p>Separate <b>${Handlebars.escapeExpression(secName)}</b> (Forced Spirit Fission)? All Unify benefits gained from them (Attribute Points, LP/KP/Capacity, Stress) are removed.</p>`
+    });
+    if (!ok) return;
+    const ids = (fusion.secondaryCharacterIds || []).filter(id => id !== secId);
+    await this.actor.update({
+      "system.fusion.secondaryCharacterIds": ids,
+      [`system.fusion.unifySecondaries.-=${secId}`]: null
+    });
+    ChatMessage.create({
+      content: `<div class="dbu-attack-roll">
+        <div class="dbu-attack-title"><i class="fas fa-user-minus"></i> ${this.actor.name} — Separated</div>
+        <div class="dbu-attack-buffs"><b>${Handlebars.escapeExpression(secName)}</b> exists again as an individual character. All Unify benefits from them removed.</div>
+      </div>`,
+      speaker: ChatMessage.getSpeaker({ actor: this.actor })
+    });
+  }
+
+  /** Grant/update the racial Manifested Power earned through the Unify Maneuver. */
+  async _onUnifyGrantMP(event) {
+    event.preventDefault();
+    const key = event.currentTarget.dataset.mpKey;
+    const stacks = Math.max(1, Number(event.currentTarget.dataset.stacks) || 1);
+    const entry = (CONFIG.DBU?.transformationsCatalog || {})[key];
+    if (!entry) return;
+    const maxStacks = entry.maxStacks || 1;
+    const newStacks = Math.min(maxStacks, stacks);
+    const trans = foundry.utils.deepClone(this.actor.system.transformations || []);
+    const existing = trans.find(t => t.catalogKey === key);
+    if (existing) {
+      existing.gradeOrStacks = `${newStacks}/${maxStacks}`;
+      await this.actor.update({ "system.transformations": trans });
+      ui.notifications.info(`${entry.name}: stacks updated to ${newStacks}/${maxStacks}.`);
+      return;
+    }
+    const nextId = trans.length > 0 ? Math.max(...trans.map(t => t.id || 0)) + 1 : 1;
+    trans.push({
+      id: nextId,
+      catalogKey: key,
+      name: entry.name,
+      active: false,
+      gradeOrStacks: `${newStacks}/${maxStacks}`,
+      tierRequirement: entry.tierRequirement || "",
+      mastered: false,
+      stressTest: typeof entry.stressTest === "number" ? entry.stressTest : 0,
+      transformationType: entry.category || "manifested_power",
+      attrBonuses: { ...(entry.attrBonuses || {}) },
+      aspects: [...(entry.aspects || [])],
+      structuredTraits: JSON.parse(JSON.stringify(entry.traitGroups || [])),
+      traits: "",
+      isLegendary: false
+    });
+    await this.actor.update({ "system.transformations": trans });
+    ChatMessage.create({
+      content: `<div class="dbu-attack-roll">
+        <div class="dbu-attack-title"><i class="fas fa-dna"></i> ${this.actor.name} — ${entry.name}</div>
+        <div class="dbu-attack-buffs">Gained the <b>${entry.name}</b> Manifested Power (${newStacks}/${maxStacks} stack${maxStacks > 1 ? "s" : ""}) through the Unify Maneuver.</div>
+      </div>`,
+      speaker: ChatMessage.getSpeaker({ actor: this.actor })
+    });
   }
 
   _calcUniqueTPCost(ua, data) {
@@ -2025,7 +2550,7 @@ export class DBUCharacterSheet extends ActorSheet {
     const eqPenalty = system.equipment?.combatPenalty || 0;
 
     // Active aura bonuses
-    const activeAura = this.actor._getActiveAura(system);
+    const activeAura = this.actor._getSelfBenefitAura(system);
     const sparkingBonus = (activeAura && activeAura.type === "Sparking") ? tier : 0;
     let auraWoundBonus = 0;
     if (activeAura) {
@@ -2121,7 +2646,12 @@ export class DBUCharacterSheet extends ActorSheet {
       const ssPenStrike = system.aptitudes?.superStackStrikePenalty ?? 0;
       // Unified strike buff total (talents, states, maneuvers, custom buffs)
       const strikeBuffTotal = system.aptitudes?.strikeBuffTotal ?? 0;
-      const strikeMod = haste + awareness + sparkingBonus - strikePenShaken - strikePenLR - eqPenalty - ssPenStrike + strikeBuffTotal + stateAllMod + weaponStrikeMod;
+      const foundationStrikeBuff = Number({
+        Physical: system.aptitudes?.strikePhysical,
+        Energy: system.aptitudes?.strikeEnergy,
+        Magic: system.aptitudes?.strikeMagic
+      }[ref.foundation]) || 0;
+      const strikeMod = haste + awareness + sparkingBonus - strikePenShaken - strikePenLR - eqPenalty - ssPenStrike + strikeBuffTotal + stateAllMod + foundationStrikeBuff + weaponStrikeMod;
       const strikeFormula = this._buildFormula(strikeTopDice, strikeGreaterDice, strikeMod, stateStrikeExtra);
 
       // --- WOUND ---
@@ -2135,9 +2665,9 @@ export class DBUCharacterSheet extends ActorSheet {
       // Unified wound buff total (talents, states, maneuvers, custom buffs)
       const woundBuffTotal = system.aptitudes?.woundBuffTotal ?? 0;
       const foundationWoundBuff = Number({
-        Physical: system.aptitudes?.woundBuffPhysical,
-        Energy: system.aptitudes?.woundBuffEnergy,
-        Magic: system.aptitudes?.woundBuffMagic
+        Physical: system.aptitudes?.woundPhysical,
+        Energy: system.aptitudes?.woundEnergy,
+        Magic: system.aptitudes?.woundMagic
       }[ref.foundation]) || 0;
       const woundMod = damageAttr + extraDmgAttr + wager + woundPSBonus + auraWoundBonus + stateWoundMod + stateAllMod + woundBuffTotal + foundationWoundBuff + weaponWoundMod;
       // Attack Refs are Basic Attacking Maneuvers (not Signature Techniques),
@@ -3367,6 +3897,8 @@ export class DBUCharacterSheet extends ActorSheet {
     context.fusionIsRegular = fusion.isFusion && fusion.type === "regular";
     context.fusionIsOneSided = fusion.isFusion && (fusion.type === "one-sided-absorption" || fusion.type === "one-sided-possession");
     context.fusionIsFission = fusion.isFusion && fusion.type === "fission";
+    context.fusionIsUnification = fusion.isFusion && fusion.type === "unification";
+    context.fusionLinkedListHidden = context.fusionIsOneSided || context.fusionIsUnification;
     context.fusionIsTemporary = false;
 
     // Fusion method options
@@ -3436,6 +3968,57 @@ export class DBUCharacterSheet extends ActorSheet {
       context.fusionKP = "Calculated from PL";
       context.fusionCapacity = "Calculated from PL";
       context.fusionBonusTP = fusion.hasFusedTechnique ? (10 * fusionBT) : (10 * fusionBT + 20);
+    }
+
+    // ---- Unification (Unify Maneuver) context ----
+    if (context.fusionIsUnification) {
+      const attrKeysU = ["ag", "fo", "te", "sc", "in", "ma", "pe"];
+      const secs = this.actor.constructor.getUnificationSecondaries(system);
+      context.unifySecondaries = secs.map(sec => {
+        const allocMax = 2 * (sec.baseTier || 1);
+        const alloc = sec.attrAlloc || {};
+        const allocated = attrKeysU.reduce((s, k) => s + (Number(alloc[k]) || 0), 0);
+        return {
+          ...sec, allocMax, allocated,
+          remaining: allocMax - allocated,
+          over: allocated > allocMax,
+          attrs: attrKeysU.map(k => ({ key: k, label: k.toUpperCase(), value: Number(alloc[k]) || 0 })),
+          actorExists: !!game.actors?.get(sec.id)
+        };
+      });
+      context.unifyCount = secs.length;
+
+      // Racial Manifested Power hooks (unification.txt: Racial Differences)
+      const catalogT = cfg.transformationsCatalog || {};
+      const bTU = system.baseTier || 1;
+      const buildHook = (key, stacks, reason) => {
+        const entry = catalogT[key];
+        if (!entry) return null;
+        const reqNum = parseInt(entry.tierRequirement) || 1;
+        const owned = (system.transformations || []).find(t => t.catalogKey === key);
+        const maxStacks = entry.maxStacks || 1;
+        return {
+          key, name: entry.name, stacks: Math.min(stacks, maxStacks), maxStacks,
+          tierReq: entry.tierRequirement || "1+",
+          eligible: bTU >= reqNum,
+          ownedStacks: owned ? (owned.gradeOrStacks || "") : null,
+          reason
+        };
+      };
+      context.unifyMPHook = null;
+      if (secs.length > 0 && system.race === "namekian") {
+        context.unifyMPHook = buildHook("super_namekian", secs.length, `${secs.length} Secondary Character(s)`);
+      } else if (secs.length > 0 && system.race === "android") {
+        context.unifyMPHook = buildHook("super_android", secs.length, `${secs.length} Secondary Character(s)`);
+      } else if (system.race === "majin" && fusion.recombinedAfterFission) {
+        context.unifyMPHook = buildHook("super_majin", 1, "Recombined after Fission");
+      }
+      context.unifyIsMajin = system.race === "majin";
+      context.unifyIsShadowDragon = system.race === "shadowDragon";
+      if (context.unifyIsShadowDragon && secs.length > 0) {
+        const sdSecs = secs.filter(s => s.race === "shadowDragon").length;
+        if (sdSecs > 0) context.unifyOmegaHook = buildHook("omega", sdSecs, `${sdSecs} Shadow Dragon Secondary Character(s)`);
+      }
     }
 
     // Available racial traits from fused characters
@@ -5255,8 +5838,8 @@ export class DBUCharacterSheet extends ActorSheet {
           signatureTechniques: bjSys.signatureTechniques || [],
           signatureAuras: bjSys.signatureAuras || [],
           uniqueAbilities: bjSys.uniqueAbilities || [],
-          lpPercent: bjSys.lp.max > 0 ? Math.clamped(bjSys.lp.value / bjSys.lp.max * 100, 0, 100) : 0,
-          kpPercent: bjSys.kp.max > 0 ? Math.clamped(bjSys.kp.value / bjSys.kp.max * 100, 0, 100) : 0
+          lpPercent: bjSys.lp.max > 0 ? Math.clamp(bjSys.lp.value / bjSys.lp.max * 100, 0, 100) : 0,
+          kpPercent: bjSys.kp.max > 0 ? Math.clamp(bjSys.kp.value / bjSys.kp.max * 100, 0, 100) : 0
         };
       }
     }
@@ -5431,6 +6014,45 @@ export class DBUCharacterSheet extends ActorSheet {
 
     // Skill roll button
     html.on("click", "[data-action='roll-skill']", this._onRollSkill.bind(this));
+    html.on("change", ".skill-misc-input", async (ev) => {
+      const key = ev.currentTarget.dataset.skill;
+      if (!key) return;
+      const spec = ev.currentTarget.dataset.specialty || "";
+      const miscKey = spec ? `${key}:${spec}` : key;
+      await this.actor.update({ [`system.skillMisc.${miscKey}`]: Number(ev.currentTarget.value) || 0 });
+    });
+    // Encompassing Skill specialties (Craft/Knowledge)
+    html.on("click", ".skill-spec-add", async (ev) => {
+      const key = ev.currentTarget.dataset.skill;
+      const specs = foundry.utils.deepClone(this.actor.system.skillSpecialties?.[key] || []);
+      specs.push({ name: "", rank: 0 });
+      await this.actor.update({ [`system.skillSpecialties.${key}`]: specs });
+    });
+    html.on("click", ".skill-spec-delete", async (ev) => {
+      const key = ev.currentTarget.dataset.skill;
+      const idx = Number(ev.currentTarget.dataset.index);
+      const specs = foundry.utils.deepClone(this.actor.system.skillSpecialties?.[key] || []);
+      specs.splice(idx, 1);
+      await this.actor.update({ [`system.skillSpecialties.${key}`]: specs });
+    });
+    html.on("change", ".skill-spec-name-input, .skill-spec-rank-input", async (ev) => {
+      const key = ev.currentTarget.dataset.skill;
+      const idx = Number(ev.currentTarget.dataset.index);
+      const specs = foundry.utils.deepClone(this.actor.system.skillSpecialties?.[key] || []);
+      if (!specs[idx]) return;
+      if (ev.currentTarget.classList.contains("skill-spec-name-input")) specs[idx].name = ev.currentTarget.value.trim();
+      else specs[idx].rank = Math.max(0, Number(ev.currentTarget.value) || 0);
+      await this.actor.update({ [`system.skillSpecialties.${key}`]: specs });
+    });
+    html.on("change", ".skill-genius-select", async (ev) => {
+      await this.actor.update({ "system.talentSelections.geniusDesignerSpecialty": ev.currentTarget.value });
+    });
+    html.on("change", ".ec-tech-select", async (ev) => {
+      const v = ev.currentTarget.value;
+      // Numeric ids are Signature Techniques; "ua:<key>" targets a Technical Unique Ability
+      const stored = v === "" ? "" : (v.startsWith("ua:") ? v : Number(v));
+      await this.actor.update({ "system.talentSelections.energyControlTechniqueId": stored });
+    });
 
     // Custom Buff CRUD
     html.on("click", "[data-action='add-custom-buff']", this._onAddCustomBuff.bind(this));
@@ -5453,6 +6075,26 @@ export class DBUCharacterSheet extends ActorSheet {
     html.on("change", ".option-checkbox", this._onTraitOptionCheckbox.bind(this));
     html.on("change", ".pb-bestial-check", this._onPartBeastBestialCheck.bind(this));
     html.on("change", ".pb-bestial-option", this._onPartBeastBestialOption.bind(this));
+
+    // Shapeshift Unique Ability config (Unique tab)
+    html.on("change", ".ss-field", this._onShapeshiftField.bind(this));
+    html.on("change", ".ss-effect-check", this._onShapeshiftEffect.bind(this));
+    html.on("change", ".ss-bestial-option", this._onPartBeastBestialOption.bind(this));
+    html.on("click", ".ss-toggle-btn", this._onShapeshiftToggle.bind(this));
+
+    // Unification (Fusion tab)
+    html.on("change", ".unify-attr-input", this._onUnifyAttrAlloc.bind(this));
+    html.on("click", "[data-action='unify-unlink']", this._onUnifyUnlink.bind(this));
+    html.on("click", "[data-action='unify-grant-mp']", this._onUnifyGrantMP.bind(this));
+
+    // Bases (Bio tab)
+    html.on("click", "[data-action='add-base']", this._onAddBase.bind(this));
+    html.on("click", "[data-action='delete-base']", this._onDeleteBase.bind(this));
+    html.on("change", ".base-field", this._onBaseField.bind(this));
+    html.on("click", "[data-action='add-base-quality']", this._onBaseAddQuality.bind(this));
+    html.on("click", "[data-action='delete-base-quality']", this._onBaseDeleteQuality.bind(this));
+    html.on("change", ".base-quality-field", this._onBaseQualityField.bind(this));
+    html.on("click", "[data-action='repair-base']", this._onBaseRepair.bind(this));
 
     // Adversary CRUD
     html.on("click", "[data-action='add-villainous-trait']", this._onAddVillainousTrait.bind(this));
@@ -5711,28 +6353,95 @@ export class DBUCharacterSheet extends ActorSheet {
   // Skill Roll
   // -------------------------------------------------------
 
+  /**
+   * Full Skill Bonus breakdown (skills.txt:22-23 + system bonus sources):
+   * Attribute (floor(Score/2)), Ranks (×2), Gifted Student, Equipment,
+   * Traits (Alternate Sight / racial Perception / Cloaking System),
+   * Buffs (per-skill + attribute-group custom buffs), and the Misc field.
+   */
+  _calcSkillBreakdown(skillKey, specialty = "") {
+    const system = this.actor.system;
+    const def = (CONFIG.DBU?.skillsData || []).find(s => s.id === skillKey) || {};
+    const attrKey = def.attribute || "ag";
+    // Encompassing Skills (skills.txt:52-56): each Specialty tracks its own ranks
+    const specRow = specialty
+      ? (system.skillSpecialties?.[skillKey] || []).find(s => s.name === specialty)
+      : null;
+    const rankNum = specialty
+      ? (Number(specRow?.rank) || 0)
+      : Number(system.skills?.[skillKey]?.rank ?? system.skills?.[skillKey] ?? 0) || 0;
+    const attr = Math.floor((system.attributes?.[attrKey]?.score ?? 0) / 2);
+    const ranks = rankNum * 2;
+    const gs = system.aptitudes?.giftedStudentSkillBonus || 0;
+    const equip = Number(system.equipmentFlags?.skillBonuses?.[skillKey]) || 0;
+    const traits = (skillKey === "perception"
+      ? (Number(system._bestialPerceptionBonus) || 0) + (Number(system.aptitudes?.perceptionBonus) || 0) : 0)
+      + (skillKey === "stealth" ? (Number(system._cyberStealthBonus) || 0) : 0);
+    const groupNameMap = {
+      ag: "Agility Skills", fo: "Force Skills", sc: "Scholarship Skills",
+      in: "Insight Skills", ma: "Magic Skills", pe: "Personality Skills"
+    };
+    const buffs = this.actor._getBuffTotal(system, def.name || "")
+      + this.actor._getBuffTotal(system, groupNameMap[attrKey] || "")
+      + (specialty ? this.actor._getBuffTotal(system, `${def.name}: ${specialty}`) : 0);
+    const miscKey = specialty ? `${skillKey}:${specialty}` : skillKey;
+    const misc = Number(system.skillMisc?.[miscKey]) || 0;
+    // Knowledge passive: +1 to ALL Skill Checks per 2 ranks in each Knowledge
+    // specialty (skills.txt:153) — computed in actor.mjs.
+    const knowledge = Number(system.aptitudes?.knowledgeSkillBonus) || 0;
+    // Aura effects: Distracting Aura −1/rank on all skills; Sensory Refinement
+    // +1/rank on Insight-attribute skills (both computed in actor.mjs).
+    const auraMod = -(Number(system.aptitudes?.auraSkillPenalty) || 0)
+      + (attrKey === "in" ? (Number(system.aptitudes?.auraInSkillBonus) || 0) : 0);
+    let total = attr + ranks + gs + equip + traits + buffs + misc + knowledge + auraMod;
+    const parts = [
+      { label: "Attribute", value: attr },
+      { label: "Ranks", value: ranks },
+      { label: "Gifted Student", value: gs },
+      { label: "Knowledge", value: knowledge },
+      { label: "Aura", value: auraMod },
+      { label: "Equipment", value: equip },
+      { label: "Traits", value: traits },
+      { label: "Buffs", value: buffs },
+      { label: "Misc", value: misc }
+    ].filter(p => p.value !== 0 || p.label === "Attribute");
+    let geniusApplied = "";
+    // Genius Designer L2: use the chosen Craft Specialization's Skill Bonus for
+    // any Craft Skill Check (talents-catalog: genius_designer).
+    if (skillKey === "crafting" && (system.talents || []).includes("genius_designer")) {
+      const chosen = system.talentSelections?.geniusDesignerSpecialty || "";
+      if (chosen && chosen !== specialty) {
+        const chosenRow = (system.skillSpecialties?.crafting || []).find(s => s.name === chosen);
+        if (chosenRow) {
+          const chosenRanks = (Number(chosenRow.rank) || 0) * 2;
+          const chosenTotal = attr + chosenRanks + gs + equip + traits + buffs + knowledge + auraMod
+            + (Number(system.skillMisc?.[`crafting:${chosen}`]) || 0);
+          if (chosenTotal > total) {
+            total = chosenTotal;
+            geniusApplied = chosen;
+            parts.push({ label: `Genius Designer (via ${chosen})`, value: chosenRanks - ranks });
+          }
+        }
+      }
+    }
+    return { attrKey, rankNum, attr, ranks, gs, equip, traits, buffs, misc, total, parts, geniusApplied };
+  }
+
   async _onRollSkill(event) {
     event.preventDefault();
     const skillKey = event.currentTarget.dataset.skill;
     if (!skillKey) return;
+    const specialty = event.currentTarget.dataset.specialty || "";
 
     // Find skill data from context
     const skillDef = (CONFIG.DBU?.skillsData || []).find(s => s.id === skillKey);
-    const skillName = skillDef?.name || skillKey;
-    const attrKey = skillDef?.attribute || "ag";
-    const rank = this.actor.system.skills?.[skillKey]?.rank ?? this.actor.system.skills?.[skillKey] ?? 0;
-    const attrData = this.actor.system.attributes?.[attrKey];
-    const attrScore = attrData?.score ?? 0;
-    const gsBonus = this.actor.system.aptitudes?.giftedStudentSkillBonus || 0;
-    const equipBonus = Number(this.actor.system.equipmentFlags?.skillBonuses?.[skillKey]) || 0;
-    // Alternate Sight (bestial trait) + racial Perception bonuses (Part Beast, Lock-On, …)
-    const bestialPerception = skillKey === "perception"
-      ? (Number(this.actor.system._bestialPerceptionBonus) || 0)
-        + (Number(this.actor.system.aptitudes?.perceptionBonus) || 0) : 0;
-    // Cloaking System (cybernetic trait): +1 Stealth Dice Score
-    const cyberStealth = skillKey === "stealth"
-      ? (Number(this.actor.system._cyberStealthBonus) || 0) : 0;
-    let bonus = Math.floor(attrScore / 2) + (Number(rank) || 0) * 2 + gsBonus + equipBonus + bestialPerception + cyberStealth;
+    const skillName = (skillDef?.name || skillKey) + (specialty ? `: ${specialty}` : "");
+    const bd = this._calcSkillBreakdown(skillKey, specialty);
+    const attrKey = bd.attrKey;
+    let bonus = bd.total;
+    let breakdownParts = bd.parts;
+    // Genius Designer L1: +1 Natural Result on all Craft Skill Checks
+    const geniusNatBonus = (skillKey === "crafting" && (this.actor.system.talents || []).includes("genius_designer")) ? 1 : 0;
 
     // --- Absorption OSF: use best skill bonus among suppressed actors ---
     let viaName = "";
@@ -5751,6 +6460,7 @@ export class DBUCharacterSheet extends ActorSheet {
         if (sBonus > bonus) {
           bonus = sBonus;
           viaName = suppActor.name;
+          breakdownParts = [{ label: `Best of ${suppActor.name}`, value: sBonus }];
         }
       }
     }
@@ -5759,32 +6469,59 @@ export class DBUCharacterSheet extends ActorSheet {
     const roll = new Roll(`1d10 + ${bonus}`);
     await roll.evaluate();
 
-    // Critical Result / Botch apply to ANY roll (core-rules.txt:103-109).
-    // Skill checks use the default CT of 10 (no known skill-CT reducers).
-    const nat = roll.dice[0]?.results?.[0]?.result ?? "?";
+    // Skill Checks apply Criticals/Botches differently (skills.txt:29-32):
+    // Botch = flat -2 penalty. Critical = 1d4 Extra Dice, scaled by Tier of
+    // Power (table ruling: 1d4(T)). Natural-result bonuses (Genius Designer)
+    // raise the effective natural (max 10); a raw 1 still Botches.
+    const rawNat = roll.dice[0]?.results?.[0]?.result ?? "?";
+    const nat = (rawNat !== "?" && geniusNatBonus) ? Math.min(10, rawNat + geniusNatBonus) : rawNat;
     const sysTier = this.actor.system.tier || 1;
-    const sysBaseTier = this.actor.system.baseTier || 1;
     const isCrit = nat === 10;
-    const isBotch = nat === 1;
+    const isBotch = rawNat === 1;
     let critRoll = null;
-    if (isCrit) { critRoll = new Roll(this._critExtraFormula(sysTier)); await critRoll.evaluate(); }
-    const botchPenalty = 2 * sysBaseTier;
+    if (isCrit) { critRoll = new Roll(this._scaleDiceByTier("1d4", sysTier)); await critRoll.evaluate(); }
+    const botchPenalty = 2;
     const finalTotal = roll.total + (critRoll?.total || 0) - (isBotch ? botchPenalty : 0);
 
-    // Create chat message
-    let label = `${skillName} (${attrKey.toUpperCase()})`;
-    if (viaName) label += ` (via ${viaName})`;
-    if (critRoll) {
-      label += `<br><span class="dbu-crit">CRIT! +${critRoll.formula}: ${critRoll.total}</span> → Total <b>${finalTotal}</b>`;
-    } else if (isBotch) {
-      label += `<br><span class="dbu-botch">BOTCH -${botchPenalty}</span> → Total <b>${finalTotal}</b>`;
-    }
-    await roll.toMessage({
+    // Chat card mirroring the combat attack card structure/classes exactly
+    const partsHtml = breakdownParts
+      .map(p => `<span class="dbu-attack-buff">${p.label} ${p.value >= 0 ? "+" : ""}${p.value}</span>`)
+      .join("");
+    const buffsHtml = partsHtml
+      ? `<div class="dbu-attack-buffs"><strong>Skill Bonus:</strong> ${partsHtml}</div>`
+      : "";
+    const resultTag = critRoll
+      ? ` <span class="dbu-crit">CRIT! +${critRoll.formula}: ${critRoll.total}</span>`
+      : (isBotch ? ` <span class="dbu-botch">BOTCH -${botchPenalty}</span>` : "");
+    const metaChips = [
+      `${attrKey.toUpperCase()} Skill`,
+      `Rank ${bd.rankNum}`
+    ].map(c => `<span class="dbu-meta-chip">${c}</span>`).join("");
+    const content = `<div class="dbu-attack-roll" data-actor-id="${this.actor.id}">
+      <h3 class="dbu-attack-title"><span class="dbu-card-title-text">${this.actor.name} — ${skillName}${viaName ? ` (via ${viaName})` : ""}</span></h3>
+      <div class="dbu-card-body">
+        <div class="dbu-attack-meta">${metaChips}</div>
+        ${buffsHtml}
+        <div class="dbu-roll-row">
+          <span class="dbu-roll-label">Check</span>
+          <span class="dbu-roll-main">
+            <code class="dbu-roll-formula">1d10+${bonus}</code>
+            <span class="dbu-roll-sub">Nat ${nat !== rawNat ? `${rawNat}→${nat} (Genius Designer)` : nat}</span>${resultTag}
+          </span>
+          <span class="dbu-roll-total">${finalTotal}</span>
+        </div>
+        <div class="dbu-skill-dcs">Novice 6 · Apprentice 10 · Qualified 14 · Expert 18 · Master 22 · Grandmaster 26</div>
+      </div>
+    </div>`;
+    await ChatMessage.create({
       speaker: ChatMessage.getSpeaker({ actor: this.actor }),
-      flavor: label
+      content
     });
-    if (critRoll && game.dice3d) {
-      try { game.dice3d.showForRoll(critRoll, game.user, true); } catch (e) { /* best-effort */ }
+    if (game.dice3d) {
+      try {
+        await game.dice3d.showForRoll(roll, game.user, true);
+        if (critRoll) await game.dice3d.showForRoll(critRoll, game.user, true);
+      } catch (e) { /* best-effort */ }
     }
   }
 
@@ -6053,7 +6790,9 @@ export class DBUCharacterSheet extends ActorSheet {
         html.on("click", ".trait-selector-item:not(.trait-selector-selected)", async (ev) => {
           const traitId = ev.currentTarget.dataset.traitId;
           if (!traitId) return;
-          const traits = foundry.utils.deepClone(this.actor.system.racialTraits || []);
+          // Read from _source: derived racialTraits may be filtered/swapped
+          // (Shapeshift exchange, OSF possession) — persisting it would lose traits.
+          const traits = foundry.utils.deepClone(this.actor._source.system.racialTraits || []);
           traits.push(traitId);
           await this.actor.update({ "system.racialTraits": traits });
           // Mark as selected in allTraits for refresh
@@ -6066,13 +6805,26 @@ export class DBUCharacterSheet extends ActorSheet {
     dlg.render(true);
   }
 
+  /** Uniform delete confirmation for character-sheet records. */
+  async _confirmDelete(kind, name) {
+    return Dialog.confirm({
+      title: `Delete ${kind}`,
+      content: `<p>Delete <b>${Handlebars.escapeExpression(name || kind)}</b>? This cannot be undone.</p>`
+    });
+  }
+
   async _onDeleteTrait(event) {
     event.preventDefault();
     const traitId = event.currentTarget.dataset.traitId;
     if (!traitId) return;
-    const traits = foundry.utils.deepClone(this.actor.system.racialTraits || []);
+    // Read from _source: derived racialTraits may be filtered/swapped
+    // (Shapeshift exchange, OSF possession) — persisting it would lose traits.
+    const traits = foundry.utils.deepClone(this.actor._source.system.racialTraits || []);
     const index = traits.indexOf(traitId);
     if (index > -1) {
+      const allTraits = Object.values(CONFIG.DBU?.racialTraitsCatalog || {}).flat();
+      const traitName = allTraits.find(t => t.id === traitId)?.name || "Racial Trait";
+      if (!(await this._confirmDelete("Racial Trait", traitName))) return;
       traits.splice(index, 1);
       const options = foundry.utils.deepClone(this.actor.system.racialOptionSelections || {});
       delete options[traitId];
@@ -6465,7 +7217,12 @@ export class DBUCharacterSheet extends ActorSheet {
     if (!talentId) return;
     const talents = foundry.utils.deepClone(this.actor.system.talents || []);
     const index = talents.indexOf(talentId);
-    if (index > -1) { talents.splice(index, 1); await this.actor.update({ "system.talents": talents }); }
+    if (index > -1) {
+      const talentName = (CONFIG.DBU?.talentsCatalog || []).find(t => t.id === talentId)?.name || talentId;
+      if (!(await this._confirmDelete("Talent", talentName))) return;
+      talents.splice(index, 1);
+      await this.actor.update({ "system.talents": talents });
+    }
   }
 
   _onTalentCategoryFilter(event) {
@@ -6497,7 +7254,11 @@ export class DBUCharacterSheet extends ActorSheet {
     const techId = Number(event.currentTarget.dataset.techniqueId);
     const techs = foundry.utils.deepClone(this.actor.system.signatureTechniques || []);
     const idx = techs.findIndex(t => t.id === techId);
-    if (idx > -1) { techs.splice(idx, 1); await this.actor.update({ "system.signatureTechniques": techs }); }
+    if (idx > -1) {
+      if (!(await this._confirmDelete("Signature Technique", techs[idx].name))) return;
+      techs.splice(idx, 1);
+      await this.actor.update({ "system.signatureTechniques": techs });
+    }
   }
 
   async _onTechniqueFieldChange(event) {
@@ -6666,7 +7427,11 @@ export class DBUCharacterSheet extends ActorSheet {
     const auraId = Number(event.currentTarget.dataset.auraId);
     const auras = foundry.utils.deepClone(this.actor.system.signatureAuras || []);
     const idx = auras.findIndex(a => a.id === auraId);
-    if (idx > -1) { auras.splice(idx, 1); await this.actor.update({ "system.signatureAuras": auras }); }
+    if (idx > -1) {
+      if (!(await this._confirmDelete("Aura", auras[idx].name))) return;
+      auras.splice(idx, 1);
+      await this.actor.update({ "system.signatureAuras": auras });
+    }
   }
 
   async _onToggleAura(event) {
@@ -6698,6 +7463,16 @@ export class DBUCharacterSheet extends ActorSheet {
     const aura = auras.find(a => a.id === auraId);
     if (!aura) return;
     const newState = !aura.active;
+    // Base Aura (auras.txt:507): cannot be used while in a Core Transformation
+    if (newState && (aura.disadvantages || []).some(d => d.name === "Base Aura")) {
+      const FORM_TYPES = ["form_alternate", "form_legendary"];
+      const inCoreTransformation = (this.actor.system.transformations || [])
+        .some(t => t?.active && FORM_TYPES.includes(t.transformationType));
+      if (inCoreTransformation) {
+        ui.notifications.warn(`${aura.name || "Aura"} has Base Aura — it cannot be used while you are in a Core Transformation.`);
+        return;
+      }
+    }
     // Deactivate all other auras (only one can be active at a time)
     if (newState) {
       for (const a of auras) { if (a.id !== auraId) a.active = false; }
@@ -6709,6 +7484,19 @@ export class DBUCharacterSheet extends ActorSheet {
       updateData["system.fusion.activeGainedAuraId"] = "";
     }
     await this.actor.update(updateData);
+    // Burnout (auras.txt:518): leaving the aura inflicts Fatigued until the
+    // end of your next turn — post the reminder card.
+    if (!newState && (aura.disadvantages || []).some(d => d.name === "Burnout")) {
+      ChatMessage.create({
+        speaker: ChatMessage.getSpeaker({ actor: this.actor }),
+        content: `<div class="dbu-attack-roll" data-actor-id="${this.actor.id}">
+          <h3 class="dbu-attack-title"><span class="dbu-card-title-text">${this.actor.name} — ${aura.name || "Aura"}</span></h3>
+          <div class="dbu-card-body">
+            <div class="dbu-defend-guide"><b>Burnout:</b> on leaving this Aura you gain the <b>Fatigued</b> Combat Condition until the end of your next turn.</div>
+          </div>
+        </div>`
+      });
+    }
   }
 
   async _onAuraFieldChange(event) {
@@ -6863,6 +7651,7 @@ export class DBUCharacterSheet extends ActorSheet {
     const transIndex = Number(event.currentTarget.dataset.transIndex);
     const trans = foundry.utils.deepClone(this.actor.system.transformations || []);
     if (transIndex >= 0 && transIndex < trans.length) {
+      if (!(await this._confirmDelete("Transformation", trans[transIndex].name))) return;
       trans.splice(transIndex, 1);
       await this.actor.update({ "system.transformations": trans });
     }
@@ -7938,6 +8727,77 @@ export class DBUCharacterSheet extends ActorSheet {
       </div>`;
     }
 
+    // === DRAGON FORCE: Draconization bestial trait (1, restricted list) ===
+    if (trans.catalogKey === "dragon_force") {
+      const dfChoices = [
+        { id: "bestial_movement", label: "Bestial Movement (Wings)" },
+        { id: "bestial_build", label: "Bestial Build (Thick Hide)" },
+        { id: "bestial_claws", label: "Claws" },
+        { id: "bestial_fangs", label: "Fangs" },
+        { id: "bestial_tail", label: "Tail" }
+      ];
+      const dfState = this.actor.system.transformationMeta?.mutationState?.dragonForceBestialTraits || [];
+      const dfChosen = dfState[0] || "";
+      html += `<div class="mutation-sub-config" data-trait="dragon_force_bestial">
+        <div class="tf-trait-group-header">Draconization — Bestial Trait (select 1)</div>
+        <p class="mutation-bwp-rules"><i>Selected upon gaining access. You have access to it while in the Dragon Force Transformation. Movement is fixed to Wings and Build to Thick Hide.</i></p>
+        <div class="mut-sub-row">
+          <select class="mut-df-bestial">
+            <option value="">-- Choose --</option>
+            ${dfChoices.map(c => `<option value="${c.id}" ${dfChosen === c.id ? "selected" : ""}>${c.label}</option>`).join("")}
+          </select>
+        </div>
+      </div>`;
+    }
+
+    // === MONSTER FORM: Monstrous Ascension Monster Traits (2, +1 mastered) ===
+    if (trans.catalogKey === "monster_form") {
+      const mfCat = CONFIG.DBU?.transformationsCatalog?.monster_form;
+      const mfTraitNames = (mfCat?.traitGroups || [])
+        .filter(g => g.name && !["Monstrous Ascension", "Vile Technique", "Beast of Wrath", "Mastery: Controlled Monster"].includes(g.name))
+        .map(g => g.name);
+      const mutStateMF = this.actor.system.transformationMeta?.mutationState || {};
+      const mfChosen = Array.isArray(mutStateMF.monsterFormMonsterTraits) ? mutStateMF.monsterFormMonsterTraits : [];
+      const mfLimit = trans.mastered ? 3 : 2;
+      const mfBestial = mutStateMF.monsterFormBestialTraits || [];
+      const btCatalogMF = CONFIG.DBU?.bestialTraitsCatalog || [];
+      const btCfgMF = mutStateMF.bestialTraitConfig || {};
+      html += `<div class="mutation-sub-config" data-trait="monster_form_traits">
+        <div class="tf-trait-group-header">Monstrous Ascension — Monster Traits (${mfChosen.length}/${mfLimit})</div>
+        <p class="mutation-bwp-rules"><i>Choose 2 Monster Traits${trans.mastered ? " (+1 from Mastery, Full Power only)" : ""}. You benefit from them while in Monster Form.</i></p>
+        <div class="mut-checkbox-list">
+          ${mfTraitNames.map(mt => {
+            const checked = mfChosen.includes(mt);
+            const disabled = !checked && mfChosen.length >= mfLimit;
+            return `<label class="effect-option-checkbox ${checked ? "selected" : ""} ${disabled ? "disabled" : ""}">
+              <input type="checkbox" class="mut-mf-monster" data-name="${mt}" ${checked ? "checked" : ""} ${disabled ? "disabled" : ""} />
+              <span class="option-name">${mt}</span>
+            </label>`;
+          }).join("")}
+        </div>
+        ${mfChosen.includes("Bestial Monster") ? `
+        <div class="tf-trait-group-header" style="margin-top:8px;">Bestial Monster — Bestial Trait (select 1)</div>
+        <div class="mut-sub-row">
+          <select class="mut-mf-bestial">
+            <option value="">-- Choose --</option>
+            ${btCatalogMF.map(bt => `<option value="${bt.id}" ${mfBestial[0] === bt.id ? "selected" : ""}>${bt.name}</option>`).join("")}
+          </select>
+          ${(() => {
+            const chosenBt = btCatalogMF.find(b => b.id === mfBestial[0]);
+            const optEffect = chosenBt?.effects?.find(e => e.activationType === "option");
+            if (!optEffect) return "";
+            return `<select class="mut-bestial-option" data-trait-id="${chosenBt.id}">
+              <option value="">-- Option --</option>
+              ${optEffect.options.map(o => {
+                const k = o.name.toLowerCase().replace(/\s+/g, "_");
+                return `<option value="${k}" ${btCfgMF[chosenBt.id]?.option === k ? "selected" : ""}>${o.name}</option>`;
+              }).join("")}
+            </select>`;
+          })()}
+        </div>` : ""}
+      </div>`;
+    }
+
     // === CYBERNETIC ENHANCEMENT: Cybernetic Trait selection ===
     if (trans.catalogKey === "cybernetic_enhancement") {
       const cyCatalog = CONFIG.DBU?.cyberneticTraitsCatalog || [];
@@ -8148,6 +9008,8 @@ export class DBUCharacterSheet extends ActorSheet {
         const monsterTraitNames = monsterTraitGroups
           .filter(g => g.name && g.name !== "Monstrous Ascension" && g.name !== "Vile Technique" && g.name !== "Beast of Wrath" && g.name !== "Mastery: Controlled Monster" && g.name !== "Mutating Beast")
           .map(g => g.name);
+        const deBestial = mutState.darkEvolutionBestialTraits || [];
+        const btCatalogDE = CONFIG.DBU?.bestialTraitsCatalog || [];
         html += `<div class="mutation-sub-config" data-trait="dark_evolution">
           <div class="tf-trait-group-header">Dark Evolution — Monster Traits (select 2, cannot select Mutating Beast)</div>
           <div class="mut-checkbox-list">
@@ -8160,6 +9022,27 @@ export class DBUCharacterSheet extends ActorSheet {
               </label>`;
             }).join("")}
           </div>
+          ${deMonster.includes("Bestial Monster") ? `
+          <div class="tf-trait-group-header" style="margin-top:8px;">Bestial Monster — Bestial Trait (select 1)</div>
+          <div class="mut-sub-row">
+            <select class="mut-de-bestial">
+              <option value="">-- Choose --</option>
+              ${btCatalogDE.map(bt => `<option value="${bt.id}" ${deBestial[0] === bt.id ? "selected" : ""}>${bt.name}</option>`).join("")}
+            </select>
+            ${(() => {
+              const chosenBt = btCatalogDE.find(b => b.id === deBestial[0]);
+              const optEffect = chosenBt?.effects?.find(e => e.activationType === "option");
+              if (!optEffect) return "";
+              const cfgDE = mutState.bestialTraitConfig || {};
+              return `<select class="mut-bestial-option" data-trait-id="${chosenBt.id}">
+                <option value="">-- Option --</option>
+                ${optEffect.options.map(o => {
+                  const k = o.name.toLowerCase().replace(/\s+/g, "_");
+                  return `<option value="${k}" ${cfgDE[chosenBt.id]?.option === k ? "selected" : ""}>${o.name}</option>`;
+                }).join("")}
+              </select>`;
+            })()}
+          </div>` : ""}
         </div>`;
       }
 
@@ -8471,6 +9354,56 @@ export class DBUCharacterSheet extends ActorSheet {
           });
         }
 
+        // === DRAGON FORCE: Draconization bestial selection handler ===
+        if (trans.catalogKey === "dragon_force") {
+          dialogHtml.on("change", ".mut-df-bestial", async (ev) => {
+            const id = ev.currentTarget.value;
+            const ms = foundry.utils.deepClone(actorRef.system.transformationMeta?.mutationState || {});
+            ms.dragonForceBestialTraits = id ? [id] : [];
+            // Fixed options per Draconization: Movement→Wings, Build→Thick Hide
+            ms.bestialTraitConfig = ms.bestialTraitConfig || {};
+            if (id === "bestial_movement") ms.bestialTraitConfig[id] = { ...(ms.bestialTraitConfig[id] || {}), option: "wings" };
+            if (id === "bestial_build") ms.bestialTraitConfig[id] = { ...(ms.bestialTraitConfig[id] || {}), option: "thick_hide" };
+            await actorRef.update({ "system.transformationMeta.mutationState": ms });
+          });
+        }
+
+        // === MONSTER FORM: Monster Trait + Bestial Monster handlers ===
+        if (trans.catalogKey === "monster_form") {
+          const _mfReopen = () => { dialog.close(); this._onViewTransformationTraits(event); };
+          const mfLimitNow = trans.mastered ? 3 : 2;
+          dialogHtml.on("change", ".mut-mf-monster", async (ev) => {
+            const name = ev.currentTarget.dataset.name;
+            const ms = foundry.utils.deepClone(actorRef.system.transformationMeta?.mutationState || {});
+            let arr = Array.isArray(ms.monsterFormMonsterTraits) ? ms.monsterFormMonsterTraits : [];
+            if (ev.currentTarget.checked) {
+              if (arr.length >= mfLimitNow) { ev.currentTarget.checked = false; return; }
+              if (!arr.includes(name)) arr.push(name);
+            } else {
+              arr = arr.filter(x => x !== name);
+              if (name === "Bestial Monster") ms.monsterFormBestialTraits = [];
+            }
+            ms.monsterFormMonsterTraits = arr;
+            await actorRef.update({ "system.transformationMeta.mutationState": ms });
+            _mfReopen();
+          });
+          dialogHtml.on("change", ".mut-mf-bestial", async (ev) => {
+            const id = ev.currentTarget.value;
+            const ms = foundry.utils.deepClone(actorRef.system.transformationMeta?.mutationState || {});
+            ms.monsterFormBestialTraits = id ? [id] : [];
+            await actorRef.update({ "system.transformationMeta.mutationState": ms });
+            _mfReopen();
+          });
+          dialogHtml.on("change", ".mut-bestial-option", async (ev) => {
+            const traitId = ev.currentTarget.dataset.traitId;
+            const ms = foundry.utils.deepClone(actorRef.system.transformationMeta?.mutationState || {});
+            const cfg = { ...(ms.bestialTraitConfig || {}) };
+            cfg[traitId] = { ...(cfg[traitId] || {}), option: ev.currentTarget.value };
+            ms.bestialTraitConfig = cfg;
+            await actorRef.update({ "system.transformationMeta.mutationState": ms });
+          });
+        }
+
         // === CYBERNETIC ENHANCEMENT: trait selection handlers ===
         if (trans.catalogKey === "cybernetic_enhancement") {
           const _cyReopen = () => { dialog.close(); this._onViewTransformationTraits(event); };
@@ -8671,9 +9604,17 @@ export class DBUCharacterSheet extends ActorSheet {
             await _mutSave(ms => {
               const arr = Array.isArray(ms.darkEvolutionMonsterTraits) ? [...ms.darkEvolutionMonsterTraits] : [];
               if (ev.currentTarget.checked) { if (arr.length < 2 && !arr.includes(name)) arr.push(name); }
-              else { const i = arr.indexOf(name); if (i >= 0) arr.splice(i, 1); }
+              else {
+                const i = arr.indexOf(name); if (i >= 0) arr.splice(i, 1);
+                if (name === "Bestial Monster") ms.darkEvolutionBestialTraits = [];
+              }
               ms.darkEvolutionMonsterTraits = arr;
             });
+            _mutReopen();
+          });
+          dialogHtml.on("change", ".mut-de-bestial", async (ev) => {
+            const id = ev.currentTarget.value;
+            await _mutSave(ms => { ms.darkEvolutionBestialTraits = id ? [id] : []; });
             _mutReopen();
           });
 
@@ -8924,6 +9865,8 @@ export class DBUCharacterSheet extends ActorSheet {
     const index = Number(event.currentTarget.dataset.uniqueIndex);
     const uniques = foundry.utils.deepClone(this.actor.system.uniqueAbilities || []);
     if (index >= 0 && index < uniques.length) {
+      const uaName = CONFIG.DBU?.uniqueAbilitiesCatalog?.[uniques[index].abilityKey]?.name || uniques[index].abilityKey;
+      if (!(await this._confirmDelete("Unique Ability", uaName))) return;
       uniques.splice(index, 1);
       await this.actor.update({ "system.uniqueAbilities": uniques });
     }
@@ -9058,6 +10001,7 @@ export class DBUCharacterSheet extends ActorSheet {
       : (CONFIG.DBU?.progressionRows || []);
     const rows = foundry.utils.deepClone(baseRows);
     if (index >= 0 && index < rows.length) {
+      if (!(await this._confirmDelete("Progression Row", `Level ${rows[index].level ?? "?"} row`))) return;
       rows.splice(index, 1);
       await this.actor.update({ "system.progressionRows": rows });
     }
@@ -13759,6 +14703,15 @@ export class DBUCharacterSheet extends ActorSheet {
         }
       }
     }
+    // Harsh Focus (auras.txt:584): cannot use the Signature Technique Maneuver
+    // while using an Aura with this Disadvantage.
+    if (String(action.source).startsWith("tech_")) {
+      const hfAura = this.actor._getActiveAura(this.actor.system);
+      if (hfAura && (hfAura.disadvantages || []).some(d => d.name === "Harsh Focus")) {
+        ui.notifications.warn(`${hfAura.name || "Your Aura"} has Harsh Focus — you cannot use the Signature Technique Maneuver while in this Aura.`);
+        return;
+      }
+    }
     const wager = Math.max(0, Number(action.kiWager) || 0);
 
     // --- Diminishing Offense (attacking.txt:33-34): each Attacking Maneuver
@@ -14841,6 +15794,46 @@ export class DBUCharacterSheet extends ActorSheet {
               } else {
                 await this.actor.update({ "system.fusion.linkedSplitId": actorId });
               }
+            } else if (fusion.type === "unification") {
+              // Unify Maneuver: snapshot the Secondary Character at unify time —
+              // they stop existing as an individual, the actor may be deleted later.
+              const secActor = game.actors?.get(actorId);
+              if (!secActor) return;
+              const secSys = secActor.system || {};
+              if (secSys.race !== this.actor.system.race) {
+                const proceed = await Dialog.confirm({
+                  title: "Unify Maneuver — Race mismatch",
+                  content: `<p><b>${secActor.name}</b> (${secSys.race}) is not a member of your Race (${this.actor.system.race}). The Unify Maneuver normally requires a willing member of your Race (exceptions: Reincarnated Power, ARC ruling). Link anyway?</p>`
+                });
+                if (!proceed) return;
+              }
+              const ids = [...(fusion.secondaryCharacterIds || [])];
+              if (ids.includes(actorId)) return;
+              ids.push(actorId);
+              const snaps = foundry.utils.deepClone(fusion.unifySecondaries || {});
+              snaps[actorId] = {
+                name: secActor.name,
+                race: secSys.race || "",
+                baseTier: secSys.baseTier || 1,
+                attrAlloc: {}
+              };
+              await this.actor.update({
+                "system.fusion.secondaryCharacterIds": ids,
+                "system.fusion.unifySecondaries": snaps
+              });
+              ChatMessage.create({
+                content: `<div class="dbu-attack-roll">
+                  <div class="dbu-attack-title"><i class="fas fa-user-plus"></i> ${this.actor.name} — Unify Maneuver</div>
+                  <div class="dbu-attack-meta">
+                    <span class="dbu-meta-chip">Secondary: ${Handlebars.escapeExpression(secActor.name)}</span>
+                    <span class="dbu-meta-chip">+${2 * (secSys.baseTier || 1)} Attribute Points (bT ${secSys.baseTier || 1})</span>
+                    <span class="dbu-meta-chip">+1 PL of LP/KP/Capacity</span>
+                    <span class="dbu-meta-chip">Stress +1</span>
+                  </div>
+                  <div class="dbu-attack-buffs">${Handlebars.escapeExpression(secActor.name)} stops existing as an individual character. Allocate the Attribute Points in the Fusion tab.</div>
+                </div>`,
+                speaker: ChatMessage.getSpeaker({ actor: this.actor })
+              });
             } else if (fusion.type === "one-sided-absorption" || fusion.type === "one-sided-possession") {
               // Filter out stale IDs (deleted actors) before checking limits
               const rawIds = fusion.suppressedCharacterIds || fusion.fusedCharacterIds || [];

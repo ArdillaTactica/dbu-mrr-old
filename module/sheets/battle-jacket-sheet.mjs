@@ -94,8 +94,8 @@ export class DBUBattleJacketSheet extends ActorSheet {
     context.engineUniqueModuleData = catalog[system.engineUniqueModule] || null;
 
     // LP/KP percentages for bars
-    context.lpPercent = system.lp.max > 0 ? Math.clamped(system.lp.value / system.lp.max * 100, 0, 100) : 0;
-    context.kpPercent = system.kp.max > 0 ? Math.clamped(system.kp.value / system.kp.max * 100, 0, 100) : 0;
+    context.lpPercent = system.lp.max > 0 ? Math.clamp(system.lp.value / system.lp.max * 100, 0, 100) : 0;
+    context.kpPercent = system.kp.max > 0 ? Math.clamp(system.kp.value / system.kp.max * 100, 0, 100) : 0;
 
     // Grade/Frame/Engine options for selectors
     context.gradeOptions = [

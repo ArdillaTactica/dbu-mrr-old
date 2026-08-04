@@ -952,7 +952,20 @@ export function computeSkillBonus(actor, skillKey) {
   // Cloaking System (cybernetic trait): +1 Stealth Dice Score
   const cyber = skillKey === "stealth"
     ? (Number(actor.system._cyberStealthBonus) || 0) : 0;
-  return Math.floor(attrScore / 2) + (Number(rank) || 0) * 2 + gs + equip + bestial + cyber;
+  // Per-skill + attribute-group custom buffs and the Misc field (parity with sheet)
+  const groupNameMap = {
+    ag: "Agility Skills", fo: "Force Skills", sc: "Scholarship Skills",
+    in: "Insight Skills", ma: "Magic Skills", pe: "Personality Skills"
+  };
+  const buffs = (actor._getBuffTotal?.(actor.system, skillDef?.name || "") || 0)
+    + (actor._getBuffTotal?.(actor.system, groupNameMap[attrKey] || "") || 0);
+  const misc = Number(actor.system.skillMisc?.[skillKey]) || 0;
+  // Knowledge passive: +1 to all Skill Checks per 2 ranks in each Knowledge specialty
+  const knowledge = Number(actor.system.aptitudes?.knowledgeSkillBonus) || 0;
+  // Aura effects: Distracting penalty (all) + Sensory Refinement (IN skills)
+  const auraMod = -(Number(actor.system.aptitudes?.auraSkillPenalty) || 0)
+    + (attrKey === "in" ? (Number(actor.system.aptitudes?.auraInSkillBonus) || 0) : 0);
+  return Math.floor(attrScore / 2) + (Number(rank) || 0) * 2 + gs + equip + bestial + cyber + buffs + misc + knowledge + auraMod;
 }
 
 async function responderRoll(actor, choice) {

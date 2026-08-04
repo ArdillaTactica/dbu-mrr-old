@@ -1,5 +1,23 @@
 <div class="techniques-container">
 
+  {{#if showEnergyControl}}
+  <div class="ec-talent-row">
+    <label title="Energy Control: the selected Signature Technique's Ki Point Cost is reduced by 2(T).{{#if energyControlAll}} Technique Master: the reduction applies to ALL your Signature Techniques.{{/if}}">
+      <i class="fas fa-fire-alt"></i> Energy Control:
+      {{#if energyControlAll}}
+      <span class="ec-all-note">applies to all techniques (Technique Master)</span>
+      {{else}}
+      <select class="ec-tech-select">
+        <option value="">-- Select Technique --</option>
+        {{#each energyControlOptions}}
+        <option value="{{id}}" {{#if (eq id ../energyControlChoice)}}selected{{/if}}>{{name}}</option>
+        {{/each}}
+      </select>
+      {{/if}}
+    </label>
+  </div>
+  {{/if}}
+
   {{!-- TP Summary Bar (Shared Pool) --}}
   <div class="tp-summary-bar">
     <div class="tp-item">

@@ -203,6 +203,28 @@ function transformationField() {
   });
 }
 
+/**
+ * Schema for a Base (bases.txt) owned by the character.
+ */
+function baseField() {
+  return new SchemaField({
+    id: new NumberField({ required: true, nullable: false, integer: true }),
+    name: new StringField({ initial: "New Base" }),
+    category: new StringField({ initial: "constructed" }), // constructed | premade
+    devPointsTotal: new NumberField({ required: true, nullable: false, initial: 8, integer: true, min: 0 }),
+    size: new StringField({ initial: "minor" }), // minor | moderate | major | massive
+    hardness: new NumberField({ required: true, nullable: false, initial: 1, integer: true, min: 1, max: 4 }),
+    damage: new NumberField({ required: true, nullable: false, initial: 0, integer: true, min: 0 }),
+    qualities: new ArrayField(new SchemaField({
+      id: new NumberField({ required: true, nullable: false, integer: true }),
+      qualityKey: new StringField({ initial: "" }),
+      devSpent: new NumberField({ required: true, nullable: false, initial: 0, integer: true, min: 0 }),
+      notes: new StringField({ initial: "" })
+    })),
+    notes: new StringField({ initial: "" })
+  });
+}
+
 export default class DBUCharacterData extends foundry.abstract.TypeDataModel {
 
   /** Sanitise legacy data before TypeDataModel validation runs. */
@@ -265,7 +287,7 @@ export default class DBUCharacterData extends foundry.abstract.TypeDataModel {
       fusion: new SchemaField({
         // Core fusion identity
         isFusion: new BooleanField({ initial: false }),
-        type: new StringField({ initial: "" }),  // "regular" | "one-sided-absorption" | "one-sided-possession" | "fission"
+        type: new StringField({ initial: "" }),  // "regular" | "one-sided-absorption" | "one-sided-possession" | "fission" | "unification"
         fusedCharacterIds: new ArrayField(new StringField()),  // actor UUIDs of component characters
         method: new StringField({ initial: "" }),  // "metamorese" | "potara" | "maxi" | "merge" | "ex" | "parasitic"
         modifiers: new ArrayField(new StringField()),  // selected modifier IDs
@@ -308,6 +330,14 @@ export default class DBUCharacterData extends foundry.abstract.TypeDataModel {
         // Neo-Tuffle Parasite: chosen host racial trait (replaces Liquid Form)
         parasiteHostTraitId: new StringField({ initial: "" }),
 
+        // Unification (Unify Maneuver): Secondary Characters merged into this Primary.
+        // Benefits survive actor deletion — data is snapshotted at unify time.
+        secondaryCharacterIds: new ArrayField(new StringField()),
+        // { [secondaryId]: { name, race, baseTier, attrAlloc: {ag,fo,te,sc,in,ma,pe} } }
+        unifySecondaries: new ObjectField(),
+        // Recombined after Fission (Recombining rules; Majin → Super Majin)
+        recombinedAfterFission: new BooleanField({ initial: false }),
+
         // Absorption: thresholds crossed this encounter (for non-Majin auto-eject at 2)
         encounterThresholdsCrossed: new NumberField({ required: true, nullable: false, initial: 0, integer: true }),
 
@@ -337,6 +367,13 @@ export default class DBUCharacterData extends foundry.abstract.TypeDataModel {
 
       // ---- Skills (freeform object: { acrobatics: { rank: 2 }, ... }) ----
       skills: new ObjectField(),
+      // Per-skill flat Misc modifier: { acrobatics: 2, stealth: -1, ... }
+      skillMisc: new ObjectField(),
+      // Encompassing Skill specialties (skills.txt:52-56):
+      // { craft: [{ name: "Weapons", rank: 2 }], knowledge: [{ name: "History", rank: 1 }] }
+      skillSpecialties: new ObjectField(),
+      // Talent choice storage (e.g. { geniusDesignerSpecialty: "Weapons" })
+      talentSelections: new ObjectField(),
 
       // ---- Conditions ----
       conditions: new ArrayField(conditionField()),
@@ -534,6 +571,11 @@ export default class DBUCharacterData extends foundry.abstract.TypeDataModel {
         // Arcosian Meta Traits: { stages: { [catalogKey]: { traits: [ids], config: { [id]: { option, bestialTrait } } } },
         //                        divergent: { trait: id, config: { option, bestialTrait } } }
         metaTraitState: new ObjectField(),
+        // Shapeshift Unique Ability active-effects state:
+        // { active, actions (1-3), effects: { bestial, size, vehicle, weapon },
+        //   giveTraitId, bestialTraitId, bestialTraitId2, sizeChoice,
+        //   weaponFoundation, weaponQualities, vehicleNotes }
+        shapeshiftState: new ObjectField(),
         // Evil Aura: gain access to 5 Signature Techniques until end of turn (cost 2bT EP)
         evilTechsActive: new BooleanField({ initial: false }),
         evilPoints: new NumberField({ required: true, nullable: false, initial: 0, integer: true, min: 0 }),
@@ -541,6 +583,9 @@ export default class DBUCharacterData extends foundry.abstract.TypeDataModel {
 
       // ---- Attack References (stored on actor) ----
       attackRefs: new ArrayField(attackRefField()),
+
+      // ---- Bases (bio tab) ----
+      bases: new ArrayField(baseField()),
 
       // ---- Biography / Notes ----
       biography: new StringField({ initial: "" }),

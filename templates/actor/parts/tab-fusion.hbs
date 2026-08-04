@@ -23,6 +23,7 @@
             <option value="one-sided-absorption" {{#if (eq system.fusion.type "one-sided-absorption")}}selected{{/if}}>One-Sided: Absorption</option>
             <option value="one-sided-possession" {{#if (eq system.fusion.type "one-sided-possession")}}selected{{/if}}>One-Sided: Possession</option>
             <option value="fission" {{#if (eq system.fusion.type "fission")}}selected{{/if}}>Fission</option>
+            <option value="unification" {{#if (eq system.fusion.type "unification")}}selected{{/if}}>Unification (Unify Maneuver)</option>
           </select>
         </div>
 
@@ -48,11 +49,13 @@
           <span><i class="fas fa-user-shield"></i> Suppressed Characters</span>
           {{else if fusionIsFission}}
           <span><i class="fas fa-divide"></i> Split Character Link</span>
+          {{else if fusionIsUnification}}
+          <span><i class="fas fa-user-plus"></i> Secondary Characters (Unify Maneuver)</span>
           {{/if}}
           <button type="button" data-action="add-fused-character" class="action-btn"><i class="fas fa-plus"></i> Link Actor</button>
         </div>
-        {{!-- For one-sided: suppressed actors are shown in the one-sided panel below --}}
-        {{#unless fusionIsOneSided}}
+        {{!-- One-sided / Unification: actors are shown in their own panels below --}}
+        {{#unless fusionLinkedListHidden}}
         <div class="fusion-linked-list">
           {{#each fusionLinkedActors}}
           <div class="fusion-linked-card" data-actor-id="{{id}}">
@@ -581,6 +584,76 @@
         {{/each}}
       </div>
       {{/if}}
+    </div>
+  </div>
+  {{/if}}
+
+  {{!-- ==================== UNIFICATION PANEL ==================== --}}
+  {{#if fusionIsUnification}}
+  <div class="fusion-unify-panel">
+    <div class="section-header">
+      <i class="fas fa-user-plus"></i> Unification — Primary Character
+    </div>
+    <div class="fusion-unify-body">
+      <div class="unify-summary">
+        Per Secondary: <b>+2(their bT) Attribute Points</b> (to Scores) · <b>+1 PL of Max LP/KP/Capacity</b> · <b>+1 Stress Test Dice Score</b>
+        {{#if unifyCount}}<span class="unify-count-chip">{{unifyCount}} Secondary — Stress +{{unifyCount}}, +{{unifyCount}} PL of resources</span>{{/if}}
+      </div>
+
+      {{#each unifySecondaries}}
+      <div class="unify-secondary-card">
+        <div class="unify-sec-header">
+          <span class="unify-sec-name"><i class="fas fa-user"></i> {{name}}</span>
+          <span class="unify-sec-meta">{{race}} · bT {{baseTier}}{{#unless actorExists}} · <i class="fas fa-ghost" title="Actor no longer exists in the world (benefits are snapshotted)"></i>{{/unless}}</span>
+          <span class="unify-sec-alloc {{#if over}}unify-over{{/if}}">Attr Points: {{allocated}}/{{allocMax}}</span>
+          <button type="button" class="action-btn danger" data-action="unify-unlink" data-secondary-id="{{id}}" title="Separate (Forced Spirit Fission) — removes all benefits from this Secondary"><i class="fas fa-unlink"></i></button>
+        </div>
+        <div class="unify-attr-row">
+          {{#each attrs}}
+          <label class="unify-attr">
+            {{label}}
+            <input type="number" class="unify-attr-input" data-secondary-id="{{../id}}" data-attr="{{key}}" value="{{value}}" min="0" />
+          </label>
+          {{/each}}
+        </div>
+      </div>
+      {{else}}
+      <div class="empty-message">No Secondary Characters. Use "Link Actor" — the target must be a willing member of your Race on an Adjacent Square (3 Actions, cannot be a Minion).</div>
+      {{/each}}
+
+      {{#if unifyIsMajin}}
+      <label class="unify-recombine-check">
+        <input type="checkbox" name="system.fusion.recombinedAfterFission" {{#if system.fusion.recombinedAfterFission}}checked{{/if}} />
+        Recombined after Fission (Majin: grants Super Majin)
+      </label>
+      {{/if}}
+
+      {{#if unifyMPHook}}
+      <div class="unify-mp-hook">
+        <span class="unify-mp-text">
+          <i class="fas fa-dna"></i> <b>{{unifyMPHook.name}}</b> ({{unifyMPHook.stacks}}/{{unifyMPHook.maxStacks}} stack{{#if (gt unifyMPHook.maxStacks 1)}}s{{/if}}) — {{unifyMPHook.reason}}.
+          {{#if unifyMPHook.ownedStacks}}<span class="unify-mp-owned">Owned: {{unifyMPHook.ownedStacks}}</span>{{/if}}
+          {{#unless unifyMPHook.eligible}}<span class="unify-mp-pending" title="Gained automatically upon your base Tier of Power meeting the requirement">Pending — requires ToP {{unifyMPHook.tierReq}}</span>{{/unless}}
+        </span>
+        {{#if unifyMPHook.eligible}}
+        <button type="button" class="action-btn" data-action="unify-grant-mp" data-mp-key="{{unifyMPHook.key}}" data-stacks="{{unifyMPHook.stacks}}"><i class="fas fa-plus"></i> Grant</button>
+        {{/if}}
+      </div>
+      {{/if}}
+
+      {{#if unifyOmegaHook}}
+      <div class="unify-mp-hook">
+        <span class="unify-mp-text">
+          <i class="fas fa-star"></i> <b>Omega</b> ({{unifyOmegaHook.stacks}}/{{unifyOmegaHook.maxStacks}} stacks) — {{unifyOmegaHook.reason}} (must be from the same set of Dragon Balls).
+          {{#if unifyOmegaHook.ownedStacks}}<span class="unify-mp-owned">Owned: {{unifyOmegaHook.ownedStacks}}</span>{{/if}}
+        </span>
+        <button type="button" class="action-btn" data-action="unify-grant-mp" data-mp-key="omega" data-stacks="{{unifyOmegaHook.stacks}}"><i class="fas fa-plus"></i> Grant</button>
+      </div>
+      {{/if}}
+
+      <div class="unify-notes">
+        <span><b>Forced Spirit Fission</b> removes a Secondary's Attribute Points from your Scores — use the unlink button. If you re-Unify with the same character (same bT), apply the points the same way as before.</span>
+      </div>
     </div>
   </div>
   {{/if}}
