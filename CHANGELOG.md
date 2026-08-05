@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.4] - 2026-08-04
+
+- Nuevos catálogos: rasgos cibernéticos (`cybernetic-traits`), meta-rasgos
+  (`meta-traits`) y cualidades base (`base-qualities`), con su automatización.
+- Mejoras en la automatización racial: bio-android, arcosianos, formas
+  alternas y rasgos bestiales.
+- Correcciones y mejoras en el sistema de duelos.
+- Mejoras en la hoja de personaje, battle jacket y varias pestañas (bio,
+  fusión, skills, técnicas, únicas, combate, equipo, downtime).
+- Ajustes de estilos (CSS).
+
 ## [1.0.3] - 2026-07-26
 
 - Nuevo sistema de duelos (`module/helpers/duel.mjs`).
