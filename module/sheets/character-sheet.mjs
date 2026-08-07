@@ -786,10 +786,20 @@ export class DBUCharacterSheet extends ActorSheet {
   // Data Prep: Techniques (TP System)
   // -------------------------------------------------------
 
+  /**
+   * Max TP spendable on any one Signature Technique or Aura, by BASE Tier of
+   * Power (signature.txt:23-32 / auras.txt:21-29): 25 / 30 / 40 / 50 (ToP 4+).
+   */
+  _tpLimitByBaseTier(baseTier) {
+    const bT = Math.max(1, Number(baseTier) || 1);
+    return bT >= 4 ? 50 : [25, 30, 40][bT - 1];
+  }
+
   _prepareTechniquesData(context, system) {
     const techniques = system.signatureTechniques || [];
     const config = CONFIG.DBU ?? {};
     const tier = system.tier || 1;
+    const tpLimit = this._tpLimitByBaseTier(system.baseTier);
     const foundations = config.techniqueFoundations || {};
     const profileDataMap = config.profileData || {};
     const profileKpCosts = config.profileKpCosts || {};
@@ -844,6 +854,8 @@ export class DBUCharacterSheet extends ActorSheet {
       return {
         ...t,
         tpCost,
+        tpMax: tpLimit,
+        tpOverLimit: tpCost > tpLimit,
         tpFull,
         mfProfile,
         kpCost,
@@ -926,6 +938,7 @@ export class DBUCharacterSheet extends ActorSheet {
             ...cloned,
             isGained: true,
             gainedFrom: suppActor.name,
+            tpMax: tpLimit,
             tpCost, kpCost, kpReduction, dynamicKi, finalKP,
             maintenanceKP: Math.ceil(finalKP / 2),
             profileBaseKP, profileInfo, availableProfiles,
@@ -986,6 +999,7 @@ export class DBUCharacterSheet extends ActorSheet {
           isGained: true,
           gainedFrom: "Evil Aura",
           gainedSource: "evil_aura",
+          tpMax: tpLimit,
           tpCost, kpCost, kpReduction, dynamicKi, finalKP,
           maintenanceKP: Math.ceil(finalKP / 2),
           profileBaseKP, profileInfo, availableProfiles,
@@ -1379,6 +1393,7 @@ export class DBUCharacterSheet extends ActorSheet {
     const auras = system.signatureAuras || [];
     const config = CONFIG.DBU ?? {};
     const tier = system.tier || 1;
+    const tpLimit = this._tpLimitByBaseTier(system.baseTier);
     const advData = config.auraAdvantagesData || {};
     const disadvData = config.auraDisadvantagesData || {};
 
@@ -1420,6 +1435,8 @@ export class DBUCharacterSheet extends ActorSheet {
       return {
         ...a,
         tpCost,
+        tpMax: tpLimit,
+        tpOverLimit: tpCost > tpLimit,
         calculatedKP,
         baseKP,
         efficiency,
@@ -1477,6 +1494,7 @@ export class DBUCharacterSheet extends ActorSheet {
             isGained: true,
             gainedFrom: suppActor.name,
             gainedAuraKey,
+            tpMax: tpLimit,
             tpCost, calculatedKP, baseKP, efficiency, finalKP, maintenanceKP,
             kpReduction, dynamicKi,
             auraTypeEffect: auraTypeData.effect || "",
@@ -4747,6 +4765,15 @@ export class DBUCharacterSheet extends ActorSheet {
       context.arcosianBonuses = arc;
       context.hasArcosianBonuses = Object.values(arc.has || {}).some(v => v);
     }
+    // Cruelty Stacks tracker (Cruel Intentions racial trait — works even if
+    // the race string differs, e.g. fusions)
+    if ((system.racialTraits || []).includes("db303ead803660ff")) {
+      const cStacks = Math.min(3, system.tracking?.crueltyStacks || 0);
+      context.crueltyTracker = {
+        value: cStacks, max: 3,
+        woundBonus: cStacks * (system.tier || 1)
+      };
+    }
 
     // ---- Cerealian: Evolved Right Eye, Pinpoint Combat, Scarlet Spotter ----
     if (context.isCerealian) {
@@ -5556,6 +5583,31 @@ export class DBUCharacterSheet extends ActorSheet {
           }
         }
       }
+      // Divergent Evolution (Arcosian): Meta Trait selector on the trait card
+      // (also selectable from any Metamorphosis stage's traits dialog).
+      if (trait.id === "b252198d4bafa7c6") {
+        const mtCatalog = CONFIG.DBU?.metaTraitsCatalog || [];
+        const dv = system.transformationMeta?.metaTraitState?.divergent || {};
+        trait.isDivergentEvolution = true;
+        trait.divergentOptions = mtCatalog.map(mt => ({
+          id: mt.id, name: mt.name, selected: dv.trait === mt.id
+        }));
+        const chosenDef = mtCatalog.find(t => t.id === dv.trait);
+        trait.divergentChosen = chosenDef ? {
+          name: chosenDef.name,
+          effects: (chosenDef.effects || []).map(e => `[${e.keyword}] ${e.text}`),
+          options: chosenDef.options
+            ? chosenDef.options.map(o => ({ key: o.key, name: o.name, selected: dv.config?.option === o.key }))
+            : null,
+          bestialChoice: chosenDef.bestialChoice
+            ? chosenDef.bestialChoice.map(b => ({
+                key: b,
+                name: (CONFIG.DBU?.bestialTraitsCatalog || []).find(x => x.id === b)?.name || b,
+                selected: dv.config?.bestialTrait === b
+              }))
+            : null
+        } : null;
+      }
       // Part Beast (Earthling Beastman): selector for its two permanent Bestial Traits
       if (trait.id === "979b43c2cb80c474") {
         const mutState = system.transformationMeta?.mutationState || {};
@@ -6075,6 +6127,10 @@ export class DBUCharacterSheet extends ActorSheet {
     html.on("change", ".option-checkbox", this._onTraitOptionCheckbox.bind(this));
     html.on("change", ".pb-bestial-check", this._onPartBeastBestialCheck.bind(this));
     html.on("change", ".pb-bestial-option", this._onPartBeastBestialOption.bind(this));
+    html.on("change", ".de-meta-select", this._onDivergentMetaSelect.bind(this));
+    html.on("change", ".de-meta-config", this._onDivergentMetaConfig.bind(this));
+    html.on("click", ".cruelty-increment", this._onCrueltyChange.bind(this, 1));
+    html.on("click", ".cruelty-decrement", this._onCrueltyChange.bind(this, -1));
 
     // Shapeshift Unique Ability config (Unique tab)
     html.on("change", ".ss-field", this._onShapeshiftField.bind(this));
@@ -6855,6 +6911,35 @@ export class DBUCharacterSheet extends ActorSheet {
       if (i >= 0) chosen.splice(i, 1);
     }
     await this.actor.update({ "system.transformationMeta.mutationState.partBeastBestialTraits": chosen });
+  }
+
+  /** Divergent Evolution (Traits tab): choose the granted Meta Trait. */
+  async _onDivergentMetaSelect(event) {
+    const val = event.currentTarget.value;
+    // Clear stale per-trait config when switching (ObjectField merge would keep it)
+    await this.actor.update({
+      "system.transformationMeta.metaTraitState.divergent.trait": val,
+      "system.transformationMeta.metaTraitState.divergent.config.-=option": null,
+      "system.transformationMeta.metaTraitState.divergent.config.-=bestialTrait": null
+    });
+  }
+
+  /** Divergent Evolution (Traits tab): option / bestial trait for the chosen Meta Trait. */
+  async _onDivergentMetaConfig(event) {
+    const field = event.currentTarget.dataset.field;
+    if (!field) return;
+    await this.actor.update({
+      [`system.transformationMeta.metaTraitState.divergent.config.${field}`]: event.currentTarget.value
+    });
+  }
+
+  /** Cruelty Stacks (Cruel Intentions, Arcosian): ±1, clamped 0–3. */
+  async _onCrueltyChange(delta, event) {
+    event.preventDefault();
+    const current = this.actor.system.tracking?.crueltyStacks || 0;
+    const next = Math.max(0, Math.min(3, current + delta));
+    if (next === current) return;
+    await this.actor.update({ "system.tracking.crueltyStacks": next });
   }
 
   /** Part Beast: option for a chosen Bestial Trait (shared bestialTraitConfig). */
@@ -9201,26 +9286,65 @@ export class DBUCharacterSheet extends ActorSheet {
         if (!g.effects || g.effects.length === 0) continue;
         h += '<div class="tf-trait-group-detail">';
         h += `<div class="tf-trait-group-header">${g.name || "Trait"}</div>`;
-        for (const e of g.effects) {
+
+        // Derive implicit options: many catalog entries encode an Option/Choice
+        // effect's candidates as the FOLLOWING sibling rows whose keyword names
+        // the choice (e.g. "Turtle Style [Passive]"). Fold those rows into an
+        // options array so the picker renders (same UX as explicit options).
+        const rawEffects = g.effects;
+        const namedKw = (x) => {
+          const m = String(x.keyword || "").match(/^(.+?)\s*\[/);
+          if (!m) return null;
+          const nm = m[1].trim();
+          return /^(option|choice|multi-option|triggered|passive|permanent|resource|limited)\b/i.test(nm) ? null : nm;
+        };
+        const effectsList = [];
+        for (let i = 0; i < rawEffects.length; i++) {
+          const e = rawEffects[i];
+          if ((e.activationType === "option" || e.activationType === "choice") && !(e.options?.length)) {
+            const opts = [];
+            let j = i + 1;
+            while (j < rawEffects.length) {
+              const cand = rawEffects[j];
+              if (["option", "choice", "multi-option"].includes(cand.activationType)) break;
+              const nm = namedKw(cand);
+              if (!nm) break;
+              opts.push({ name: nm, keyword: cand.keyword, text: cand.text, activationType: cand.activationType });
+              j++;
+            }
+            if (opts.length >= 2) {
+              effectsList.push({ ...e, options: opts, derivedOptions: true });
+              i = j - 1;
+              continue;
+            }
+          }
+          effectsList.push(e);
+        }
+
+        let lastOptionKey = "";
+        for (const e of effectsList) {
           const effectKey = `${g.name || "trait"}_${e.level || 0}`;
 
           if (e.activationType === "option" && e.options?.length > 0) {
             // Single option: dropdown
             const selected = transSelections[effectKey] || "";
+            lastOptionKey = effectKey;
             h += `<div class="tf-trait-effect-row">
               <span class="tf-trait-keyword-badge option">${e.keyword || "Option"}</span>
               <span class="tf-trait-effect-text">${e.text || ""}</span>
               <div class="tf-option-controls">
                 <select class="tf-option-select option-select" data-trans-index="${transIndex}" data-effect-key="${effectKey}">
+                  ${e.derivedOptions ? `<option value="" ${selected ? "" : "selected"}>-- Choose --</option>` : ""}
                   ${e.options.map(o => `<option value="${o.name}" ${o.name === selected ? "selected" : ""}>${o.name}</option>`).join("")}
                 </select>
                 ${e.options.map(o => {
-                  const isSelected = o.name === selected || (!selected && o === e.options[0]);
+                  const isSelected = o.name === selected || (!selected && !e.derivedOptions && o === e.options[0]);
                   return isSelected ? `<div class="tf-option-detail">
                     <span class="tf-option-keyword">[${o.keyword || o.activationType || ""}]</span>
                     <span class="tf-option-text">${o.text || ""}</span>
                   </div>` : "";
                 }).join("")}
+                ${(e.derivedOptions && !selected) ? '<div class="tf-option-pending">Choose an option to lock it in.</div>' : ""}
               </div>
             </div>`;
 
@@ -9247,8 +9371,10 @@ export class DBUCharacterSheet extends ActorSheet {
             </div>`;
 
           } else if (e.activationType === "choice" && e.options?.length > 0) {
-            // Choice: conditional display based on previous option
-            const parentKey = e.parentOptionKey || "";
+            // Choice: conditional display based on previous option.
+            // Derived choices (options folded from sibling rows) key off the
+            // nearest preceding Option effect in the same trait group.
+            const parentKey = e.parentOptionKey || (e.derivedOptions ? lastOptionKey : "");
             const parentSelected = transSelections[parentKey] || "";
             const matchingOpt = e.options.find(o => o.name === parentSelected);
             h += `<div class="tf-trait-effect-row">
@@ -10756,6 +10882,8 @@ export class DBUCharacterSheet extends ActorSheet {
       "system.tracking.energyCharges": 0,
       "system.tracking.diminishingDefense": 0,
       "system.tracking.diminishingOffense": 0,
+      // Cruelty Stacks are lost at the end of your turns (Cruel Intentions)
+      "system.tracking.crueltyStacks": 0,
       // Reset Experienced Fighter for new round
       "system.experiencedFighter.mode": "none",
       "system.experiencedFighter.usedThisRound": false,
@@ -11295,6 +11423,7 @@ export class DBUCharacterSheet extends ActorSheet {
       // Reset talent stance shifts
       "system.combatTabState.talentTempMods": {},
       "system.tracking.patienceStacks": 0,
+      "system.tracking.crueltyStacks": 0,
       // Reset One-Sided Fusion encounter tracking
       "system.fusion.encounterThresholdsCrossed": 0,
       // Reset Hidden weapon quality usage (per-encounter flag)

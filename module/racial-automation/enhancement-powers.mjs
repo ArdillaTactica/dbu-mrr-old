@@ -1897,43 +1897,27 @@ function applyBonusesForKey(key, system, tier, baseTier, G, level, options, entr
 
     case "martial_focus": {
       // ---- Honed Skill: 4 Martial Styles ----
+      // NOTE: the +1(T) AMB itself is applied EARLY in _calculateAttributeModifiers
+      // (via system._mfStyle) so downstream stats (Soak from TE, Haste from AG…)
+      // see it. Threshold-scaling effects are automated via _generateDerivedBuffs
+      // (Strike/Dodge/Wound) and a Soak block in _calculateCombatStats.
       const mfOpt = _findOptionValue(options);
       if (mfOpt) {
         const o = mfOpt.toLowerCase();
         if (o.includes("turtle")) {
           system.aptitudes.martialFocusTurtleStyleActive = true;
-          if (system.attributes.te) {
-            system.attributes.te.modifier += tier;
-            system.attributes.te.totalScore = system.attributes.te.score + system.attributes.te.modifier;
-          }
           entry.bonuses.push(`+${tier} AMB(TE) (Turtle Style)`);
           entry.conditionals.push(`Per threshold below: +${2 * tier} Soak (Turtle Style)`);
         } else if (o.includes("crane")) {
           system.aptitudes.martialFocusCraneStyleActive = true;
-          if (system.attributes.in) {
-            system.attributes.in.modifier += tier;
-            system.attributes.in.totalScore = system.attributes.in.score + system.attributes.in.modifier;
-          }
           entry.bonuses.push(`+${tier} AMB(IN) (Crane Style)`);
           entry.conditionals.push(`Per threshold below: +${tier} Strike (Crane Style)`);
         } else if (o.includes("wolf")) {
           system.aptitudes.martialFocusWolfStyleActive = true;
-          if (system.attributes.ag) {
-            system.attributes.ag.modifier += tier;
-            system.attributes.ag.totalScore = system.attributes.ag.score + system.attributes.ag.modifier;
-          }
           entry.bonuses.push(`+${tier} AMB(AG) (Wolf Style)`);
           entry.conditionals.push(`Per threshold below: +${tier} Dodge (Wolf Style)`);
         } else if (o.includes("dragon")) {
           system.aptitudes.martialFocusDragonStyleActive = true;
-          if (system.attributes.fo) {
-            system.attributes.fo.modifier += tier;
-            system.attributes.fo.totalScore = system.attributes.fo.score + system.attributes.fo.modifier;
-          }
-          if (system.attributes.ma) {
-            system.attributes.ma.modifier += tier;
-            system.attributes.ma.totalScore = system.attributes.ma.score + system.attributes.ma.modifier;
-          }
           entry.bonuses.push(`+${tier} AMB(FO/MA) (Dragon Style)`);
           entry.conditionals.push(`Per threshold below: +${2 * tier} Wound (Dragon Style)`);
         }

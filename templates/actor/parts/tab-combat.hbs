@@ -587,6 +587,30 @@
     {{!-- Tab: Racial --}}
     <div class="tb-tab-content {{#if (eq combatTabsState.traitsBonusesTab 'racial')}}active{{/if}}" data-tab-content="racial">
 
+      {{!-- ==================== CRUELTY TRACKER (Cruel Intentions) ==================== --}}
+      {{#if crueltyTracker}}
+      <div class="battle-born-tracker cruelty-tracker">
+        <div class="bb-header">
+          <i class="fas fa-skull"></i> Cruelty Stacks
+          <span class="bb-total">{{crueltyTracker.value}}/{{crueltyTracker.max}}</span>
+        </div>
+        <div class="bb-allocations">
+          <div class="bb-row">
+            <span class="bb-label">Cruelty</span>
+            <button type="button" class="cruelty-decrement" {{#if (eq crueltyTracker.value 0)}}disabled{{/if}}><i class="fas fa-minus"></i></button>
+            <div class="bb-pips">
+              <span class="bb-pip {{#if (gte crueltyTracker.value 1)}}filled{{/if}}"></span>
+              <span class="bb-pip {{#if (gte crueltyTracker.value 2)}}filled{{/if}}"></span>
+              <span class="bb-pip {{#if (gte crueltyTracker.value 3)}}filled{{/if}}"></span>
+            </div>
+            <button type="button" class="cruelty-increment" {{#if (gte crueltyTracker.value crueltyTracker.max)}}disabled{{/if}}><i class="fas fa-plus"></i></button>
+            <span class="bb-bonus">+{{crueltyTracker.woundBonus}} Wound</span>
+          </div>
+        </div>
+        <div class="bb-rules-note">Cruel Intentions: gain 1 stack when you hit with an Attacking Maneuver (max 3). +1(T) Wound per stack. All stacks are lost at the end of your turn (auto-cleared on Next Round). Survivor: maximize on a passed Steadfast Check.</div>
+      </div>
+      {{/if}}
+
       {{!-- ==================== BATTLE BORN TRACKER (Saiyan only) ==================== --}}
       {{#if isSaiyan}}
       <div class="battle-born-tracker">

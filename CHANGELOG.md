@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.5] - 2026-08-07
+
+- Mejoras en la automatización de poderes de mejora (`enhancement-powers`).
+- Correcciones en la lógica del actor y en la hoja de personaje.
+- Mejoras en las pestañas de auras, combate, técnicas y rasgos.
+- Ajustes de estilos (CSS).
+
 ## [1.0.4] - 2026-08-04
 
 - Nuevos catálogos: rasgos cibernéticos (`cybernetic-traits`), meta-rasgos

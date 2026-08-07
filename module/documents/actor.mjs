@@ -423,6 +423,21 @@ export class DBUActor extends Actor {
       system._knowledgeScScoreBonus = kScScore;
     }
 
+    // Martial Focus — Honed Skill Option (permanent choice, stored via the
+    // transformation traits dialog): +1(T) AMB to the chosen style's attribute.
+    // Turtle=TE, Crane=IN, Wolf=AG, Dragon=FO & MA (transformations-catalog).
+    {
+      const mfIdx = (system.transformations || []).findIndex(t => t?.active && t?.catalogKey === "martial_focus");
+      system._mfStyle = mfIdx >= 0
+        ? (system.transformationOptionSelections?.[String(mfIdx)]?.["Honed Skill_1"] || null)
+        : null;
+    }
+    const MF_STYLE_ATTRS = {
+      "Turtle Style": ["te"], "Crane Style": ["in"],
+      "Wolf Style": ["ag"], "Dragon Style": ["fo", "ma"]
+    };
+    const _mfAttrs = system._mfStyle ? (MF_STYLE_ATTRS[system._mfStyle] || []) : [];
+
     // Unification (Unify Maneuver): each Secondary Character granted 2(bT of the
     // Secondary) Attribute Points, allocated to Attribute SCORES (tracked per
     // secondary so Forced Spirit Fission can remove them).
@@ -617,6 +632,9 @@ export class DBUActor extends Actor {
           }
         }
       }
+
+      // Martial Focus — Honed Skill: +1(T) AMB to the chosen style's attribute
+      if (_mfAttrs.includes(key)) modifier += tier;
 
       // Store results
       attr.modifier = modifier;
@@ -1597,6 +1615,13 @@ export class DBUActor extends Actor {
     // Converts hardcoded talent/state bonuses into unified buff entries so
     // _getBuffTotal("Strike"/"Dodge"/"Wound") aggregates everything.
     this._generateDerivedBuffs(system);
+
+    // Martial Focus — Honed Skill Turtle: +2(T) Soak per Health Threshold below
+    // (doubled while Martial Mastery is also active).
+    if (system._mfStyle === "Turtle Style" && (system.thresholds?.crossedCount || 0) > 0) {
+      const mmActiveT = (system.transformations || []).some(t => t?.active && t?.catalogKey === "martial_mastery");
+      system.status.soak += 2 * tier * system.thresholds.crossedCount * (mmActiveT ? 2 : 1);
+    }
 
     // --- Active temp effects on passive stats (activable automation engine) ---
     for (const fx of (system.combatTabState?.activeTempEffects || [])) {
@@ -3265,6 +3290,30 @@ export class DBUActor extends Actor {
       buffs.push({ active: true, effect: "Strike", bT: 1, T: 0, flat: 0, source: "Balanced Mind" });
       buffs.push({ active: true, effect: "Dodge", bT: 1, T: 0, flat: 0, source: "Balanced Mind" });
       buffs.push({ active: true, effect: "Wound", bT: 1, T: 0, flat: 0, source: "Balanced Mind" });
+    }
+
+    // Martial Focus — Honed Skill second effect: per Health Threshold below,
+    // Crane +1(T) Strike / Wolf +1(T) Dodge / Dragon +2(T) Wound. While
+    // Martial Mastery is also active, these bonuses are doubled (its L9 note).
+    {
+      const mfStyle = system._mfStyle;
+      const mfThresholds = system.thresholds?.crossedCount || 0;
+      if (mfStyle && mfThresholds > 0) {
+        const mmActive = (system.transformations || []).some(t => t?.active && t?.catalogKey === "martial_mastery");
+        const mult = mmActive ? 2 : 1;
+        if (mfStyle === "Crane Style") buffs.push({ active: true, effect: "Strike", T: mfThresholds * mult, bT: 0, flat: 0, source: "Martial Focus (Crane)" });
+        if (mfStyle === "Wolf Style") buffs.push({ active: true, effect: "Dodge", T: mfThresholds * mult, bT: 0, flat: 0, source: "Martial Focus (Wolf)" });
+        if (mfStyle === "Dragon Style") buffs.push({ active: true, effect: "Wound", T: 2 * mfThresholds * mult, bT: 0, flat: 0, source: "Martial Focus (Dragon)" });
+      }
+    }
+
+    // Cruel Intentions (Arcosian): +1(T) Wound per Cruelty Stack (max 3,
+    // stacks lost at the end of your turns — tracked in the Combat tab).
+    {
+      const cruelty = Math.min(3, system.tracking?.crueltyStacks || 0);
+      if (cruelty > 0 && (system.racialTraits || []).includes("db303ead803660ff")) {
+        buffs.push({ active: true, effect: "Wound", T: cruelty, bT: 0, flat: 0, source: "Cruelty Stacks" });
+      }
     }
 
     // --- Maneuver Buffs ---

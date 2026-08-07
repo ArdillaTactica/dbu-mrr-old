@@ -103,6 +103,42 @@
           </div>
           {{/each}}
         </div>
+        {{#if isDivergentEvolution}}
+        <div class="pb-bestial-section">
+          <div class="option-limit">Divergent Evolution — granted Meta Trait{{#unless divergentChosen}} (choose one){{/unless}}</div>
+          <div class="bestial-option-row">
+            <select class="de-meta-select">
+              <option value="">-- Choose Meta Trait --</option>
+              {{#each divergentOptions}}
+              <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
+              {{/each}}
+            </select>
+            {{#if divergentChosen.options}}
+            <select class="de-meta-config" data-field="option">
+              <option value="">-- Option --</option>
+              {{#each divergentChosen.options}}
+              <option value="{{key}}" {{#if selected}}selected{{/if}}>{{name}}</option>
+              {{/each}}
+            </select>
+            {{/if}}
+            {{#if divergentChosen.bestialChoice}}
+            <select class="de-meta-config" data-field="bestialTrait">
+              <option value="">-- Bestial Trait --</option>
+              {{#each divergentChosen.bestialChoice}}
+              <option value="{{key}}" {{#if selected}}selected{{/if}}>{{name}}</option>
+              {{/each}}
+            </select>
+            {{/if}}
+          </div>
+          {{#if divergentChosen}}
+          <div class="de-meta-effects">
+            {{#each divergentChosen.effects}}
+            <div class="de-meta-effect-line">{{this}}</div>
+            {{/each}}
+          </div>
+          {{/if}}
+        </div>
+        {{/if}}
         {{#if isPartBeast}}
         <div class="pb-bestial-section">
           <div class="option-limit">Bestial Traits — choose 2 ({{partBeastCount}}/2 selected)</div>

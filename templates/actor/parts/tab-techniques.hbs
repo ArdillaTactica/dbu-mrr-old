@@ -56,7 +56,7 @@
         <span class="tech-name-display">{{name}}</span>
         {{#if isGained}}<span class="gained-badge"><i class="fas fa-link"></i> Gained from: {{gainedFrom}}</span>{{/if}}
         <span class="tech-type-badge">{{type}}</span>
-        <span class="tech-tp-badge">TP: {{tpCost}}/{{tpMax}}</span>
+        <span class="tech-tp-badge {{#if tpOverLimit}}tp-badge-over{{/if}}" title="Max TP per Signature Technique at your base Tier of Power (25/30/40/50)">TP: {{tpCost}}/{{tpMax}}</span>
         {{#unless isGained}}
         <button type="button" class="delete-btn" data-action="delete-technique" data-technique-id="{{id}}">
           <i class="fas fa-trash"></i>
@@ -116,7 +116,7 @@
           </div>
           <div class="tech-cost-row">
             <label>TP Max</label>
-            <input type="number" class="tech-input cost-input" data-tech-id="{{id}}" data-field="tpMax" value="{{tpMax}}" min="0" />
+            <span class="cost-value {{#if tpOverLimit}}tp-badge-over{{/if}}" title="Max TP per Signature Technique at your base Tier of Power: 25 (ToP 1), 30 (ToP 2), 40 (ToP 3), 50 (ToP 4+)">{{tpMax}}</span>
           </div>
           <div class="tech-cost-row">
             <label>Free TP</label>

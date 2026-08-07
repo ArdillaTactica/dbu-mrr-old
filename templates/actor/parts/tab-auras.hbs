@@ -42,7 +42,7 @@
         <span class="aura-name-display">{{name}}</span>
         {{#if isGained}}<span class="gained-badge"><i class="fas fa-link"></i> Gained from: {{gainedFrom}}</span>{{/if}}
         <span class="aura-type-badge">{{type}}</span>
-        <span class="aura-tp-badge">TP: {{tpCost}}/{{tpMax}}</span>
+        <span class="aura-tp-badge {{#if tpOverLimit}}tp-badge-over{{/if}}" title="Max TP per Aura at your base Tier of Power (25/30/40/50)">TP: {{tpCost}}/{{tpMax}}</span>
         {{#unless isGained}}
         <button type="button" class="delete-btn" data-action="delete-aura" data-aura-id="{{id}}">
           <i class="fas fa-trash"></i>
@@ -85,7 +85,7 @@
           </div>
           <div class="aura-cost-row">
             <label>TP Max</label>
-            <input type="number" class="aura-input" data-aura-id="{{id}}" data-field="tpMax" value="{{tpMax}}" min="0" />
+            <span class="aura-tp-display {{#if tpOverLimit}}tp-badge-over{{/if}}" title="Max TP per Aura at your base Tier of Power: 25 (ToP 1), 30 (ToP 2), 40 (ToP 3), 50 (ToP 4+)">{{tpMax}}</span>
           </div>
           <div class="aura-cost-row">
             <label>Free TP</label>

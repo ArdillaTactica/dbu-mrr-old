@@ -1,4 +1,1 @@
-2026/08/03-10:57:03.974 87c Log #30: 0 ops saved to Table #31 OK
-2026/08/03-10:57:03.984 87c Archiving C:\Users\marce\AppData\Local\FoundryVTT\Data\systems\DBU-MRR-OLD\packs\racial-traits/000030.log: OK
-2026/08/03-10:57:03.988 87c Archiving C:\Users\marce\AppData\Local\FoundryVTT\Data\systems\DBU-MRR-OLD\packs\racial-traits/MANIFEST-000029: OK
-2026/08/03-10:57:03.989 87c **** Repaired leveldb C:\Users\marce\AppData\Local\FoundryVTT\Data\systems\DBU-MRR-OLD\packs\racial-traits; recovered 0 files; 0 bytes. Some data may have been lost. ****
+2026/08/03-10:57:03.994 87c Delete type=3 #1
