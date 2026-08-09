@@ -15015,3 +15015,69 @@
   font-size: 11px;
   margin-right: 6px;
 }
+
+/* Surge Maneuver panel (Combat tab) + inline buttons (Main tab) */
+.surge-panel .surge-status {
+  margin-left: auto;
+  padding: 1px 8px;
+  background: rgba(76, 175, 80, 0.12);
+  border: 1px solid #4caf50;
+  border-radius: 2px;
+  color: #81c784;
+  font-size: 9.5px;
+  font-weight: 600;
+}
+.surge-panel .surge-status.surge-used {
+  background: rgba(90, 106, 122, 0.15);
+  border-color: #5a6a7a;
+  color: #8899aa;
+}
+.surge-buttons {
+  display: flex;
+  gap: 8px;
+  padding: 6px 8px;
+  flex-wrap: wrap;
+}
+.surge-btn {
+  flex: 1 1 180px;
+  width: auto;
+  padding: 4px 10px;
+  background: linear-gradient(90deg, #006d9e 0%, #00bfff 150%);
+  border: 0;
+  border-radius: 3px;
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  line-height: 1.7;
+}
+.surge-btn[data-surge-type="healing"] {
+  background: linear-gradient(90deg, #2e6b31 0%, #4caf50 150%);
+}
+.surge-btn .surge-formula {
+  display: block;
+  font-size: 9.5px;
+  font-weight: 400;
+  opacity: 0.85;
+}
+.surge-use-btn {
+  width: auto;
+  padding: 0 6px;
+  margin-left: 5px;
+  background: rgba(0, 191, 255, 0.12);
+  border: 1px solid #2a4a6a;
+  border-radius: 3px;
+  color: #00bfff;
+  font-size: 10px;
+  cursor: pointer;
+  line-height: 1.5;
+}
+.dp-buffs-note {
+  padding: 3px 6px;
+  font-size: 9.5px;
+  color: #8899aa;
+  font-style: italic;
+}
+.dp-buffs-note b {
+  color: #b9c4cf;
+}

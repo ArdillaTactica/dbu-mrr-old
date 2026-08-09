@@ -1,0 +1,315 @@
+{{!-- Per-transformation bonuses & activables: MP / EP / AF / LF (rendered in the Transformations tab) --}}
+        {{#if hasManifestedPowers}}
+        <div class="mp-entries">
+          {{#each manifestedPowerBonuses.entries}}
+          <div class="mp-entry">
+            <div class="mp-entry-header">
+              <span class="mp-name">{{this.name}}</span>
+              <span class="mp-stacks">Z={{this.stacks}}</span>
+            </div>
+            {{#if this.bonuses.length}}
+            <div class="mp-bonus-list bonus-cards-grid">
+              {{#each this.bonuses}}
+              <div class="bonus-card cat-utility">
+                <div class="bonus-card-value" style="font-size:13px">{{this}}</div>
+              </div>
+              {{/each}}
+            </div>
+            {{/if}}
+            {{#if this.conditionals.length}}
+            <div class="mp-conditional-list bonus-cards-grid">
+              {{#each this.conditionals}}
+              <div class="bonus-card cat-conditional">
+                <div class="bonus-card-value" style="font-size:12px">{{this}}</div>
+              </div>
+              {{/each}}
+            </div>
+            {{/if}}
+            {{#if this.perRound.length}}
+            <div class="mp-perround-list bonus-cards-grid">
+              {{#each this.perRound}}
+              <div class="bonus-card cat-perround">
+                <div class="bonus-card-header"><i class="fas fa-sync-alt"></i></div>
+                <div class="bonus-card-value" style="font-size:12px">{{this.label}}</div>
+              </div>
+              {{/each}}
+            </div>
+            {{/if}}
+          </div>
+          {{/each}}
+        </div>
+
+        {{!-- Per-Round Resources summary --}}
+        {{#if mpPerRoundEffects.length}}
+        <div class="mp-perround-panel">
+          <div class="mp-perround-header">Per-Round Generation</div>
+          {{#each mpPerRoundEffects}}
+          <div class="mp-perround-item">
+            <i class="fas fa-sync-alt"></i> {{label}} <small>({{sourceName}})</small>
+          </div>
+          {{/each}}
+        </div>
+        {{/if}}
+
+        {{!-- Totals summary --}}
+        <div class="mp-totals">
+          <div class="mp-totals-header">Accumulated Totals</div>
+          <div class="mp-totals-grid">
+            {{#if manifestedPowerBonuses.totals.soak}}<span class="mp-total">Soak: {{manifestedPowerBonuses.totals.soak}}</span>{{/if}}
+            {{#if manifestedPowerBonuses.totals.defense}}<span class="mp-total">Defense: {{manifestedPowerBonuses.totals.defense}}</span>{{/if}}
+            {{#if manifestedPowerBonuses.totals.dr}}<span class="mp-total">DR: {{manifestedPowerBonuses.totals.dr}}</span>{{/if}}
+            {{#if manifestedPowerBonuses.totals.might}}<span class="mp-total">Might: {{manifestedPowerBonuses.totals.might}}</span>{{/if}}
+            {{#if manifestedPowerBonuses.totals.strike}}<span class="mp-total">Strike: {{manifestedPowerBonuses.totals.strike}}</span>{{/if}}
+            {{#if manifestedPowerBonuses.totals.dodge}}<span class="mp-total">Dodge: {{manifestedPowerBonuses.totals.dodge}}</span>{{/if}}
+            {{#if manifestedPowerBonuses.totals.wound}}<span class="mp-total">Wound: {{manifestedPowerBonuses.totals.wound}}</span>{{/if}}
+            {{#if manifestedPowerBonuses.totals.combatRolls}}<span class="mp-total">Combat Rolls: {{manifestedPowerBonuses.totals.combatRolls}}</span>{{/if}}
+            {{#if manifestedPowerBonuses.totals.lpMax}}<span class="mp-total">Max LP: {{manifestedPowerBonuses.totals.lpMax}}</span>{{/if}}
+            {{#if manifestedPowerBonuses.totals.kpMax}}<span class="mp-total">Max KP: {{manifestedPowerBonuses.totals.kpMax}}</span>{{/if}}
+            {{#if manifestedPowerBonuses.totals.capacityMax}}<span class="mp-total">Max Cap: {{manifestedPowerBonuses.totals.capacityMax}}</span>{{/if}}
+            {{#if manifestedPowerBonuses.totals.perception}}<span class="mp-total">Perception: {{manifestedPowerBonuses.totals.perception}}</span>{{/if}}
+            {{#if manifestedPowerBonuses.totals.intimidation}}<span class="mp-total">Intimidation: {{manifestedPowerBonuses.totals.intimidation}}</span>{{/if}}
+            {{#if manifestedPowerBonuses.totals.steadfast}}<span class="mp-total">Steadfast: +{{manifestedPowerBonuses.totals.steadfast}}</span>{{/if}}
+            {{#if manifestedPowerBonuses.totals.stressBonus}}<span class="mp-total">Stress: +{{manifestedPowerBonuses.totals.stressBonus}}</span>{{/if}}
+            {{#if manifestedPowerBonuses.totals.allSaves}}<span class="mp-total">All Saves: {{manifestedPowerBonuses.totals.allSaves}}</span>{{/if}}
+          </div>
+        </div>
+        {{else}}
+        <div class="empty-message">No manifested powers active.</div>
+        {{/if}}
+        {{#if evilAuraActive}}
+        <div class="evil-aura-panel">
+          <div class="evil-aura-header">
+            <i class="fas fa-skull"></i> Evil Aura
+            <span class="evil-points">EP: <strong>{{evilPoints}}</strong></span>
+          </div>
+          <div class="evil-aura-controls">
+            <button type="button" data-action="evil-aura-points-add"  class="action-btn"><i class="fas fa-plus"></i> +1 EP</button>
+            <button type="button" data-action="evil-aura-points-sub"  class="action-btn"><i class="fas fa-minus"></i> -1 EP</button>
+            {{#if evilTechsActive}}
+              <button type="button" data-action="evil-aura-techs-deactivate" class="action-btn danger">
+                <i class="fas fa-times"></i> Deactivate Evil Techniques
+              </button>
+              <span class="evil-techs-active-badge"><i class="fas fa-check"></i> Active until end of turn</span>
+            {{else}}
+              <button type="button" data-action="evil-aura-techs-activate" class="action-btn primary"
+                      {{#if (lt evilPoints evilAuraTechniqueCost)}}disabled title="Need {{evilAuraTechniqueCost}} EP"{{/if}}>
+                <i class="fas fa-bolt"></i> Activate Evil Techniques (-{{evilAuraTechniqueCost}} EP)
+              </button>
+            {{/if}}
+          </div>
+        </div>
+        {{/if}}
+        {{#if hasEnhancementPowers}}
+        <div class="ep-entries">
+          {{#each enhancementPowerBonuses.entries}}
+          <div class="ep-entry">
+            <div class="ep-entry-header">
+              <span class="ep-name">{{this.name}}</span>
+              <span class="ep-grade">G={{this.grade}}</span>
+            </div>
+            {{#if this.bonuses.length}}
+            <div class="ep-bonus-list bonus-cards-grid">
+              {{#each this.bonuses}}
+              <div class="bonus-card cat-utility">
+                <div class="bonus-card-value" style="font-size:13px">{{this}}</div>
+              </div>
+              {{/each}}
+            </div>
+            {{/if}}
+            {{#if this.conditionals.length}}
+            <div class="ep-conditional-list bonus-cards-grid">
+              {{#each this.conditionals}}
+              <div class="bonus-card cat-conditional">
+                <div class="bonus-card-value" style="font-size:12px">{{this}}</div>
+              </div>
+              {{/each}}
+            </div>
+            {{/if}}
+          </div>
+          {{/each}}
+        </div>
+        {{#if epPerRoundEffects.length}}
+        <div class="tb-perround-panel">
+          <div class="tb-perround-header">Per-Round Generation</div>
+          {{#each epPerRoundEffects}}
+          <div class="tb-perround-item">
+            <i class="fas fa-sync-alt"></i> {{label}} <small>({{sourceName}})</small>
+          </div>
+          {{/each}}
+        </div>
+        {{/if}}
+        {{!-- Totals summary --}}
+        <div class="ep-totals">
+          <div class="ep-totals-header">Accumulated Totals</div>
+          <div class="ep-totals-grid">
+            {{#if enhancementPowerBonuses.totals.soak}}<span class="ep-total">Soak: {{enhancementPowerBonuses.totals.soak}}</span>{{/if}}
+            {{#if enhancementPowerBonuses.totals.defense}}<span class="ep-total">Defense: {{enhancementPowerBonuses.totals.defense}}</span>{{/if}}
+            {{#if enhancementPowerBonuses.totals.dr}}<span class="ep-total">DR: {{enhancementPowerBonuses.totals.dr}}</span>{{/if}}
+            {{#if enhancementPowerBonuses.totals.might}}<span class="ep-total">Might: {{enhancementPowerBonuses.totals.might}}</span>{{/if}}
+            {{#if enhancementPowerBonuses.totals.strike}}<span class="ep-total">Strike: {{enhancementPowerBonuses.totals.strike}}</span>{{/if}}
+            {{#if enhancementPowerBonuses.totals.dodge}}<span class="ep-total">Dodge: {{enhancementPowerBonuses.totals.dodge}}</span>{{/if}}
+            {{#if enhancementPowerBonuses.totals.wound}}<span class="ep-total">Wound: {{enhancementPowerBonuses.totals.wound}}</span>{{/if}}
+            {{#if enhancementPowerBonuses.totals.combatRolls}}<span class="ep-total">Combat Rolls: {{enhancementPowerBonuses.totals.combatRolls}}</span>{{/if}}
+            {{#if enhancementPowerBonuses.totals.lpMax}}<span class="ep-total">Max LP: {{enhancementPowerBonuses.totals.lpMax}}</span>{{/if}}
+            {{#if enhancementPowerBonuses.totals.kpMax}}<span class="ep-total">Max KP: {{enhancementPowerBonuses.totals.kpMax}}</span>{{/if}}
+            {{#if enhancementPowerBonuses.totals.capacityMax}}<span class="ep-total">Max Cap: {{enhancementPowerBonuses.totals.capacityMax}}</span>{{/if}}
+            {{#if enhancementPowerBonuses.totals.speed}}<span class="ep-total">Speed: {{enhancementPowerBonuses.totals.speed}}</span>{{/if}}
+            {{#if enhancementPowerBonuses.totals.steadfast}}<span class="ep-total">Steadfast: {{enhancementPowerBonuses.totals.steadfast}}</span>{{/if}}
+          </div>
+        </div>
+        {{else}}
+        <div class="empty-message">No enhancement powers active.</div>
+        {{/if}}
+        {{#if hasAlternateForms}}
+        <div class="af-entries">
+          {{#each alternateFormBonuses.entries}}
+          <div class="af-entry">
+            <div class="af-entry-header">
+              <span class="af-name">{{this.name}}</span>
+              <span class="af-stage">S={{this.stage}}</span>
+            </div>
+            {{#if this.bonuses.length}}
+            <div class="af-bonus-list bonus-cards-grid">
+              {{#each this.bonuses}}
+              <div class="bonus-card cat-utility">
+                <div class="bonus-card-value" style="font-size:13px">{{this}}</div>
+              </div>
+              {{/each}}
+            </div>
+            {{/if}}
+            {{#if this.conditionals.length}}
+            <div class="af-conditional-list bonus-cards-grid">
+              {{#each this.conditionals}}
+              <div class="bonus-card cat-conditional">
+                <div class="bonus-card-value" style="font-size:12px">{{this}}</div>
+              </div>
+              {{/each}}
+            </div>
+            {{/if}}
+          </div>
+          {{/each}}
+        </div>
+        {{#if afPerRoundEffects.length}}
+        <div class="tb-perround-panel">
+          <div class="tb-perround-header">Per-Round Generation</div>
+          {{#each afPerRoundEffects}}
+          <div class="tb-perround-item">
+            <i class="fas fa-sync-alt"></i> {{label}} <small>({{sourceName}})</small>
+          </div>
+          {{/each}}
+        </div>
+        {{/if}}
+        {{!-- Totals summary --}}
+        <div class="af-totals">
+          <div class="af-totals-header">Accumulated Totals</div>
+          <div class="af-totals-grid">
+            {{#if alternateFormBonuses.totals.soak}}<span class="af-total">Soak: {{alternateFormBonuses.totals.soak}}</span>{{/if}}
+            {{#if alternateFormBonuses.totals.defense}}<span class="af-total">Defense: {{alternateFormBonuses.totals.defense}}</span>{{/if}}
+            {{#if alternateFormBonuses.totals.dr}}<span class="af-total">DR: {{alternateFormBonuses.totals.dr}}</span>{{/if}}
+            {{#if alternateFormBonuses.totals.might}}<span class="af-total">Might: {{alternateFormBonuses.totals.might}}</span>{{/if}}
+            {{#if alternateFormBonuses.totals.strike}}<span class="af-total">Strike: {{alternateFormBonuses.totals.strike}}</span>{{/if}}
+            {{#if alternateFormBonuses.totals.dodge}}<span class="af-total">Dodge: {{alternateFormBonuses.totals.dodge}}</span>{{/if}}
+            {{#if alternateFormBonuses.totals.wound}}<span class="af-total">Wound: {{alternateFormBonuses.totals.wound}}</span>{{/if}}
+            {{#if alternateFormBonuses.totals.combatRolls}}<span class="af-total">Combat Rolls: {{alternateFormBonuses.totals.combatRolls}}</span>{{/if}}
+            {{#if alternateFormBonuses.totals.lpMax}}<span class="af-total">Max LP: {{alternateFormBonuses.totals.lpMax}}</span>{{/if}}
+            {{#if alternateFormBonuses.totals.kpMax}}<span class="af-total">Max KP: {{alternateFormBonuses.totals.kpMax}}</span>{{/if}}
+            {{#if alternateFormBonuses.totals.capacityMax}}<span class="af-total">Max Cap: {{alternateFormBonuses.totals.capacityMax}}</span>{{/if}}
+            {{#if alternateFormBonuses.totals.speed}}<span class="af-total">Speed: {{alternateFormBonuses.totals.speed}}</span>{{/if}}
+            {{#if alternateFormBonuses.totals.initiative}}<span class="af-total">Initiative: {{alternateFormBonuses.totals.initiative}}</span>{{/if}}
+            {{#if alternateFormBonuses.totals.steadfast}}<span class="af-total">Steadfast: {{alternateFormBonuses.totals.steadfast}}</span>{{/if}}
+            {{#if alternateFormBonuses.totals.allSaves}}<span class="af-total">All Saves: {{alternateFormBonuses.totals.allSaves}}</span>{{/if}}
+          </div>
+        </div>
+        {{else}}
+        <div class="empty-message">No alternate forms active.</div>
+        {{/if}}
+        {{#if hasLegendaryForms}}
+        <div class="lf-entries">
+          {{#each legendaryFormBonuses.entries}}
+          <div class="lf-entry">
+            <div class="lf-entry-header">
+              <span class="lf-name">{{this.name}}</span>
+              <span class="lf-grade">G={{this.grade}}</span>
+            </div>
+            {{#if this.bonuses.length}}
+            <div class="lf-bonus-list bonus-cards-grid">
+              {{#each this.bonuses}}
+              <div class="bonus-card cat-utility">
+                <div class="bonus-card-value" style="font-size:13px">{{this}}</div>
+              </div>
+              {{/each}}
+            </div>
+            {{/if}}
+            {{#if this.conditionals.length}}
+            <div class="lf-conditional-list bonus-cards-grid">
+              {{#each this.conditionals}}
+              <div class="bonus-card cat-conditional">
+                <div class="bonus-card-value" style="font-size:12px">{{this}}</div>
+              </div>
+              {{/each}}
+            </div>
+            {{/if}}
+          </div>
+          {{/each}}
+        </div>
+        {{#if lfPerRoundEffects.length}}
+        <div class="tb-perround-panel">
+          <div class="tb-perround-header">Per-Round Generation</div>
+          {{#each lfPerRoundEffects}}
+          <div class="tb-perround-item">
+            <i class="fas fa-sync-alt"></i> {{label}} <small>({{sourceName}})</small>
+          </div>
+          {{/each}}
+        </div>
+        {{/if}}
+        {{!-- Totals summary --}}
+        <div class="lf-totals">
+          <div class="lf-totals-header">Accumulated Totals</div>
+          <div class="lf-totals-grid">
+            {{#if legendaryFormBonuses.totals.soak}}<span class="lf-total">Soak: {{legendaryFormBonuses.totals.soak}}</span>{{/if}}
+            {{#if legendaryFormBonuses.totals.defense}}<span class="lf-total">Defense: {{legendaryFormBonuses.totals.defense}}</span>{{/if}}
+            {{#if legendaryFormBonuses.totals.dr}}<span class="lf-total">DR: {{legendaryFormBonuses.totals.dr}}</span>{{/if}}
+            {{#if legendaryFormBonuses.totals.might}}<span class="lf-total">Might: {{legendaryFormBonuses.totals.might}}</span>{{/if}}
+            {{#if legendaryFormBonuses.totals.strike}}<span class="lf-total">Strike: {{legendaryFormBonuses.totals.strike}}</span>{{/if}}
+            {{#if legendaryFormBonuses.totals.dodge}}<span class="lf-total">Dodge: {{legendaryFormBonuses.totals.dodge}}</span>{{/if}}
+            {{#if legendaryFormBonuses.totals.wound}}<span class="lf-total">Wound: {{legendaryFormBonuses.totals.wound}}</span>{{/if}}
+            {{#if legendaryFormBonuses.totals.combatRolls}}<span class="lf-total">Combat Rolls: {{legendaryFormBonuses.totals.combatRolls}}</span>{{/if}}
+            {{#if legendaryFormBonuses.totals.lpMax}}<span class="lf-total">Max LP: {{legendaryFormBonuses.totals.lpMax}}</span>{{/if}}
+            {{#if legendaryFormBonuses.totals.kpMax}}<span class="lf-total">Max KP: {{legendaryFormBonuses.totals.kpMax}}</span>{{/if}}
+            {{#if legendaryFormBonuses.totals.capacityMax}}<span class="lf-total">Max Cap: {{legendaryFormBonuses.totals.capacityMax}}</span>{{/if}}
+            {{#if legendaryFormBonuses.totals.speed}}<span class="lf-total">Speed: {{legendaryFormBonuses.totals.speed}}</span>{{/if}}
+            {{#if legendaryFormBonuses.totals.initiative}}<span class="lf-total">Initiative: {{legendaryFormBonuses.totals.initiative}}</span>{{/if}}
+            {{#if legendaryFormBonuses.totals.steadfast}}<span class="lf-total">Steadfast: {{legendaryFormBonuses.totals.steadfast}}</span>{{/if}}
+            {{#if legendaryFormBonuses.totals.allSaves}}<span class="lf-total">All Saves: {{legendaryFormBonuses.totals.allSaves}}</span>{{/if}}
+          </div>
+        </div>
+        {{else}}
+        <div class="empty-message">No legendary forms active.</div>
+        {{/if}}
+
+        {{!-- Legendary Traits (Permanent) - migrated from combat-grid --}}
+        {{#if legendaryTraitsCombat.hasBonuses}}
+        <div class="lt-combat-panel">
+          <div class="section-header">
+            <i class="fas fa-crown"></i> Legendary Traits (Permanent)
+          </div>
+          <div class="lt-combat-grid">
+            {{#each legendaryTraitsCombat.entries}}
+            <div class="lt-combat-entry">
+              <div class="lt-combat-name">{{name}} <small>({{sourceName}})</small></div>
+              {{#if bonuses.length}}
+              <div class="lt-combat-bonuses">
+                {{#each bonuses}}<span class="lt-combat-bonus">{{this}}</span>{{/each}}
+              </div>
+              {{/if}}
+              {{#if conditionals.length}}
+              <div class="lt-combat-conditionals">
+                {{#each conditionals}}<span class="lt-combat-conditional">{{this}}</span>{{/each}}
+              </div>
+              {{/if}}
+            </div>
+            {{/each}}
+          </div>
+          {{!-- Legendary Trait triggered effects now in Available Resources --}}
+        </div>
+        {{/if}}

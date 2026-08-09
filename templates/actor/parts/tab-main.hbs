@@ -170,9 +170,15 @@
           </tr>
           <tr>
             <td class="status-label">Healing Surge</td>
-            <td class="status-value">{{system.status.healingSurge}}</td>
+            <td class="status-value">
+              {{system.status.healingSurge}}
+              <button type="button" class="surge-use-btn" data-action="use-surge" data-surge-type="healing" title="Use a Healing Surge (Surge Maneuver, 1/Encounter, Instant): regain {{system.status.healingSurge}} LP"><i class="fas fa-heart"></i></button>
+            </td>
             <td class="status-label">Power Surge Ki</td>
-            <td class="status-value">{{system.status.powerSurgeKi}}</td>
+            <td class="status-value">
+              {{system.status.powerSurgeKi}}
+              <button type="button" class="surge-use-btn" data-action="use-surge" data-surge-type="power" title="Use a Power Surge (Surge Maneuver, 1/Encounter, Instant): regain {{system.status.powerSurgeKi}} KP and {{system.status.powerSurgeCapacity}} Capacity"><i class="fas fa-bolt"></i></button>
+            </td>
           </tr>
           <tr>
             <td class="status-label">Current Size</td>

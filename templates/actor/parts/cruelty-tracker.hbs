@@ -1,0 +1,22 @@
+{{!-- Cruelty Stacks tracker (Cruel Intentions) — shared by the Combat tab and the Traits tab racial section --}}
+{{#if crueltyTracker}}
+<div class="battle-born-tracker cruelty-tracker">
+  <div class="bb-header">
+    <i class="fas fa-skull"></i> Cruelty Stacks
+    <span class="bb-total">{{crueltyTracker.value}}/{{crueltyTracker.max}}</span>
+  </div>
+  <div class="bb-allocations">
+    <div class="bb-row">
+      <span class="bb-label">Cruelty</span>
+      <button type="button" class="cruelty-decrement" {{#if (eq crueltyTracker.value 0)}}disabled{{/if}}><i class="fas fa-minus"></i></button>
+      <div class="bb-pips">
+        {{#each crueltyTracker.pips}}<span class="bb-pip {{#if filled}}filled{{/if}}"></span>{{/each}}
+      </div>
+      <button type="button" class="cruelty-increment" {{#if (gte crueltyTracker.value crueltyTracker.max)}}disabled{{/if}}><i class="fas fa-plus"></i></button>
+      <span class="bb-bonus">+{{crueltyTracker.woundBonus}} Wound</span>
+      {{#if crueltyTracker.superEvolution}}<span class="bb-bonus" title="Super Evolution: maximum Cruelty Stacks raised to 6">max 6 (Super Evolution)</span>{{/if}}
+    </div>
+  </div>
+  <div class="bb-rules-note">Cruel Intentions: gain 1 stack when you hit with an Attacking Maneuver (max {{crueltyTracker.max}}). +1(T) Wound per stack. All stacks are lost at the end of your turn (auto-cleared on Next Round). Survivor: maximize on a passed Steadfast Check.</div>
+</div>
+{{/if}}

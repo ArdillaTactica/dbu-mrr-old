@@ -23,6 +23,9 @@ export async function preloadHandlebarsTemplates() {
     "systems/DBU-MRR-OLD/templates/actor/parts/tab-adversary.hbs",
     "systems/DBU-MRR-OLD/templates/actor/parts/tab-downtime.hbs",
     "systems/DBU-MRR-OLD/templates/actor/parts/tab-tf-customize.hbs",
+    "systems/DBU-MRR-OLD/templates/actor/parts/combat-racial-bonuses.hbs",
+    "systems/DBU-MRR-OLD/templates/actor/parts/combat-transformation-bonuses.hbs",
+    "systems/DBU-MRR-OLD/templates/actor/parts/cruelty-tracker.hbs",
     "systems/DBU-MRR-OLD/templates/actor/battle-jacket.hbs",
     "systems/DBU-MRR-OLD/templates/actor/parts/tab-battlejacket.hbs"
   ];

@@ -1,0 +1,1000 @@
+{{!-- Racial combat bonuses, trackers & activables (rendered in the Traits tab) --}}
+
+      {{!-- ==================== CRUELTY TRACKER (Cruel Intentions) ==================== --}}
+      {{> "systems/DBU-MRR-OLD/templates/actor/parts/cruelty-tracker.hbs"}}
+
+      {{!-- ==================== BATTLE BORN TRACKER (Saiyan only) ==================== --}}
+      {{#if isSaiyan}}
+      <div class="battle-born-tracker">
+        <div class="bb-header">
+          <i class="fas fa-fist-raised"></i> Battle Born Tracker
+          <span class="bb-total">Total: {{system.battleBorn.total}}/{{system.battleBorn.maxTotal}}</span>
+          <label class="bb-undying-toggle">
+            <input type="checkbox" name="system.battleBorn.undying" {{#if system.battleBorn.undying}}checked{{/if}} />
+            Undying L3 (max 3)
+          </label>
+        </div>
+        <div class="bb-allocations">
+          <div class="bb-row" data-bb-type="strike">
+            <span class="bb-label">Strike</span>
+            <button type="button" class="bb-decrement" data-bb-type="strike" {{#if (eq system.battleBorn.strike 0)}}disabled{{/if}}><i class="fas fa-minus"></i></button>
+            <div class="bb-pips">
+              {{#each bbStrikePips}}<span class="bb-pip {{#if filled}}filled{{/if}}"></span>{{/each}}
+            </div>
+            <button type="button" class="bb-increment" data-bb-type="strike" {{#if (gte system.battleBorn.strike system.battleBorn.cap)}}disabled{{/if}}><i class="fas fa-plus"></i></button>
+            <span class="bb-bonus">+{{system.battleBorn.strikeBonus}}</span>
+          </div>
+          <div class="bb-row" data-bb-type="dodge">
+            <span class="bb-label">Dodge</span>
+            <button type="button" class="bb-decrement" data-bb-type="dodge" {{#if (eq system.battleBorn.dodge 0)}}disabled{{/if}}><i class="fas fa-minus"></i></button>
+            <div class="bb-pips">
+              {{#each bbDodgePips}}<span class="bb-pip {{#if filled}}filled{{/if}}"></span>{{/each}}
+            </div>
+            <button type="button" class="bb-increment" data-bb-type="dodge" {{#if (gte system.battleBorn.dodge system.battleBorn.cap)}}disabled{{/if}}><i class="fas fa-plus"></i></button>
+            <span class="bb-bonus">+{{system.battleBorn.dodgeBonus}}</span>
+          </div>
+          <div class="bb-row" data-bb-type="wound">
+            <span class="bb-label">Wound</span>
+            <button type="button" class="bb-decrement" data-bb-type="wound" {{#if (eq system.battleBorn.wound 0)}}disabled{{/if}}><i class="fas fa-minus"></i></button>
+            <div class="bb-pips">
+              {{#each bbWoundPips}}<span class="bb-pip {{#if filled}}filled{{/if}}"></span>{{/each}}
+            </div>
+            <button type="button" class="bb-increment" data-bb-type="wound" {{#if (gte system.battleBorn.wound system.battleBorn.cap)}}disabled{{/if}}><i class="fas fa-plus"></i></button>
+            <span class="bb-bonus">+{{system.battleBorn.woundBonus}}</span>
+          </div>
+        </div>
+
+        {{!-- Derived Bonuses --}}
+        {{#if hasRacialBonuses}}
+        <div class="bb-derived">
+          <div class="bonus-cards-grid">
+            {{#if racialBonuses.has.primitiveDurability}}
+            <div class="bonus-card cat-armor" title="Primitive Durability (Battle Born)">
+              <div class="bonus-card-header"><i class="fas fa-shield-alt"></i> Primitive Dur.</div>
+              <div class="bonus-card-value">+{{racialBonuses.primitiveDurabilitySoak}}</div>
+              <div class="bonus-card-stat">Soak</div>
+            </div>
+            {{/if}}
+            {{#if racialBonuses.has.greaterPotential}}
+            <div class="bonus-card cat-offense" title="Greater Potential (Battle Born)">
+              <div class="bonus-card-header"><i class="fas fa-fire"></i> Greater Pot.</div>
+              <div class="bonus-card-value">+{{racialBonuses.greaterPotentialWound}}</div>
+              <div class="bonus-card-stat">Wound</div>
+              {{#if (eq racialBonuses.greaterPotentialWound 0)}}<div class="bonus-card-note">need 4+ stacks</div>{{/if}}
+            </div>
+            {{/if}}
+            {{#if racialBonuses.has.powerfulPhysique}}
+            <div class="bonus-card cat-armor" title="Powerful Physique (Battle Born)">
+              <div class="bonus-card-header"><i class="fas fa-dumbbell"></i> Powerful Phys.</div>
+              <div class="bonus-card-value">+{{racialBonuses.powerfulPhysiqueSoak}}</div>
+              <div class="bonus-card-stat">Soak</div>
+            </div>
+            {{/if}}
+            {{#if racialBonuses.has.warriorsPride}}
+            <div class="bonus-card cat-saves" title="Warrior's Pride (Battle Born)">
+              <div class="bonus-card-header"><i class="fas fa-crown"></i> Warrior's Pride</div>
+              <div class="bonus-card-value">+{{racialBonuses.warriorsPrideBonus}}</div>
+              <div class="bonus-card-stat">Cognitive Save</div>
+            </div>
+            {{/if}}
+          </div>
+        </div>
+        {{/if}}
+      </div>
+      {{/if}}
+
+      {{!-- ==================== EARTHLING TRACKER (Earthling only) ==================== --}}
+      {{#if isEarthling}}
+      <div class="earthling-tracker">
+        <div class="earthling-header">
+          <i class="fas fa-user-shield"></i> Earthling Traits
+        </div>
+
+        {{!-- Experienced Fighter Mode Selector --}}
+        {{#if earthlingBonuses.has.experiencedFighter}}
+        <div class="ef-section">
+          <div class="ef-label">
+            Experienced Fighter
+            <span class="ef-cost">Cost: {{earthlingBonuses.efKiCost}} Ki</span>
+            {{#if efUsedThisRound}}<span class="ef-lock"><i class="fas fa-lock"></i> Used</span>{{/if}}
+          </div>
+          <div class="ef-modes">
+            <button type="button" class="ef-mode-btn {{#if (eq efMode 'strike')}}active{{/if}}"
+              data-action="ef-activate" data-ef-mode="strike"
+              {{#unless efCanActivate}}{{#unless (eq efMode 'strike')}}disabled{{/unless}}{{/unless}}>
+              <i class="fas fa-crosshairs"></i> Strike +{{earthlingBonuses.efStrikeBonus}}
+            </button>
+            <button type="button" class="ef-mode-btn {{#if (eq efMode 'dodge')}}active{{/if}}"
+              data-action="ef-activate" data-ef-mode="dodge"
+              {{#unless efCanActivate}}{{#unless (eq efMode 'dodge')}}disabled{{/unless}}{{/unless}}>
+              <i class="fas fa-running"></i> Dodge +{{earthlingBonuses.efDodgeBonus}}
+            </button>
+            <button type="button" class="ef-mode-btn {{#if (eq efMode 'wound')}}active{{/if}}"
+              data-action="ef-activate" data-ef-mode="wound"
+              {{#unless efCanActivate}}{{#unless (eq efMode 'wound')}}disabled{{/unless}}{{/unless}}>
+              <i class="fas fa-skull-crossbones"></i> Wound +{{earthlingBonuses.efWoundBonus}} / DC+{{earthlingBonuses.efDamageCategoryBonus}}
+            </button>
+            {{#unless (eq efMode 'none')}}
+            <button type="button" class="ef-mode-btn ef-deactivate" data-action="ef-deactivate">
+              <i class="fas fa-times"></i> Off
+            </button>
+            {{/unless}}
+          </div>
+        </div>
+        {{/if}}
+
+        {{!-- Derived Bonuses Display --}}
+        {{#if hasEarthlingBonuses}}
+        <div class="earthling-derived">
+          <span class="earthling-derived-label">Active Bonuses ({{earthlingBonuses.thresholdsBelow}} threshold{{#if (gt earthlingBonuses.thresholdsBelow 1)}}s{{/if}} below):</span>
+          <div class="bonus-cards-grid">
+          {{#if earthlingBonuses.has.earthlingResolve}}
+            <div class="bonus-card cat-offense" title="Earthling Resolve">
+              <div class="bonus-card-header"><i class="fas fa-fist-raised"></i> Earthling Resolve</div>
+              <div class="bonus-card-value">+{{earthlingBonuses.earthlingResolveStrike}}/+{{earthlingBonuses.earthlingResolveWound}}</div>
+              <div class="bonus-card-stat">Strike / Wound</div>
+            </div>
+          {{/if}}
+          {{#if earthlingBonuses.has.threeEyes}}
+            <div class="bonus-card cat-offense" title="Three-Eyes">
+              <div class="bonus-card-header"><i class="fas fa-eye"></i> Three-Eyes</div>
+              <div class="bonus-card-value">+{{earthlingBonuses.threeEyesWound}}</div>
+              <div class="bonus-card-stat">Wound (Sig. Tech)</div>
+            </div>
+          {{/if}}
+          {{#if earthlingBonuses.has.partBeast}}
+            <div class="bonus-card cat-utility" title="Part Beast">
+              <div class="bonus-card-header"><i class="fas fa-eye"></i> Part Beast</div>
+              <div class="bonus-card-value">+{{earthlingBonuses.partBeastPerception}}</div>
+              <div class="bonus-card-stat">Perception</div>
+            </div>
+          {{/if}}
+          </div>
+        </div>
+        {{/if}}
+      </div>
+      {{/if}}
+
+      {{!-- ==================== MAJIN TRACKER (Majin only) ==================== --}}
+      {{#if isMajin}}
+      <div class="majin-tracker">
+        <div class="majin-header">
+          <i class="fas fa-ghost"></i> Majin Traits
+        </div>
+
+        {{#if hasMajinBonuses}}
+        <div class="majin-derived">
+          <div class="bonus-cards-grid">
+          {{#if majinBonuses.has.rubberyBody}}
+            <div class="bonus-card cat-armor" title="Bouncy (Rubbery Body)">
+              <div class="bonus-card-header"><i class="fas fa-shield-alt"></i> Bouncy</div>
+              <div class="bonus-card-value">+{{majinBonuses.bouncySoak}}/+{{majinBonuses.bouncyDefense}}</div>
+              <div class="bonus-card-stat">Soak / Defense</div>
+            </div>
+            <div class="bonus-card cat-offense" title="Bouncy Vulnerability">
+              <div class="bonus-card-header"><i class="fas fa-skull-crossbones"></i> Vulnerability</div>
+              <div class="bonus-card-value">+{{majinBonuses.bouncyDirectVulnerability}}</div>
+              <div class="bonus-card-stat">Dmg from Direct+</div>
+            </div>
+          {{/if}}
+          {{#if majinBonuses.has.assimilation}}
+            <div class="bonus-card cat-saves" title="Assimilation">
+              <div class="bonus-card-header"><i class="fas fa-brain"></i> Assimilation</div>
+              <div class="bonus-card-value">+{{majinBonuses.assimilationCorporeal}}</div>
+              <div class="bonus-card-stat">Corporeal Save</div>
+            </div>
+          {{/if}}
+          {{#if majinBonuses.has.bouncyPhysique}}
+            <div class="bonus-card cat-offense" title="Bouncy Physique">
+              <div class="bonus-card-header"><i class="fas fa-fist-raised"></i> Bouncy Phys.</div>
+              <div class="bonus-card-value">+{{majinBonuses.bouncyPhysiqueStrike}}</div>
+              <div class="bonus-card-stat">Strike (Reflect)</div>
+            </div>
+          {{/if}}
+          {{#if majinBonuses.has.superRegeneration}}
+            <div class="bonus-card cat-ki" title="Super Regeneration">
+              <div class="bonus-card-header"><i class="fas fa-heart"></i> Super Regen</div>
+              <div class="bonus-card-value">+{{majinBonuses.superRegenSurgency}}/+{{majinBonuses.superRegenLP}}</div>
+              <div class="bonus-card-stat">Surgency / LP/rnd</div>
+            </div>
+          {{/if}}
+          {{#if majinBonuses.has.majinMassShift}}
+            <div class="bonus-card cat-utility" title="Mass-Shift">
+              <div class="bonus-card-header"><i class="fas fa-brain"></i> Mass-Shift</div>
+              <div class="bonus-card-value">+{{majinBonuses.massShiftSkillBonus}}</div>
+              <div class="bonus-card-stat">Bluff/Pers/Intim</div>
+            </div>
+            {{#if (eq majinBonuses.massShiftSizeEffect "soak")}}
+            <div class="bonus-card cat-armor" title="Mass-Shift (Small)">
+              <div class="bonus-card-header"><i class="fas fa-shield-alt"></i> M-Shift (S)</div>
+              <div class="bonus-card-value">+{{majinBonuses.massShiftSizeBonus}}</div>
+              <div class="bonus-card-stat">Soak</div>
+            </div>
+            {{/if}}
+            {{#if (eq majinBonuses.massShiftSizeEffect "kiReduction")}}
+            <div class="bonus-card cat-ki" title="Mass-Shift (Medium)">
+              <div class="bonus-card-header"><i class="fas fa-bolt"></i> M-Shift (M)</div>
+              <div class="bonus-card-value">-{{majinBonuses.massShiftSizeBonus}}</div>
+              <div class="bonus-card-stat">UA Ki Cost</div>
+            </div>
+            {{/if}}
+            {{#if (eq majinBonuses.massShiftSizeEffect "defense")}}
+            <div class="bonus-card cat-armor" title="Mass-Shift (Large+)">
+              <div class="bonus-card-header"><i class="fas fa-shield-alt"></i> M-Shift (L+)</div>
+              <div class="bonus-card-value">+{{majinBonuses.massShiftSizeBonus}}</div>
+              <div class="bonus-card-stat">Defense</div>
+            </div>
+            {{/if}}
+          {{/if}}
+          {{#if majinBonuses.has.transfigurationBeam}}
+            <div class="bonus-card cat-utility" title="Transfiguration Beam">
+              <div class="bonus-card-header"><i class="fas fa-eye"></i> Transfig. Beam</div>
+              <div class="bonus-card-value">-{{majinBonuses.transfigCritReduction}}</div>
+              <div class="bonus-card-stat">Crit (Energy/Magic)</div>
+            </div>
+          {{/if}}
+          {{#if majinBonuses.has.roomyBiology}}
+            <div class="bonus-card cat-ki" title="Roomy Biology">
+              <div class="bonus-card-header"><i class="fas fa-heart"></i> Roomy Biology</div>
+              <div class="bonus-card-value">+{{majinBonuses.roomyBiologyLifeMod}}</div>
+              <div class="bonus-card-stat">Life Modifier</div>
+            </div>
+          {{/if}}
+          </div>
+        </div>
+        {{/if}}
+      </div>
+      {{/if}}
+
+      {{!-- ==================== BIO-ANDROID TRACKER (Bio-Android only) ==================== --}}
+      {{#if isBioAndroid}}
+      <div class="bio-android-tracker">
+        <div class="bio-android-header">
+          <i class="fas fa-dna"></i> Bio-Android Traits
+        </div>
+
+        {{!-- Genetic Splicing Option Selector --}}
+        {{#if bioAndroidBonuses.has.geneticSplicing}}
+        <div class="racial-option-row">
+          <label class="racial-option-label">Genetic Splicing:</label>
+          <select name="system.geneticSplicingOption" class="racial-option-select">
+            <option value="none" {{#if (eq bioAndroidBonuses.splicingOption "none")}}selected{{/if}}>-- Select --</option>
+            <option value="resilience" {{#if (eq bioAndroidBonuses.splicingOption "resilience")}}selected{{/if}}>Genetic Resilience (+2 Life Mod)</option>
+            <option value="genius" {{#if (eq bioAndroidBonuses.splicingOption "genius")}}selected{{/if}}>Genetic Genius (-1 Crit Skill Checks)</option>
+            <option value="perfection" {{#if (eq bioAndroidBonuses.splicingOption "perfection")}}selected{{/if}}>Pursuit of Perfection (Absorption)</option>
+          </select>
+        </div>
+        {{/if}}
+
+        {{#if hasBioAndroidBonuses}}
+        <div class="bio-android-derived">
+          <div class="bonus-cards-grid">
+          {{#if (eq bioAndroidBonuses.splicingOption "resilience")}}
+            <div class="bonus-card cat-ki" title="Genetic Resilience">
+              <div class="bonus-card-header"><i class="fas fa-heart"></i> Gen. Resilience</div>
+              <div class="bonus-card-value">+{{bioAndroidBonuses.geneticResilienceLifeMod}}</div>
+              <div class="bonus-card-stat">Life Modifier</div>
+            </div>
+          {{/if}}
+          {{#if (eq bioAndroidBonuses.splicingOption "genius")}}
+            <div class="bonus-card cat-utility" title="Genetic Genius">
+              <div class="bonus-card-header"><i class="fas fa-eye"></i> Gen. Genius</div>
+              <div class="bonus-card-value">-{{bioAndroidBonuses.geneticGeniusCritReduction}}</div>
+              <div class="bonus-card-stat">Crit (Skill Checks)</div>
+            </div>
+          {{/if}}
+          {{#if bioAndroidBonuses.has.powerCore}}
+            <div class="bonus-card cat-ki" title="Power Core">
+              <div class="bonus-card-header"><i class="fas fa-bolt"></i> Power Core</div>
+              <div class="bonus-card-value">+{{bioAndroidBonuses.powerCoreSurgeBonus}}/+{{bioAndroidBonuses.powerCoreKiPerRound}}</div>
+              <div class="bonus-card-stat">Surge Ki / Ki/rnd</div>
+            </div>
+          {{/if}}
+          {{#if bioAndroidBonuses.has.redEye}}
+            <div class="bonus-card cat-utility" title="Red Eye">
+              <div class="bonus-card-header"><i class="fas fa-eye"></i> Red Eye</div>
+              <div class="bonus-card-value">+{{bioAndroidBonuses.redEyePerception}}/-{{bioAndroidBonuses.redEyeCritReduction}}</div>
+              <div class="bonus-card-stat">Percep / Crit (Sig)</div>
+            </div>
+          {{/if}}
+          {{#if bioAndroidBonuses.has.namekianCells}}
+            <div class="bonus-card cat-ki" title="Namekian Cells">
+              <div class="bonus-card-header"><i class="fas fa-heart"></i> Namekian Cells</div>
+              <div class="bonus-card-value">+{{bioAndroidBonuses.namekianCellsLP}}</div>
+              <div class="bonus-card-stat">LP/round</div>
+            </div>
+          {{/if}}
+          {{#if bioAndroidBonuses.has.geneticEfficiency}}
+            <div class="bonus-card cat-offense" title="Genetic Efficiency">
+              <div class="bonus-card-header"><i class="fas fa-skull-crossbones"></i> Gen. Efficiency</div>
+              <div class="bonus-card-value">+{{bioAndroidBonuses.geneticEfficiencyWound}}</div>
+              <div class="bonus-card-stat">Wound Rolls</div>
+            </div>
+          {{/if}}
+          {{#if bioAndroidBonuses.has.geneticModification}}
+            <div class="bonus-card cat-utility" title="Genetic Modification">
+              <div class="bonus-card-header"><i class="fas fa-brain"></i> Gen. Modification</div>
+              <div class="bonus-card-value">+{{bioAndroidBonuses.geneticModIntimidation}}</div>
+              <div class="bonus-card-stat">Intimidation</div>
+            </div>
+          {{/if}}
+          </div>
+        </div>
+        {{/if}}
+      </div>
+      {{/if}}
+
+      {{!-- ==================== ANDROID TRACKER (Android only) ==================== --}}
+      {{#if isAndroid}}
+      <div class="android-tracker">
+        <div class="android-header">
+          <i class="fas fa-robot"></i> Android Traits
+        </div>
+
+        {{!-- Option Selectors --}}
+        {{#if androidBonuses.has.wondersOfTechnology}}
+        <div class="racial-option-row">
+          <label class="racial-option-label">Wonders of Tech:</label>
+          <select name="system.wondersOption" class="racial-option-select">
+            <option value="none" {{#if (eq androidBonuses.wondersOpt "none")}}selected{{/if}}>-- Select --</option>
+            <option value="enhancedOrganism" {{#if (eq androidBonuses.wondersOpt "enhancedOrganism")}}selected{{/if}}>Enhanced Organism</option>
+            <option value="construct" {{#if (eq androidBonuses.wondersOpt "construct")}}selected{{/if}}>Construct</option>
+            <option value="zombie" {{#if (eq androidBonuses.wondersOpt "zombie")}}selected{{/if}}>Zombie</option>
+            <option value="machineMutant" {{#if (eq androidBonuses.wondersOpt "machineMutant")}}selected{{/if}}>Machine Mutant (+{{androidBonuses.wondersMachineMutantCorporeal}} Corp Save)</option>
+          </select>
+        </div>
+        {{/if}}
+        {{#if androidBonuses.has.energyCore}}
+        <div class="racial-option-row">
+          <label class="racial-option-label">Energy Core:</label>
+          <select name="system.energyCoreOption" class="racial-option-select">
+            <option value="none" {{#if (eq androidBonuses.energyCoreOpt "none")}}selected{{/if}}>-- Select --</option>
+            <option value="infiniteEnergy" {{#if (eq androidBonuses.energyCoreOpt "infiniteEnergy")}}selected{{/if}}>Infinite Energy (+{{androidBonuses.energyCoreKiPerRound}} Ki/round)</option>
+            <option value="powerBattery" {{#if (eq androidBonuses.energyCoreOpt "powerBattery")}}selected{{/if}}>Power Battery (2x Ki, -{{androidBonuses.powerBatteryKiReduction}} Ki cost)</option>
+            <option value="mutantCore" {{#if (eq androidBonuses.energyCoreOpt "mutantCore")}}selected{{/if}}>Mutant Core (Integrate items)</option>
+          </select>
+        </div>
+        {{/if}}
+        {{#if androidBonuses.has.specializedFeatures}}
+        <div class="racial-option-row">
+          <label class="racial-option-label">Specialized:</label>
+          <select name="system.specializedOption" class="racial-option-select">
+            <option value="none" {{#if (eq androidBonuses.specializedOpt "none")}}selected{{/if}}>-- Select --</option>
+            <option value="surgingPower" {{#if (eq androidBonuses.specializedOpt "surgingPower")}}selected{{/if}}>Surging Power</option>
+            <option value="weaponPorts" {{#if (eq androidBonuses.specializedOpt "weaponPorts")}}selected{{/if}}>Weapon Ports</option>
+            <option value="powerAbsorption" {{#if (eq androidBonuses.specializedOpt "powerAbsorption")}}selected{{/if}}>Power Absorption</option>
+            <option value="hyperResilience" {{#if (eq androidBonuses.specializedOpt "hyperResilience")}}selected{{/if}}>Hyper Resilience</option>
+            <option value="enhancedReflexes" {{#if (eq androidBonuses.specializedOpt "enhancedReflexes")}}selected{{/if}}>Enhanced Reflexes</option>
+            <option value="heroicStyle" {{#if (eq androidBonuses.specializedOpt "heroicStyle")}}selected{{/if}}>Heroic Style</option>
+            <option value="smallScale" {{#if (eq androidBonuses.specializedOpt "smallScale")}}selected{{/if}}>Small Scale Structure</option>
+            <option value="largeScale" {{#if (eq androidBonuses.specializedOpt "largeScale")}}selected{{/if}}>Large Scale Structure</option>
+            <option value="androidFusion" {{#if (eq androidBonuses.specializedOpt "androidFusion")}}selected{{/if}}>Android Fusion</option>
+            <option value="extensionFeature" {{#if (eq androidBonuses.specializedOpt "extensionFeature")}}selected{{/if}}>Extension Feature</option>
+          </select>
+        </div>
+        {{/if}}
+        {{#if androidBonuses.has.functionalPurpose}}
+        <div class="racial-option-row">
+          <label class="racial-option-label">Func. Purpose:</label>
+          <select name="system.functionalPurposeOption" class="racial-option-select">
+            <option value="none" {{#if (eq androidBonuses.functionalOpt "none")}}selected{{/if}}>-- Select --</option>
+            <option value="destroyer" {{#if (eq androidBonuses.functionalOpt "destroyer")}}selected{{/if}}>Destroyer</option>
+            <option value="protector" {{#if (eq androidBonuses.functionalOpt "protector")}}selected{{/if}}>Protector</option>
+            <option value="companion" {{#if (eq androidBonuses.functionalOpt "companion")}}selected{{/if}}>Companion</option>
+            <option value="researcher" {{#if (eq androidBonuses.functionalOpt "researcher")}}selected{{/if}}>Researcher</option>
+            <option value="leader" {{#if (eq androidBonuses.functionalOpt "leader")}}selected{{/if}}>Leader</option>
+          </select>
+        </div>
+        {{/if}}
+
+        {{#if hasAndroidBonuses}}
+        <div class="android-derived">
+          <div class="bonus-cards-grid">
+          {{#if androidBonuses.has.damageInhibitor}}
+            <div class="bonus-card cat-armor" title="Damage Inhibitor">
+              <div class="bonus-card-header"><i class="fas fa-shield-alt"></i> Dmg Inhibitor</div>
+              <div class="bonus-card-value">+{{androidBonuses.damageInhibitorDR}}</div>
+              <div class="bonus-card-stat">DR, halve Collision</div>
+            </div>
+          {{/if}}
+          {{#if androidBonuses.has.lockOn}}
+            <div class="bonus-card cat-utility" title="Lock On">
+              <div class="bonus-card-header"><i class="fas fa-eye"></i> Lock On</div>
+              <div class="bonus-card-value">+{{androidBonuses.lockOnPerception}}</div>
+              <div class="bonus-card-stat">Perception</div>
+            </div>
+          {{/if}}
+          {{#if androidBonuses.has.energyCore}}
+            <div class="bonus-card cat-ki" title="Energy Core">
+              <div class="bonus-card-header"><i class="fas fa-bolt"></i> Energy Core</div>
+              <div class="bonus-card-value" style="font-size:12px">Ki can't be reduced</div>
+            </div>
+          {{/if}}
+          {{!-- Dynamic bonuses from options --}}
+          {{#if (gt androidBonuses.wondersMachineMutantCorporeal 0)}}
+            <div class="bonus-card cat-saves" title="Machine Mutant">
+              <div class="bonus-card-header"><i class="fas fa-brain"></i> Machine Mutant</div>
+              <div class="bonus-card-value">+{{androidBonuses.wondersMachineMutantCorporeal}}</div>
+              <div class="bonus-card-stat">Corporeal Save</div>
+            </div>
+          {{/if}}
+          {{#if (gt androidBonuses.energyCoreSoakBonus 0)}}
+            <div class="bonus-card cat-armor" title="Power Battery">
+              <div class="bonus-card-header"><i class="fas fa-bolt"></i> Power Battery</div>
+              <div class="bonus-card-value">+{{androidBonuses.energyCoreSoakBonus}}/+{{androidBonuses.energyCoreCombatBonus}}</div>
+              <div class="bonus-card-stat">Soak / Combat (Ki>Cap)</div>
+            </div>
+          {{/if}}
+          {{#if (gt androidBonuses.specEnhancedReflexesDefense 0)}}
+            <div class="bonus-card cat-saves" title="Enhanced Reflexes">
+              <div class="bonus-card-header"><i class="fas fa-running"></i> Enh. Reflexes</div>
+              <div class="bonus-card-value">+{{androidBonuses.specEnhancedReflexesImpulsive}}/+{{androidBonuses.specEnhancedReflexesDefense}}</div>
+              <div class="bonus-card-stat">Impulsive / Defense</div>
+            </div>
+          {{/if}}
+          {{#if (gt androidBonuses.specWeaponPortsWound 0)}}
+            <div class="bonus-card cat-offense" title="Weapon Ports">
+              <div class="bonus-card-header"><i class="fas fa-skull-crossbones"></i> Weapon Ports</div>
+              <div class="bonus-card-value">+{{androidBonuses.specWeaponPortsWound}}</div>
+              <div class="bonus-card-stat">Wound (Sig Tech)</div>
+            </div>
+          {{/if}}
+          {{#if (gt androidBonuses.specSurgingPowerSoak 0)}}
+            <div class="bonus-card cat-armor" title="Surging Power">
+              <div class="bonus-card-header"><i class="fas fa-shield-alt"></i> Surging Power</div>
+              <div class="bonus-card-value">+{{androidBonuses.specSurgingPowerSoak}}</div>
+              <div class="bonus-card-stat">Soak (2+ Power)</div>
+            </div>
+          {{/if}}
+          {{#if (gt androidBonuses.specExtensionGrapple 0)}}
+            <div class="bonus-card cat-offense" title="Extension Feature">
+              <div class="bonus-card-header"><i class="fas fa-dumbbell"></i> Extension</div>
+              <div class="bonus-card-value">+{{androidBonuses.specExtensionGrapple}}</div>
+              <div class="bonus-card-stat">Grapple</div>
+            </div>
+          {{/if}}
+          {{#if (gt androidBonuses.funcDestroyerWound 0)}}
+            <div class="bonus-card cat-offense" title="Destroyer">
+              <div class="bonus-card-header"><i class="fas fa-skull-crossbones"></i> Destroyer</div>
+              <div class="bonus-card-value">+{{androidBonuses.funcDestroyerWound}}</div>
+              <div class="bonus-card-stat">Wound (vs Lock-On)</div>
+            </div>
+          {{/if}}
+          {{#if (gt androidBonuses.funcLeaderMinionCombat 0)}}
+            <div class="bonus-card cat-utility" title="Leader">
+              <div class="bonus-card-header"><i class="fas fa-crown"></i> Leader</div>
+              <div class="bonus-card-value">+{{androidBonuses.funcLeaderMinionCombat}}/+{{androidBonuses.funcLeaderMinionLP}}</div>
+              <div class="bonus-card-stat">Minion Combat / LP</div>
+            </div>
+          {{/if}}
+          </div>
+        </div>
+        {{/if}}
+      </div>
+      {{/if}}
+
+      {{!-- ======== ARCOSIAN TRACKER ======== --}}
+      {{#if isArcosian}}
+      <div class="arcosian-tracker">
+        <div class="arcosian-header">
+          <i class="fas fa-snowflake"></i> Arcosian Traits
+        </div>
+
+        {{!-- Keratinous Plating L4 Option --}}
+        {{#if arcosianBonuses.has.keratinousPlating}}
+        <div class="racial-option-row">
+          <label class="racial-option-label">Plating Type:</label>
+          <select name="system.keratinousPlatingOption" class="racial-option-select">
+            <option value="none" {{#if (eq arcosianBonuses.platingOpt "none")}}selected{{/if}}>-- Select --</option>
+            <option value="dense" {{#if (eq arcosianBonuses.platingOpt "dense")}}selected{{/if}}>Dense Plating (+{{arcosianBonuses.platingDenseDR}} DR)</option>
+            <option value="sleek" {{#if (eq arcosianBonuses.platingOpt "sleek")}}selected{{/if}}>Sleek Plating (+{{arcosianBonuses.platingSleekDefense}} Defense)</option>
+            <option value="royal" {{#if (eq arcosianBonuses.platingOpt "royal")}}selected{{/if}}>Royal Plating (+{{arcosianBonuses.platingRoyalStress}} Stress Test)</option>
+            <option value="combat" {{#if (eq arcosianBonuses.platingOpt "combat")}}selected{{/if}}>Combat Plating (+{{arcosianBonuses.platingCombatWound}} Wound)</option>
+          </select>
+        </div>
+        {{/if}}
+
+        {{#if hasArcosianBonuses}}
+        <div class="arcosian-derived">
+          <div class="bonus-cards-grid">
+          {{#if arcosianBonuses.has.survivor}}
+            <div class="bonus-card cat-saves" title="Survivor">
+              <div class="bonus-card-header"><i class="fas fa-brain"></i> Survivor</div>
+              <div class="bonus-card-value">+{{arcosianBonuses.survivorSteadfast}}</div>
+              <div class="bonus-card-stat">Steadfast Dice</div>
+            </div>
+          {{/if}}
+          {{#if arcosianBonuses.has.keratinousPlating}}
+            <div class="bonus-card cat-armor" title="Keratinous Plating">
+              <div class="bonus-card-header"><i class="fas fa-shield-alt"></i> Kerat. Plating</div>
+              <div class="bonus-card-value">+{{arcosianBonuses.platingBaseSoak}}</div>
+              <div class="bonus-card-stat">Soak</div>
+            </div>
+          {{/if}}
+          {{#if (gt arcosianBonuses.platingDenseDR 0)}}
+            <div class="bonus-card cat-armor" title="Dense Plating">
+              <div class="bonus-card-header"><i class="fas fa-shield-alt"></i> Dense Plating</div>
+              <div class="bonus-card-value">+{{arcosianBonuses.platingDenseDR}}</div>
+              <div class="bonus-card-stat">DR</div>
+            </div>
+          {{/if}}
+          {{#if (gt arcosianBonuses.platingSleekDefense 0)}}
+            <div class="bonus-card cat-armor" title="Sleek Plating">
+              <div class="bonus-card-header"><i class="fas fa-shield-alt"></i> Sleek Plating</div>
+              <div class="bonus-card-value">+{{arcosianBonuses.platingSleekDefense}}</div>
+              <div class="bonus-card-stat">Defense</div>
+            </div>
+          {{/if}}
+          {{#if (gt arcosianBonuses.platingRoyalStress 0)}}
+            <div class="bonus-card cat-saves" title="Royal Plating">
+              <div class="bonus-card-header"><i class="fas fa-crown"></i> Royal Plating</div>
+              <div class="bonus-card-value">+{{arcosianBonuses.platingRoyalStress}}</div>
+              <div class="bonus-card-stat">Stress Test</div>
+            </div>
+          {{/if}}
+          {{#if (gt arcosianBonuses.platingCombatWound 0)}}
+            <div class="bonus-card cat-offense" title="Combat Plating">
+              <div class="bonus-card-header"><i class="fas fa-crosshairs"></i> Combat Plating</div>
+              <div class="bonus-card-value">+{{arcosianBonuses.platingCombatWound}}</div>
+              <div class="bonus-card-stat">Wound</div>
+            </div>
+          {{/if}}
+          </div>
+        </div>
+        {{/if}}
+      </div>
+      {{/if}}
+
+      {{!-- ======== CEREALIAN TRACKER ======== --}}
+      {{#if isCerealian}}
+      <div class="cerealian-tracker">
+        <div class="cerealian-header">
+          <i class="fas fa-crosshairs"></i> Cerealian Traits
+        </div>
+
+        {{#if hasCerealianBonuses}}
+        <div class="cerealian-derived">
+          <div class="bonus-cards-grid">
+          {{#if cerealianBonuses.has.evolvedRightEye}}
+            <div class="bonus-card cat-utility" title="Evolved Right Eye">
+              <div class="bonus-card-header"><i class="fas fa-eye"></i> Evolved Eye</div>
+              <div class="bonus-card-value">+{{cerealianBonuses.eyePerception}}/-{{cerealianBonuses.eyeCritReduction}}</div>
+              <div class="bonus-card-stat">Percep / Crit Target</div>
+            </div>
+            <div class="bonus-card cat-utility" title="Evolved Eye L2">
+              <div class="bonus-card-header"><i class="fas fa-eye"></i> Eye L2</div>
+              <div class="bonus-card-value">-{{cerealianBonuses.eyeSigTechCritReduction}}</div>
+              <div class="bonus-card-stat">Crit Strike/Wound (Sig)</div>
+            </div>
+          {{/if}}
+          {{#if cerealianBonuses.has.pinpointCombat}}
+            <div class="bonus-card cat-utility" title="Pinpoint Combat">
+              <div class="bonus-card-header"><i class="fas fa-crosshairs"></i> Pinpoint</div>
+              <div class="bonus-card-value">-{{cerealianBonuses.pinpointCritReduction}}</div>
+              <div class="bonus-card-stat">Crit (range-dep.)</div>
+            </div>
+          {{/if}}
+          {{#if cerealianBonuses.has.vitalPointAttack}}
+            <div class="bonus-card cat-armor" title="Vital Point Attack">
+              <div class="bonus-card-header"><i class="fas fa-crosshairs"></i> Vital Point</div>
+              <div class="bonus-card-value" style="font-size:12px">Called Shots ignore DR</div>
+            </div>
+          {{/if}}
+          {{#if (gt cerealianBonuses.scarletSpotterWound 0)}}
+            <div class="bonus-card cat-offense" title="Scarlet Spotter">
+              <div class="bonus-card-header"><i class="fas fa-crosshairs"></i> Scarlet Spotter</div>
+              <div class="bonus-card-value">+{{cerealianBonuses.scarletSpotterWound}}</div>
+              <div class="bonus-card-stat">Wound (Exploit)</div>
+            </div>
+          {{/if}}
+          </div>
+        </div>
+        {{/if}}
+      </div>
+      {{/if}}
+
+      {{!-- ======== NAMEKIAN TRACKER ======== --}}
+      {{#if isNamekian}}
+      <div class="namekian-tracker">
+        <div class="namekian-header">
+          <i class="fas fa-leaf"></i> Namekian Traits
+        </div>
+
+        {{!-- Refined Combat Option (Warrior Clan) --}}
+        {{#if namekianBonuses.has.refinedCombat}}
+        <div class="racial-option-row">
+          <label class="racial-option-label">Refined Combat:</label>
+          <select name="system.refinedCombatOption" class="racial-option-select">
+            <option value="none" {{#if (eq namekianBonuses.refinedOpt "none")}}selected{{/if}}>-- Select --</option>
+            <option value="handToHand" {{#if (eq namekianBonuses.refinedOpt "handToHand")}}selected{{/if}}>Hand to Hand (+Wound Physical)</option>
+            <option value="blaster" {{#if (eq namekianBonuses.refinedOpt "blaster")}}selected{{/if}}>Blaster (+Wound Energy)</option>
+            <option value="grappler" {{#if (eq namekianBonuses.refinedOpt "grappler")}}selected{{/if}}>Grappler (+Grapple)</option>
+            <option value="defender" {{#if (eq namekianBonuses.refinedOpt "defender")}}selected{{/if}}>Defender (+Soak)</option>
+            <option value="powerChanneler" {{#if (eq namekianBonuses.refinedOpt "powerChanneler")}}selected{{/if}}>Power Channeler (+Wound Sig Tech)</option>
+            <option value="highSpeed" {{#if (eq namekianBonuses.refinedOpt "highSpeed")}}selected{{/if}}>High-Speed (+Defense)</option>
+          </select>
+        </div>
+        {{/if}}
+
+        {{!-- Spirit of Namek Option (Dragon Clan) --}}
+        {{#if namekianBonuses.has.spiritOfNamek}}
+        <div class="racial-option-row">
+          <label class="racial-option-label">Spirit of Namek:</label>
+          <select name="system.spiritOfNamekOption" class="racial-option-select">
+            <option value="none" {{#if (eq namekianBonuses.spiritOpt "none")}}selected{{/if}}>-- Select --</option>
+            <option value="caster" {{#if (eq namekianBonuses.spiritOpt "caster")}}selected{{/if}}>Caster (+Wound Magical)</option>
+            <option value="supporter" {{#if (eq namekianBonuses.spiritOpt "supporter")}}selected{{/if}}>Supporter (Remove Conditions)</option>
+            <option value="healer" {{#if (eq namekianBonuses.spiritOpt "healer")}}selected{{/if}}>Healer (+Healing Hands)</option>
+          </select>
+        </div>
+        {{/if}}
+
+        {{#if hasNamekianBonuses}}
+        <div class="namekian-derived">
+          <div class="bonus-cards-grid">
+          {{#if namekianBonuses.has.namekianBiology}}
+            <div class="bonus-card cat-ki" title="Namekian Biology">
+              <div class="bonus-card-header"><i class="fas fa-heart"></i> Biology</div>
+              <div class="bonus-card-value">+{{namekianBonuses.biologyLPPerRound}}/-{{namekianBonuses.biologyCritReduction}}</div>
+              <div class="bonus-card-stat">LP/rnd / Crit Percep</div>
+            </div>
+          {{/if}}
+          {{#if namekianBonuses.has.intelligentFighter}}
+            <div class="bonus-card cat-utility" title="Intelligent Fighter">
+              <div class="bonus-card-header"><i class="fas fa-brain"></i> Intell. Fighter</div>
+              <div class="bonus-card-value">+{{namekianBonuses.intelligentFighterSkillDice}}</div>
+              <div class="bonus-card-stat">IN/SC Skill Dice</div>
+            </div>
+          {{/if}}
+          {{#if namekianBonuses.has.namekianResilience}}
+            <div class="bonus-card cat-saves" title="Namekian Resilience">
+              <div class="bonus-card-header"><i class="fas fa-brain"></i> Resilience</div>
+              <div class="bonus-card-value">+{{namekianBonuses.resilienceSteadfast}}</div>
+              <div class="bonus-card-stat">Steadfast Dice</div>
+            </div>
+          {{/if}}
+          {{#if (gt namekianBonuses.techniquesTP 0)}}
+            <div class="bonus-card cat-utility" title="Techniques">
+              <div class="bonus-card-header"><i class="fas fa-brain"></i> Techniques</div>
+              <div class="bonus-card-value">+{{namekianBonuses.techniquesTP}}</div>
+              <div class="bonus-card-stat">TP from Skills</div>
+            </div>
+          {{/if}}
+          {{#if (gt namekianBonuses.refinedGrapple 0)}}
+            <div class="bonus-card cat-offense" title="Grappler (Refined Combat)">
+              <div class="bonus-card-header"><i class="fas fa-dumbbell"></i> Grappler</div>
+              <div class="bonus-card-value">+{{namekianBonuses.refinedGrapple}}</div>
+              <div class="bonus-card-stat">Grapple</div>
+            </div>
+          {{/if}}
+          {{#if (gt namekianBonuses.refinedSoak 0)}}
+            <div class="bonus-card cat-armor" title="Defender (Refined Combat)">
+              <div class="bonus-card-header"><i class="fas fa-shield-alt"></i> Defender</div>
+              <div class="bonus-card-value">+{{namekianBonuses.refinedSoak}}</div>
+              <div class="bonus-card-stat">Soak</div>
+            </div>
+          {{/if}}
+          {{#if (gt namekianBonuses.refinedDefense 0)}}
+            <div class="bonus-card cat-armor" title="High-Speed (Refined Combat)">
+              <div class="bonus-card-header"><i class="fas fa-running"></i> High-Speed</div>
+              <div class="bonus-card-value">+{{namekianBonuses.refinedDefense}}</div>
+              <div class="bonus-card-stat">Defense</div>
+            </div>
+          {{/if}}
+          {{#if (gt namekianBonuses.refinedWoundPhysical 0)}}
+            <div class="bonus-card cat-offense" title="Hand to Hand (Refined Combat)">
+              <div class="bonus-card-header"><i class="fas fa-fist-raised"></i> Hand to Hand</div>
+              <div class="bonus-card-value">+{{namekianBonuses.refinedWoundPhysical}}</div>
+              <div class="bonus-card-stat">Wound (Physical)</div>
+            </div>
+          {{/if}}
+          {{#if (gt namekianBonuses.refinedWoundEnergy 0)}}
+            <div class="bonus-card cat-offense" title="Blaster (Refined Combat)">
+              <div class="bonus-card-header"><i class="fas fa-bolt"></i> Blaster</div>
+              <div class="bonus-card-value">+{{namekianBonuses.refinedWoundEnergy}}</div>
+              <div class="bonus-card-stat">Wound (Energy)</div>
+            </div>
+          {{/if}}
+          {{#if (gt namekianBonuses.refinedWoundSigTech 0)}}
+            <div class="bonus-card cat-offense" title="Power Channeler (Refined Combat)">
+              <div class="bonus-card-header"><i class="fas fa-bolt"></i> Power Channel.</div>
+              <div class="bonus-card-value">+{{namekianBonuses.refinedWoundSigTech}}</div>
+              <div class="bonus-card-stat">Wound (Sig Tech)</div>
+            </div>
+          {{/if}}
+          {{#if (gt namekianBonuses.spiritWoundMagical 0)}}
+            <div class="bonus-card cat-offense" title="Caster (Spirit of Namek)">
+              <div class="bonus-card-header"><i class="fas fa-bolt"></i> Caster</div>
+              <div class="bonus-card-value">+{{namekianBonuses.spiritWoundMagical}}</div>
+              <div class="bonus-card-stat">Wound (Magical)</div>
+            </div>
+          {{/if}}
+          </div>
+        </div>
+        {{/if}}
+      </div>
+      {{/if}}
+
+      {{!-- ======== NEKO MAJIN TRACKER ======== --}}
+      {{#if isNekoMajin}}
+      <div class="neko-majin-tracker">
+        <div class="neko-majin-header">
+          <i class="fas fa-cat"></i> Neko Majin Traits
+        </div>
+
+        {{#if hasNekoMajinBonuses}}
+        <div class="neko-majin-derived">
+          <div class="bonus-cards-grid">
+          {{#if nekoMajinBonuses.has.felineBuild}}
+            <div class="bonus-card cat-utility" title="Feline Build">
+              <div class="bonus-card-header"><i class="fas fa-eye"></i> Feline Build</div>
+              <div class="bonus-card-value">+{{nekoMajinBonuses.felinePerception}}</div>
+              <div class="bonus-card-stat">Perception Dice</div>
+            </div>
+          {{/if}}
+          {{#if (gt nekoMajinBonuses.quickThinkingTP 0)}}
+            <div class="bonus-card cat-utility" title="Quick Thinking">
+              <div class="bonus-card-header"><i class="fas fa-brain"></i> Quick Thinking</div>
+              <div class="bonus-card-value">+{{nekoMajinBonuses.quickThinkingTP}}</div>
+              <div class="bonus-card-stat">TP from Skills</div>
+            </div>
+          {{/if}}
+          </div>
+        </div>
+        {{/if}}
+      </div>
+      {{/if}}
+
+      {{!-- ======== NEO-TUFFLE TRACKER ======== --}}
+      {{#if isNeoTuffle}}
+      <div class="neo-tuffle-tracker">
+        <div class="neo-tuffle-header">
+          <i class="fas fa-flask"></i> Neo-Tuffle Traits
+        </div>
+
+        {{#if hasNeoTuffleBonuses}}
+        <div class="neo-tuffle-derived">
+          <div class="bonus-cards-grid">
+          {{#if neoTuffleBonuses.has.manufacturedPhysique}}
+            <div class="bonus-card cat-armor" title="Manufactured Physique">
+              <div class="bonus-card-header"><i class="fas fa-shield-alt"></i> Manufactured</div>
+              <div class="bonus-card-value">+{{neoTuffleBonuses.manufacturedSoak}}</div>
+              <div class="bonus-card-stat">Soak, Immune Poison</div>
+            </div>
+          {{/if}}
+          {{#if (gt neoTuffleBonuses.revengeWound 0)}}
+            <div class="bonus-card cat-offense" title="Energy of Revenge">
+              <div class="bonus-card-header"><i class="fas fa-skull-crossbones"></i> Revenge</div>
+              <div class="bonus-card-value">+{{neoTuffleBonuses.revengeWound}}</div>
+              <div class="bonus-card-stat">Wound (4+ RP)</div>
+            </div>
+          {{/if}}
+          {{#if (gt neoTuffleBonuses.hateSoak 0)}}
+            <div class="bonus-card cat-armor" title="Hate Empowerment">
+              <div class="bonus-card-header"><i class="fas fa-shield-alt"></i> Hate Empower.</div>
+              <div class="bonus-card-value">+{{neoTuffleBonuses.hateSoak}}</div>
+              <div class="bonus-card-stat">Soak</div>
+            </div>
+          {{/if}}
+          {{#if (gt neoTuffleBonuses.powerHungryDefense 0)}}
+            <div class="bonus-card cat-armor" title="Power Hungry">
+              <div class="bonus-card-header"><i class="fas fa-shield-alt"></i> Power Hungry</div>
+              <div class="bonus-card-value">+{{neoTuffleBonuses.powerHungryDefense}}</div>
+              <div class="bonus-card-stat">Defense</div>
+            </div>
+          {{/if}}
+          </div>
+        </div>
+        {{/if}}
+      </div>
+      {{/if}}
+
+      {{!-- ======== SHADOW DRAGON TRACKER ======== --}}
+      {{#if isShadowDragon}}
+      <div class="shadow-dragon-tracker">
+        <div class="shadow-dragon-header">
+          <i class="fas fa-dragon"></i> Shadow Dragon Traits
+        </div>
+
+        {{!-- Supernatural Powers Option --}}
+        {{#if shadowDragonBonuses.has.supernaturalPowers}}
+        <div class="racial-option-row">
+          <label class="racial-option-label">Supernatural:</label>
+          <select name="system.supernaturalPowersOption" class="racial-option-select">
+            <option value="none" {{#if (eq shadowDragonBonuses.supernaturalOpt "none")}}selected{{/if}}>-- Select --</option>
+            <option value="sinister" {{#if (eq shadowDragonBonuses.supernaturalOpt "sinister")}}selected{{/if}}>Sinister Dragon</option>
+            <option value="hazy" {{#if (eq shadowDragonBonuses.supernaturalOpt "hazy")}}selected{{/if}}>Hazy Dragon</option>
+            <option value="elemental" {{#if (eq shadowDragonBonuses.supernaturalOpt "elemental")}}selected{{/if}}>Elemental Dragon</option>
+            <option value="noble" {{#if (eq shadowDragonBonuses.supernaturalOpt "noble")}}selected{{/if}}>Noble Dragon</option>
+            <option value="regenerative" {{#if (eq shadowDragonBonuses.supernaturalOpt "regenerative")}}selected{{/if}}>Regenerative Dragon</option>
+            <option value="ominous" {{#if (eq shadowDragonBonuses.supernaturalOpt "ominous")}}selected{{/if}}>Ominous Dragon</option>
+            <option value="natural" {{#if (eq shadowDragonBonuses.supernaturalOpt "natural")}}selected{{/if}}>Natural Dragon</option>
+          </select>
+        </div>
+        {{/if}}
+
+        {{#if hasShadowDragonBonuses}}
+        <div class="shadow-dragon-derived">
+          <div class="bonus-cards-grid">
+          {{#if (gt shadowDragonBonuses.wrathCritWound 0)}}
+            <div class="bonus-card cat-offense" title="Wrath">
+              <div class="bonus-card-header"><i class="fas fa-skull-crossbones"></i> Wrath</div>
+              <div class="bonus-card-value">+{{shadowDragonBonuses.wrathCritWound}}</div>
+              <div class="bonus-card-stat">Wound Dice (on Crit)</div>
+            </div>
+          {{/if}}
+          {{#if (gt shadowDragonBonuses.sinisterNaturalWound 0)}}
+            <div class="bonus-card cat-offense" title="Sinister Dragon">
+              <div class="bonus-card-header"><i class="fas fa-skull-crossbones"></i> Sinister</div>
+              <div class="bonus-card-value">+{{shadowDragonBonuses.sinisterNaturalWound}}/-{{shadowDragonBonuses.sinisterNaturalDefend}}</div>
+              <div class="bonus-card-stat">Nat Wound / vs You</div>
+            </div>
+          {{/if}}
+          {{#if (gt shadowDragonBonuses.ominousCombatBonus 0)}}
+            <div class="bonus-card cat-offense" title="Ominous Dragon">
+              <div class="bonus-card-header"><i class="fas fa-fist-raised"></i> Ominous</div>
+              <div class="bonus-card-value">+{{shadowDragonBonuses.ominousCombatBonus}}</div>
+              <div class="bonus-card-stat">Combat (PE highest)</div>
+            </div>
+          {{/if}}
+          </div>
+        </div>
+        {{/if}}
+      </div>
+      {{/if}}
+
+      {{!-- ======== SHINJIN TRACKER ======== --}}
+      {{#if isShinjin}}
+      <div class="shinjin-tracker">
+        <div class="shinjin-header">
+          <i class="fas fa-sun"></i> Shinjin Traits
+        </div>
+
+        {{!-- Light Magic Option (Kaio) --}}
+        {{#if shinjinBonuses.has.lightMagic}}
+        <div class="racial-option-row">
+          <label class="racial-option-label">Light Magic:</label>
+          <select name="system.lightMagicOption" class="racial-option-select">
+            <option value="none" {{#if (eq shinjinBonuses.lightOpt "none")}}selected{{/if}}>-- Select --</option>
+            <option value="peace" {{#if (eq shinjinBonuses.lightOpt "peace")}}selected{{/if}}>God of Peace (+Morale Save)</option>
+            <option value="judgment" {{#if (eq shinjinBonuses.lightOpt "judgment")}}selected{{/if}}>God of Judgment (Halve Aura Ki)</option>
+            <option value="power" {{#if (eq shinjinBonuses.lightOpt "power")}}selected{{/if}}>God of Power (+Dodge if FO>AG)</option>
+            <option value="speed" {{#if (eq shinjinBonuses.lightOpt "speed")}}selected{{/if}}>God of Speed (+Wound if AG>FO/MA)</option>
+            <option value="war" {{#if (eq shinjinBonuses.lightOpt "war")}}selected{{/if}}>God of War (+Wound Armed)</option>
+            <option value="magic" {{#if (eq shinjinBonuses.lightOpt "magic")}}selected{{/if}}>God of Magic (-Ki Magical UA)</option>
+            <option value="time" {{#if (eq shinjinBonuses.lightOpt "time")}}selected{{/if}}>God of Time (Time Freeze)</option>
+          </select>
+        </div>
+        {{/if}}
+
+        {{!-- Dark Magic Option (Makaio) --}}
+        {{#if shinjinBonuses.has.darkMagic}}
+        <div class="racial-option-row">
+          <label class="racial-option-label">Dark Magic:</label>
+          <select name="system.darkMagicOption" class="racial-option-select">
+            <option value="none" {{#if (eq shinjinBonuses.darkOpt "none")}}selected{{/if}}>-- Select --</option>
+            <option value="kiriDrain" {{#if (eq shinjinBonuses.darkOpt "kiriDrain")}}selected{{/if}}>Kiri Drain (Energy Drain)</option>
+            <option value="powerful" {{#if (eq shinjinBonuses.darkOpt "powerful")}}selected{{/if}}>Powerful Demon (+Soak if FO/MA)</option>
+            <option value="eternal" {{#if (eq shinjinBonuses.darkOpt "eternal")}}selected{{/if}}>Eternal Demon (+Wound if AG/TE)</option>
+            <option value="manipulative" {{#if (eq shinjinBonuses.darkOpt "manipulative")}}selected{{/if}}>Manipulative Demon (+Combat if SC/PE)</option>
+            <option value="transforming" {{#if (eq shinjinBonuses.darkOpt "transforming")}}selected{{/if}}>Transforming Demon (+Stress Test)</option>
+            <option value="elemental" {{#if (eq shinjinBonuses.darkOpt "elemental")}}selected{{/if}}>Elemental Demon (Profile bonus)</option>
+            <option value="commanding" {{#if (eq shinjinBonuses.darkOpt "commanding")}}selected{{/if}}>Commanding Demon (+Minion Combat)</option>
+          </select>
+        </div>
+        {{/if}}
+
+        {{#if hasShinjinBonuses}}
+        <div class="shinjin-derived">
+          <div class="bonus-cards-grid">
+          {{#if shinjinBonuses.has.cosmicEfficiency}}
+            <div class="bonus-card cat-armor" title="Cosmic Efficiency">
+              <div class="bonus-card-header"><i class="fas fa-shield-alt"></i> Cosmic Eff.</div>
+              <div class="bonus-card-value">+{{shinjinBonuses.cosmicDefense}}/-{{shinjinBonuses.cosmicKiReduction}}</div>
+              <div class="bonus-card-stat">Defense / Ki Cost</div>
+            </div>
+          {{/if}}
+          {{#if shinjinBonuses.has.arcaneAffinity}}
+            <div class="bonus-card cat-utility" title="Arcane Affinity">
+              <div class="bonus-card-header"><i class="fas fa-eye"></i> Arcane Affinity</div>
+              <div class="bonus-card-value">-{{shinjinBonuses.arcaneCritReduction}}</div>
+              <div class="bonus-card-stat">Crit Perception</div>
+            </div>
+          {{/if}}
+          {{#if (gt shinjinBonuses.lightPeaceMoraleSave 0)}}
+            <div class="bonus-card cat-saves" title="God of Peace">
+              <div class="bonus-card-header"><i class="fas fa-brain"></i> God of Peace</div>
+              <div class="bonus-card-value">+{{shinjinBonuses.lightPeaceMoraleSave}}</div>
+              <div class="bonus-card-stat">Morale Save</div>
+            </div>
+          {{/if}}
+          {{#if (gt shinjinBonuses.lightPowerDodge 0)}}
+            <div class="bonus-card cat-offense" title="God of Power">
+              <div class="bonus-card-header"><i class="fas fa-running"></i> God of Power</div>
+              <div class="bonus-card-value">+{{shinjinBonuses.lightPowerDodge}}</div>
+              <div class="bonus-card-stat">Dodge (above Injured)</div>
+            </div>
+          {{/if}}
+          {{#if (gt shinjinBonuses.lightSpeedWound 0)}}
+            <div class="bonus-card cat-offense" title="God of Speed">
+              <div class="bonus-card-header"><i class="fas fa-running"></i> God of Speed</div>
+              <div class="bonus-card-value">+{{shinjinBonuses.lightSpeedWound}}</div>
+              <div class="bonus-card-stat">Wound (above Injured)</div>
+            </div>
+          {{/if}}
+          {{#if (gt shinjinBonuses.lightWarWound 0)}}
+            <div class="bonus-card cat-offense" title="God of War">
+              <div class="bonus-card-header"><i class="fas fa-fist-raised"></i> God of War</div>
+              <div class="bonus-card-value">+{{shinjinBonuses.lightWarWound}}</div>
+              <div class="bonus-card-stat">Wound (Armed)</div>
+            </div>
+          {{/if}}
+          {{#if (gt shinjinBonuses.lightMagicKiReduction 0)}}
+            <div class="bonus-card cat-ki" title="God of Magic">
+              <div class="bonus-card-header"><i class="fas fa-bolt"></i> God of Magic</div>
+              <div class="bonus-card-value">-{{shinjinBonuses.lightMagicKiReduction}}</div>
+              <div class="bonus-card-stat">Ki (Magical UA)</div>
+            </div>
+          {{/if}}
+          {{#if (gt shinjinBonuses.darkPowerfulSoak 0)}}
+            <div class="bonus-card cat-armor" title="Powerful Demon">
+              <div class="bonus-card-header"><i class="fas fa-shield-alt"></i> Powerful Demon</div>
+              <div class="bonus-card-value">+{{shinjinBonuses.darkPowerfulSoak}}</div>
+              <div class="bonus-card-stat">Soak</div>
+            </div>
+          {{/if}}
+          {{#if (gt shinjinBonuses.darkEternalWound 0)}}
+            <div class="bonus-card cat-offense" title="Eternal Demon">
+              <div class="bonus-card-header"><i class="fas fa-skull-crossbones"></i> Eternal Demon</div>
+              <div class="bonus-card-value">+{{shinjinBonuses.darkEternalWound}}</div>
+              <div class="bonus-card-stat">Wound</div>
+            </div>
+          {{/if}}
+          {{#if (gt shinjinBonuses.darkManipulativeCombat 0)}}
+            <div class="bonus-card cat-offense" title="Manipulative Demon">
+              <div class="bonus-card-header"><i class="fas fa-fist-raised"></i> Manipulative</div>
+              <div class="bonus-card-value">+{{shinjinBonuses.darkManipulativeCombat}}</div>
+              <div class="bonus-card-stat">Combat Rolls</div>
+            </div>
+          {{/if}}
+          {{#if (gt shinjinBonuses.darkCommandingMinion 0)}}
+            <div class="bonus-card cat-utility" title="Commanding Demon">
+              <div class="bonus-card-header"><i class="fas fa-crown"></i> Commanding</div>
+              <div class="bonus-card-value">+{{shinjinBonuses.darkCommandingMinion}}</div>
+              <div class="bonus-card-stat">Minion Combat</div>
+            </div>
+          {{/if}}
+          </div>
+        </div>
+        {{/if}}
+      </div>
+      {{/if}}
+
+      {{!-- ======== UNDEAD TRACKER ======== --}}
+      {{#if isUndead}}
+      <div class="undead-tracker">
+        <div class="undead-header">
+          <i class="fas fa-skull"></i> Undead Traits
+        </div>
+
+        {{#if hasUndeadBonuses}}
+        <div class="undead-derived">
+          <div class="bonus-cards-grid">
+          {{#if undeadBonuses.has.undeadSurvival}}
+            <div class="bonus-card cat-saves" title="Undead Survival">
+              <div class="bonus-card-header"><i class="fas fa-brain"></i> Survival</div>
+              <div class="bonus-card-value">+{{undeadBonuses.survivalSteadfast}}</div>
+              <div class="bonus-card-stat">Steadfast Dice</div>
+            </div>
+            <div class="bonus-card cat-offense" title="Undying State">
+              <div class="bonus-card-header"><i class="fas fa-skull-crossbones"></i> Undying State</div>
+              <div class="bonus-card-value">+{{undeadBonuses.undyingWound}}</div>
+              <div class="bonus-card-stat">Wound (Defeated)</div>
+            </div>
+          {{/if}}
+          </div>
+        </div>
+        {{/if}}
+      </div>
+      {{/if}}
+

@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.6] - 2026-08-09
+
+- Nuevos parciales de plantilla: bonos raciales y de transformación en combate,
+  y rastreador de crueldad (`cruelty-tracker`).
+- Mejoras en la lógica del actor y en la hoja de personaje.
+- Mejoras en las pestañas de combate, principal, rasgos y transformaciones.
+- Ajustes en la carga de plantillas y en los estilos (CSS).
+
 ## [1.0.5] - 2026-08-07
 
 - Mejoras en la automatización de poderes de mejora (`enhancement-powers`).

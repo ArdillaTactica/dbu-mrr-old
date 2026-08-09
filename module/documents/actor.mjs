@@ -939,24 +939,25 @@ export class DBUActor extends Actor {
     };
 
     // --- God Ki Detection & DKP ---
-    // God Ki is active if: permanent flag is set, OR any active transformation has "God Ki" aspect
+    // Access: permanent flag, OR OWNING any transformation with the "God Ki"
+    // aspect (active or not) — gates whether Divine Ki UI shows at all.
+    // Active: permanent flag, OR any ACTIVE transformation with the aspect.
+    const _isGodKiAspect = (a) => a.replace(/\s*\[LV~?\d*\]/i, "").replace(/\s*\([^)]*\)/g, "").trim() === "God Ki";
+    let godKiAccess = system.godKi?.permanent || false;
     let godKiActive = system.godKi?.permanent || false;
-    if (!godKiActive) {
-      for (const trans of [...(system.transformations || []), ...(system._gainedActiveTransformations || [])]) {
-        if (!trans.active) continue;
-        const aspects = trans.aspects || [];
-        if (aspects.some(a => a.replace(/\s*\[LV~?\d*\]/i, "").replace(/\s*\([^)]*\)/g, "").trim() === "God Ki")) {
-          godKiActive = true;
-          break;
-        }
+    for (const trans of [...(system.transformations || []), ...(system._gainedActiveTransformations || [])]) {
+      if ((trans.aspects || []).some(_isGodKiAspect)) {
+        godKiAccess = true;
+        if (trans.active) godKiActive = true;
       }
     }
+    system.godKi.hasAccess = godKiAccess;
     system.godKi.active = godKiActive;
 
-    // DKP max = 6 × Power Level per god-ki.txt:20:
-    // "starts each Combat Encounter with their maximum amount of DKP – an amount equal to 6x,
-    // where x is equal to their Power Level"
-    system.divineKiPoints.max = 6 * level;
+    // DKP max = 6 × Power Level per god-ki.txt:20 ("starts each Combat Encounter
+    // with their maximum amount of DKP – 6x, x = Power Level"). Characters with
+    // no God Ki access have no DKP pool at all (max 0 also hides the UI).
+    system.divineKiPoints.max = godKiAccess ? 6 * level : 0;
     if (system.divineKiPoints.value == null && godKiActive) {
       system.divineKiPoints.value = system.divineKiPoints.max;
     }
@@ -3307,10 +3308,10 @@ export class DBUActor extends Actor {
       }
     }
 
-    // Cruel Intentions (Arcosian): +1(T) Wound per Cruelty Stack (max 3,
-    // stacks lost at the end of your turns — tracked in the Combat tab).
+    // Cruel Intentions (Arcosian): +1(T) Wound per Cruelty Stack (max 3, or 6
+    // with Super Evolution active; stacks lost at the end of your turns).
     {
-      const cruelty = Math.min(3, system.tracking?.crueltyStacks || 0);
+      const cruelty = Math.min(DBUActor.getCrueltyMax(system), system.tracking?.crueltyStacks || 0);
       if (cruelty > 0 && (system.racialTraits || []).includes("db303ead803660ff")) {
         buffs.push({ active: true, effect: "Wound", T: cruelty, bT: 0, flat: 0, source: "Cruelty Stacks" });
       }
@@ -3425,6 +3426,16 @@ export class DBUActor extends Actor {
   };
 
   static SIZE_ORDER = ["nano", "tiny", "small", "medium", "large", "enormous", "gigantic", "colossal"];
+
+  /**
+   * Maximum Cruelty Stacks (Cruel Intentions): 3 by default; Super Evolution
+   * raises it to 6 while active ("Increase your maximum number of Cruelty
+   * Stacks to 6", super-evolution.txt:70).
+   */
+  static getCrueltyMax(system) {
+    const all = [...(system.transformations || []), ...(system._gainedActiveTransformations || [])];
+    return all.some(t => t?.active && t?.catalogKey === "super_evolution") ? 6 : 3;
+  }
 
   /**
    * Unification (Unify Maneuver): snapshot entries for this Primary Character's

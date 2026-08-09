@@ -585,8 +585,11 @@ export class DBUCharacterSheet extends ActorSheet {
     }
 
     // ---- Combat sub-tab state ----
+    // racial/mp/ep/af/lf moved to the Traits/Transformations tabs — coerce
+    // stale stored values to "talents".
+    const _tbTab = system.combatTabState?.traitsBonusesTab;
     context.combatTabsState = {
-      traitsBonusesTab: system.combatTabState?.traitsBonusesTab || "racial"
+      traitsBonusesTab: ["talents", "resources"].includes(_tbTab) ? _tbTab : "talents"
     };
 
     // ---- Tab badge counts ----
@@ -3366,6 +3369,7 @@ export class DBUCharacterSheet extends ActorSheet {
     ].filter(r => r.value > 0 || r.max > 0);
     context.quickCombatResources = quickCombatResources;
     context.hasQuickCombatResources = quickCombatResources.length > 0;
+    context.surgeManeuverUsed = (system.combatTabState?.resourceUsage?.encounter?.["surge:maneuver"] || 0) > 0;
     context.universeSeed = {
       universalPower: Number(system.universeSeed?.universalPower || 0),
       integrated: !!system.universeSeed?.integrated
@@ -4766,11 +4770,14 @@ export class DBUCharacterSheet extends ActorSheet {
       context.hasArcosianBonuses = Object.values(arc.has || {}).some(v => v);
     }
     // Cruelty Stacks tracker (Cruel Intentions racial trait — works even if
-    // the race string differs, e.g. fusions)
+    // the race string differs, e.g. fusions). Max 3, or 6 with Super Evolution.
     if ((system.racialTraits || []).includes("db303ead803660ff")) {
-      const cStacks = Math.min(3, system.tracking?.crueltyStacks || 0);
+      const cMax = this.actor.constructor.getCrueltyMax(system);
+      const cStacks = Math.min(cMax, system.tracking?.crueltyStacks || 0);
       context.crueltyTracker = {
-        value: cStacks, max: 3,
+        value: cStacks, max: cMax,
+        superEvolution: cMax > 3,
+        pips: Array.from({ length: cMax }, (_, i) => ({ filled: i < cStacks })),
         woundBonus: cStacks * (system.tier || 1)
       };
     }
@@ -6131,6 +6138,7 @@ export class DBUCharacterSheet extends ActorSheet {
     html.on("change", ".de-meta-config", this._onDivergentMetaConfig.bind(this));
     html.on("click", ".cruelty-increment", this._onCrueltyChange.bind(this, 1));
     html.on("click", ".cruelty-decrement", this._onCrueltyChange.bind(this, -1));
+    html.on("click", "[data-action='use-surge']", this._onUseSurge.bind(this));
 
     // Shapeshift Unique Ability config (Unique tab)
     html.on("change", ".ss-field", this._onShapeshiftField.bind(this));
@@ -6933,13 +6941,82 @@ export class DBUCharacterSheet extends ActorSheet {
     });
   }
 
-  /** Cruelty Stacks (Cruel Intentions, Arcosian): ±1, clamped 0–3. */
+  /** Cruelty Stacks (Cruel Intentions, Arcosian): ±1, clamped 0–max (3, or 6 with Super Evolution). */
   async _onCrueltyChange(delta, event) {
     event.preventDefault();
+    const max = this.actor.constructor.getCrueltyMax(this.actor.system);
     const current = this.actor.system.tracking?.crueltyStacks || 0;
-    const next = Math.max(0, Math.min(3, current + delta));
+    const next = Math.max(0, Math.min(max, current + delta));
     if (next === current) return;
     await this.actor.update({ "system.tracking.crueltyStacks": next });
+  }
+
+  /**
+   * Surge Maneuver [1/Encounter] (actions-combat.txt:403): use a Healing Surge
+   * (roll system.status.healingSurge → regain LP) or a Power Surge (+powerSurgeKi
+   * KP and regain 1/4 max Capacity). Extra surges granted by other effects are
+   * allowed after a confirm.
+   */
+  async _onUseSurge(event) {
+    event.preventDefault();
+    const type = event.currentTarget.dataset.surgeType;
+    const system = this.actor.system;
+    const usageKey = "surge:maneuver";
+    const used = system.combatTabState?.resourceUsage?.encounter?.[usageKey] || 0;
+    if (used > 0) {
+      const ok = await Dialog.confirm({
+        title: "Surge Maneuver",
+        content: `<p>The Surge Maneuver has already been used this Encounter (1/Encounter). Use another Surge anyway (granted by a different effect, e.g. Namekian Biology, talents…)?</p>`
+      });
+      if (!ok) return;
+    }
+    const updates = { [`system.combatTabState.resourceUsage.encounter.${usageKey}`]: used + 1 };
+    let card;
+
+    if (type === "healing") {
+      const formula = system.status.healingSurge || `${2 * (system.tier || 1)}d10`;
+      const roll = new Roll(formula);
+      await roll.evaluate();
+      const lpMax = system.lifePoints.max;
+      const lpBefore = system.lifePoints.value ?? lpMax;
+      const healed = Math.max(0, roll.total);
+      const lpAfter = Math.min(lpMax, lpBefore + healed);
+      updates["system.lifePoints.value"] = lpAfter;
+      card = `<div class="dbu-attack-roll">
+        <div class="dbu-attack-title"><i class="fas fa-heart"></i> ${this.actor.name} — Healing Surge</div>
+        <div class="dbu-attack-meta">
+          <span class="dbu-meta-chip">Surge Maneuver${used > 0 ? " (extra)" : " 1/Enc"}</span>
+          <span class="dbu-meta-chip">Instant</span>
+        </div>
+        <div class="dbu-roll-row">
+          <span class="dbu-roll-label">Life</span>
+          <span class="dbu-roll-formula">${formula}</span>
+          <span class="dbu-roll-total">+${roll.total}</span>
+        </div>
+        <div class="dbu-attack-buffs">LP ${lpBefore} → <b>${lpAfter}</b> / ${lpMax}</div>
+      </div>`;
+      if (game.dice3d) game.dice3d.showForRoll(roll, game.user, true);
+    } else {
+      const kpGain = system.status.powerSurgeKi || Math.floor(system.kiPool.max / 4);
+      const capGain = system.status.powerSurgeCapacity || Math.floor(system.capacity.max / 4);
+      const kpBefore = system.kiPool.value ?? system.kiPool.max;
+      const kpAfter = Math.min(system.kiPool.max, kpBefore + kpGain);
+      const capSpentBefore = system.status.capacitySpent || 0;
+      const capSpentAfter = Math.max(0, capSpentBefore - capGain);
+      updates["system.kiPool.value"] = kpAfter;
+      updates["system.status.capacitySpent"] = capSpentAfter;
+      card = `<div class="dbu-attack-roll">
+        <div class="dbu-attack-title"><i class="fas fa-bolt"></i> ${this.actor.name} — Power Surge</div>
+        <div class="dbu-attack-meta">
+          <span class="dbu-meta-chip">Surge Maneuver${used > 0 ? " (extra)" : " 1/Enc"}</span>
+          <span class="dbu-meta-chip">Instant</span>
+        </div>
+        <div class="dbu-attack-buffs">KP ${kpBefore} → <b>${kpAfter}</b> / ${system.kiPool.max} · Capacity regained <b>${capSpentBefore - capSpentAfter}</b> (spent ${capSpentBefore} → ${capSpentAfter})</div>
+      </div>`;
+    }
+
+    await this.actor.update(updates);
+    ChatMessage.create({ content: card, speaker: ChatMessage.getSpeaker({ actor: this.actor }) });
   }
 
   /** Part Beast: option for a chosen Bestial Trait (shared bestialTraitConfig). */
