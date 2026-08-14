@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.8] - 2026-08-14
+
+- Mejoras en el catálogo de rasgos de secuaces (`minion-traits`).
+- Correcciones en el modelo de datos del personaje, la lógica del actor y la
+  hoja de personaje.
+- Mejoras en las pestañas de combate, principal y progresión.
+- Ajustes de estilos (CSS).
+
 ## [1.0.7] - 2026-08-14
 
 - Mejoras en las técnicas de aura maligna (`evil-aura-techniques`).

@@ -10180,6 +10180,107 @@
   gap: 12px;
 }
 
+/* Player Minion panel (Main tab) */
+.dbu-old.sheet .minion-progression-note {
+  margin: 6px 8px;
+}
+
+.dbu-old.sheet .threshold-na {
+  opacity: 0.35;
+}
+
+.dbu-old.sheet .minion-master-info {
+  padding: 4px 10px 8px;
+  font-size: 12px;
+  color: #555;
+}
+
+.dbu-old.sheet .minion-pm-config {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dbu-old.sheet .minion-pm-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.dbu-old.sheet .minion-pm-row > label:first-child {
+  font-size: 11px;
+  font-weight: bold;
+  text-transform: uppercase;
+  color: #666;
+}
+
+.dbu-old.sheet .minion-pm-row input[type="text"] {
+  flex: 1;
+  min-width: 140px;
+}
+
+.dbu-old.sheet .minion-check {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.dbu-old.sheet .minion-rules-note {
+  font-size: 11px;
+  color: #555;
+  background: rgba(0, 0, 0, 0.05);
+  border-left: 3px solid #8b6a3f;
+  padding: 6px 8px;
+  border-radius: 3px;
+  line-height: 1.5;
+}
+
+.dbu-old.sheet .minion-traits-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: bold;
+  font-size: 12px;
+  padding: 4px 0;
+}
+
+.dbu-old.sheet .minion-trait-hint {
+  font-weight: normal;
+  color: #777;
+  font-size: 11px;
+}
+
+.dbu-old.sheet .minion-trait-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 3px;
+  margin-top: 4px;
+}
+
+.dbu-old.sheet .minion-trait-name {
+  font-weight: bold;
+  font-size: 12px;
+  flex: 1;
+}
+
+.dbu-old.sheet .minion-trait-effects {
+  padding: 2px 8px 4px;
+  font-size: 11px;
+  color: #555;
+}
+
+.dbu-old.sheet .minion-trait-effect {
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
 .dbu-old.sheet .section-subheader {
   padding: 4px 10px;
   background: rgba(0, 0, 0, 0.05);

@@ -428,6 +428,10 @@ export class DBUCharacterSheet extends ActorSheet {
     try { this._prepareAurasData(context, system); }
     catch (err) { console.error("DBU-OLD | _prepareAurasData failed:", err); }
 
+    // ---- Player Minion panel data (Main tab) ----
+    try { this._preparePlayerMinionData(context, system); }
+    catch (err) { console.error("DBU-OLD | _preparePlayerMinionData failed:", err); }
+
     // ---- Transformations tab data ----
     try { this._prepareTransformationsData(context, system); }
     catch (err) { console.error("DBU-OLD | _prepareTransformationsData failed:", err); }
@@ -769,6 +773,24 @@ export class DBUCharacterSheet extends ActorSheet {
         if (val && String(val).trim()) summary.skills.push(val);
       }
     }
+    // Player Minion Creation budgets (minions.txt "Minion PL"): PL1 grants
+    // 1 Character Perk, 2 Attribute Additions, 2 Talent Additions and a Skill
+    // Improvement; every PL after grants 1 Character Perk — at PLs that raise
+    // the base ToP (5/10/15/…) it is instead a Perk + an Attribute Addition +
+    // a Minion Trait. Racial Skill Ranks are halved (rounded up).
+    if (system.minion?.enabled) {
+      const lvl = system.level || 1;
+      const tierFromLevel = (l) => l <= 4 ? 1 : l <= 9 ? 2 : l <= 14 ? 3 : l <= 19 ? 4 : l <= 24 ? 5 : l <= 29 ? 6 : 7;
+      const bTUps = tierFromLevel(lvl) - 1;
+      context.minionProgression = {
+        perks: lvl,
+        attrAdditions: 2 + bTUps,
+        talentAdditions: 2,
+        skillImprovements: 1,
+        minionTraitsFromPL: bTUps
+      };
+    }
+
     context.progressionPreview = [{
       level: summary.level,
       talents: summary.talents.join(", ") || "-",
@@ -1600,6 +1622,44 @@ export class DBUCharacterSheet extends ActorSheet {
     }
 
     return effects;
+  }
+
+  /**
+   * Player Minion panel (Main tab): enrich the selected standard Minion
+   * Trait ids with catalog data for display.
+   */
+  _preparePlayerMinionData(context, system) {
+    const m = system.minion || {};
+    const catalog = CONFIG.DBU?.minionTraitsCatalog || [];
+    // Master side: maximum Minions from Minion Talents (minions.txt Limited
+    // Control + talent L3s). Base 1 in combat; Master of Minions / Minion
+    // Coordinator / Minion Mark each +2; Minion Army → 10 in combat, no
+    // outside limit. Outside of combat: combat max + base ToP.
+    const talents = system.talents || [];
+    const plusCount = ["master_of_minions", "minion_coordinator", "minion_mark"]
+      .filter(t => talents.includes(t)).length;
+    const hasArmy = talents.includes("minion_army");
+    const combatMax = hasArmy ? 10 : 1 + 2 * plusCount;
+    context.playerMinion = {
+      master: {
+        hasMinionTalents: plusCount > 0 || hasArmy,
+        combatMax,
+        outsideMax: hasArmy ? "Unlimited" : combatMax + (system.baseTier || 1),
+        army: hasArmy
+      },
+      traitRows: (m.traits || []).map((id, idx) => {
+        const data = catalog.find(t => t.id === id) || { name: id, description: "", effects: [] };
+        return {
+          idx, id,
+          name: data.name,
+          description: data.description || "",
+          effects: data.effects || [],
+          hasOptions: !!data.hasOptions,
+          options: data.options || [],
+          option: m.traitOptions?.[id] || ""
+        };
+      })
+    };
   }
 
   _calcAuraKPCharge(aura, tpCost) {
@@ -6265,6 +6325,15 @@ export class DBUCharacterSheet extends ActorSheet {
     html.on("click", "[data-action='add-minion-trait']", this._onAddMinionTrait.bind(this));
     html.on("click", "[data-action='delete-minion-trait']", this._onDeleteMinionTrait.bind(this));
 
+    // Player Minion (Main tab)
+    html.on("click", "[data-action='add-player-minion-trait']", this._onAddPlayerMinionTrait.bind(this));
+    html.on("click", "[data-action='delete-player-minion-trait']", this._onDeletePlayerMinionTrait.bind(this));
+    html.on("change", ".pm-trait-option", async (event) => {
+      const traitId = event.currentTarget.dataset.traitId;
+      if (!traitId) return;
+      await this.actor.update({ [`system.minion.traitOptions.${traitId}`]: event.currentTarget.value });
+    });
+
     // Battle Born stack controls
     html.on("click", ".bb-increment", this._onBBIncrement.bind(this));
     html.on("click", ".bb-decrement", this._onBBDecrement.bind(this));
@@ -7360,6 +7429,54 @@ export class DBUCharacterSheet extends ActorSheet {
       }
     }, { width: 500, height: 300, classes: ["dbu-old", "trait-selector-dialog"] });
     dlg.render(true);
+  }
+
+  // -------------------------------------------------------
+  // Player Minion Trait CRUD (Main tab panel)
+  // -------------------------------------------------------
+
+  async _onAddPlayerMinionTrait(event) {
+    event.preventDefault();
+    const catalog = CONFIG.DBU?.minionTraitsCatalog || [];
+    const selected = this.actor.system.minion?.traits || [];
+    const rows = catalog.map(t => {
+      const count = selected.filter(id => id === t.id).length;
+      const taken = count > 0 && !t.stackable;
+      const dangerNote = t.dangerousOnly ? ' <span class="trait-category-badge minion">Dangerous — not encouraged for players</span>' : "";
+      const countBadge = count > 0 && t.stackable ? ` <span class="trait-category-badge">×${count}</span>` : "";
+      return `<div class="talent-selector-item ${taken ? "talent-selector-selected" : ""}" data-trait-id="${t.id}">
+        <span class="talent-selector-name">${t.name}${dangerNote}${countBadge}</span>
+        <div class="talent-selector-prereq">${t.description || ""}</div>
+        ${taken ? '<span class="talent-selector-check"><i class="fas fa-check"></i></span>' : ""}
+      </div>`;
+    }).join("");
+    const dlg = new Dialog({
+      title: "Add Minion Trait",
+      content: `<div class="talent-selector-modal"><div class="talent-selector-list">${rows}</div></div>`,
+      buttons: { close: { label: "Close" } },
+      default: "close",
+      render: (html) => {
+        html.on("click", ".talent-selector-item:not(.talent-selector-selected)", async (ev) => {
+          const traitId = ev.currentTarget.dataset.traitId;
+          if (!traitId) return;
+          const traits = foundry.utils.deepClone(this.actor.system.minion?.traits || []);
+          traits.push(traitId);
+          await this.actor.update({ "system.minion.traits": traits });
+          dlg.close();
+        });
+      }
+    }, { width: 520, height: 500, classes: ["dbu-old", "talent-selector-dialog"] });
+    dlg.render(true);
+  }
+
+  async _onDeletePlayerMinionTrait(event) {
+    event.preventDefault();
+    const index = Number(event.currentTarget.dataset.index);
+    const traits = foundry.utils.deepClone(this.actor.system.minion?.traits || []);
+    if (index >= 0 && index < traits.length) {
+      traits.splice(index, 1);
+      await this.actor.update({ "system.minion.traits": traits });
+    }
   }
 
   async _onDeleteMinionTrait(event) {
@@ -15108,6 +15225,15 @@ export class DBUCharacterSheet extends ActorSheet {
       if (shAura?.type === "Shield"
           && !(shAura.advantages || []).some(a => a.name === "Offensive Shield")) {
         ui.notifications.warn(`${shAura.name || "Your Shield Aura"} is active — you cannot use Attacking Maneuvers while in a Shield Aura (add Offensive Shield to allow it).`);
+        return;
+      }
+    }
+    // Player Minion: "Minions cannot use Ultimate Signature Techniques" (minions.txt)
+    if (String(action.source).startsWith("tech_") && this.actor.system.minion?.enabled) {
+      const mTechId = Number(String(action.source).slice(5));
+      const mTech = (this.actor.system.signatureTechniques || []).find(t => t.id === mTechId);
+      if (mTech && /ultimate/i.test(mTech.type || "")) {
+        ui.notifications.warn(`${mTech.name || "This technique"} is an Ultimate Signature Technique — Minions cannot use Ultimates.`);
         return;
       }
     }

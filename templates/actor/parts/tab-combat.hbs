@@ -906,11 +906,11 @@
             </div>
           </div>
           <div class="dmg-thresholds">
-            <div class="dmg-threshold {{#if system.thresholds.bruised.crossed}}threshold-crossed{{/if}} {{#if system.thresholds.bruised.checked}}threshold-saved{{/if}}" data-threshold="bruised">
+            <div class="dmg-threshold {{#if system.minion.enabled}}threshold-na{{/if}} {{#if system.thresholds.bruised.crossed}}threshold-crossed{{/if}} {{#if system.thresholds.bruised.checked}}threshold-saved{{/if}}" data-threshold="bruised" {{#if system.minion.enabled}}title="Minions only possess the Healthy and Injured Health Thresholds"{{/if}}>
               <span class="threshold-label">Bruised</span>
-              <span class="threshold-value">{{system.thresholds.bruised.value}}</span>
-              <span class="threshold-status">{{#if system.thresholds.bruised.crossed}}{{#if system.thresholds.bruised.checked}}SAVED{{else}}FAILED{{/if}}{{else}}--{{/if}}</span>
-              <input type="checkbox" name="system.thresholds.bruised.checked" {{checked system.thresholds.bruised.checked}} class="threshold-check" title="Check = saved (no penalty)" />
+              <span class="threshold-value">{{#if system.minion.enabled}}N/A{{else}}{{system.thresholds.bruised.value}}{{/if}}</span>
+              <span class="threshold-status">{{#if system.minion.enabled}}--{{else}}{{#if system.thresholds.bruised.crossed}}{{#if system.thresholds.bruised.checked}}SAVED{{else}}FAILED{{/if}}{{else}}--{{/if}}{{/if}}</span>
+              {{#unless system.minion.enabled}}<input type="checkbox" name="system.thresholds.bruised.checked" {{checked system.thresholds.bruised.checked}} class="threshold-check" title="Check = saved (no penalty)" />{{/unless}}
             </div>
             <div class="dmg-threshold {{#if system.thresholds.injured.crossed}}threshold-crossed{{/if}} {{#if system.thresholds.injured.checked}}threshold-saved{{/if}}" data-threshold="injured">
               <span class="threshold-label">Injured</span>
@@ -918,11 +918,11 @@
               <span class="threshold-status">{{#if system.thresholds.injured.crossed}}{{#if system.thresholds.injured.checked}}SAVED{{else}}FAILED{{/if}}{{else}}--{{/if}}</span>
               <input type="checkbox" name="system.thresholds.injured.checked" {{checked system.thresholds.injured.checked}} class="threshold-check" title="Check = saved (no penalty)" />
             </div>
-            <div class="dmg-threshold {{#if system.thresholds.critical.crossed}}threshold-crossed{{/if}} {{#if system.thresholds.critical.checked}}threshold-saved{{/if}}" data-threshold="critical">
+            <div class="dmg-threshold {{#if system.minion.enabled}}threshold-na{{/if}} {{#if system.thresholds.critical.crossed}}threshold-crossed{{/if}} {{#if system.thresholds.critical.checked}}threshold-saved{{/if}}" data-threshold="critical" {{#if system.minion.enabled}}title="Minions only possess the Healthy and Injured Health Thresholds"{{/if}}>
               <span class="threshold-label">Critical</span>
-              <span class="threshold-value">{{system.thresholds.critical.value}}</span>
-              <span class="threshold-status">{{#if system.thresholds.critical.crossed}}{{#if system.thresholds.critical.checked}}SAVED{{else}}FAILED{{/if}}{{else}}--{{/if}}</span>
-              <input type="checkbox" name="system.thresholds.critical.checked" {{checked system.thresholds.critical.checked}} class="threshold-check" title="Check = saved (no penalty)" />
+              <span class="threshold-value">{{#if system.minion.enabled}}N/A{{else}}{{system.thresholds.critical.value}}{{/if}}</span>
+              <span class="threshold-status">{{#if system.minion.enabled}}--{{else}}{{#if system.thresholds.critical.crossed}}{{#if system.thresholds.critical.checked}}SAVED{{else}}FAILED{{/if}}{{else}}--{{/if}}{{/if}}</span>
+              {{#unless system.minion.enabled}}<input type="checkbox" name="system.thresholds.critical.checked" {{checked system.thresholds.critical.checked}} class="threshold-check" title="Check = saved (no penalty)" />{{/unless}}
             </div>
           </div>
           <div class="dmg-penalties-row">

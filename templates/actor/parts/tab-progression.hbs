@@ -24,6 +24,19 @@
     </div>
   </div>
 
+  {{#if minionProgression}}
+  {{!-- Minion Creation budgets (minions.txt) --}}
+  <div class="minion-rules-note minion-progression-note">
+    <b>Minion Creation budgets at PL {{system.level}}:</b>
+    {{minionProgression.perks}} Character Perk(s) ·
+    {{minionProgression.attrAdditions}} Attribute Additions ·
+    {{minionProgression.talentAdditions}} Talent Additions (PL 1 only) ·
+    {{minionProgression.skillImprovements}} Skill Improvement (PL 1 only) ·
+    Minion Traits: 1(bT of Master) at creation{{#if minionProgression.minionTraitsFromPL}} + {{minionProgression.minionTraitsFromPL}} from base-ToP-up PLs{{/if}}.
+    Racial Traits: Primary + 2 Secondary (or 1 Secondary + 1 Subrace). Racial Skill Ranks are halved (rounded up). Convert Character Perks into Attribute/Talent Additions or Skill Improvements as usual.
+  </div>
+  {{/if}}
+
   {{!-- Progression Preview --}}
   <div class="section-header">Progression Preview</div>
   <div class="progression-preview">

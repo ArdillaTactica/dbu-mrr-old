@@ -731,6 +731,16 @@ export default class DBUCharacterData extends foundry.abstract.TypeDataModel {
         })
       }),
 
+      // ---- Player Minion (minions.txt Minion Rules + Minion Creation) ----
+      minion: new SchemaField({
+        enabled: new BooleanField({ initial: false }),
+        isMinionRace: new BooleanField({ initial: false }),   // LP ×1/2 instead of ×1/5
+        isDuplicate: new BooleanField({ initial: false }),
+        masterName: new StringField({ initial: "" }),
+        traits: new ArrayField(new StringField()),            // standard Minion Trait ids
+        traitOptions: new ObjectField()                       // per-trait option choices
+      }),
+
       // ---- Transformation Customization ----
       transformationCustomization: new SchemaField({
         limitShattering: new SchemaField({

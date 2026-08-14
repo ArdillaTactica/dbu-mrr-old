@@ -57,6 +57,21 @@ export class DBUActor extends Actor {
     let baseTier = system.baseTier;
     const level = system.level || 1;
 
+    // ---- Player Minion: Weakness rule (minions.txt) ----
+    // "All Minions have their base Tier of Power reduced by 1 (if their base
+    // ToP is already 1, reduce their Saving Throws and Combat Rolls by 2)."
+    system._minionWeakPenalty = 0;
+    if (system.minion?.enabled) {
+      if (baseTier > 1) {
+        baseTier -= 1;
+        tier = Math.max(1, tier - 1);
+        system.baseTier = baseTier;
+        system.tier = tier;
+      } else {
+        system._minionWeakPenalty = 2;
+      }
+    }
+
     // Cache gained active transformations from OSF once for all calculations
     system._gainedActiveTransformations = DBUActor._getActiveGainedTransformations(system);
 
@@ -321,6 +336,14 @@ export class DBUActor extends Actor {
     system.status.damageReduction = (system.status.damageReduction || 0)
       + (system.status.dr || 0)
       + (system.talentBonuses?.totals?.dr || 0);
+
+    // ---- Player Minion trait Soak adjustments (post-automation) ----
+    // Healthy Minion +1(T) Soak; No-Good Minion −2(bT) Soak.
+    if (system.minion?.enabled && system.status) {
+      const _mT = system.minion.traits || [];
+      if (_mT.includes("mt_healthy_000007")) system.status.soak += tier;
+      if (_mT.includes("mt_no_good_000012")) system.status.soak = Math.max(0, system.status.soak - 2 * baseTier);
+    }
 
     // ---- Equipment Quality Automation (apparel/weapon qualities) ----
     applyEquipmentQualityBonuses(this, system, tier, baseTier);
@@ -831,6 +854,27 @@ export class DBUActor extends Actor {
     if ((strenuous.encountersLeft || 0) > 0 && (strenuous.fraction || 0) > 0) {
       system.lifePoints.max = Math.max(1, system.lifePoints.max - Math.floor(system.lifePoints.max * strenuous.fraction));
     }
+    // ---- Player Minion Rules (minions.txt) ----
+    // Life Points ×1/5 (Minion Races ×1/2), Ki Points ×1/2 — then the
+    // post-calculation Minion Trait adjustments (Healthy/Trained/No-Good).
+    if (system.minion?.enabled) {
+      const mTraits = system.minion.traits || [];
+      const countOf = (id) => mTraits.filter(t => t === id).length;
+      const lpDivisor = system.minion.isMinionRace ? 2 : 5;
+      system.lifePoints.max = Math.max(1, Math.floor(system.lifePoints.max / lpDivisor));
+      // No-Good Minion: halve Life Points (post-calculation)
+      if (countOf("mt_no_good_000012") > 0) {
+        system.lifePoints.max = Math.max(1, Math.floor(system.lifePoints.max / 2));
+      }
+      // Healthy Minion: +1 LP per Power Level (after calculation)
+      if (countOf("mt_healthy_000007") > 0) {
+        system.lifePoints.max += (system.level || 1);
+      }
+      // Trained Minion (stackable): +2 Max LP per copy (KP handled after the
+      // Ki Pool is computed below)
+      system.lifePoints.max += 2 * countOf("mt_trained_000014");
+    }
+
     // Default current LP to max only when truly unset (null/undefined), not when 0
     if (system.lifePoints.value == null) system.lifePoints.value = system.lifePoints.max;
 
@@ -853,6 +897,13 @@ export class DBUActor extends Actor {
         break;
       }
     }
+    // Player Minion Rules: Maximum Ki Points ×1/2, then Trained Minion +2/copy
+    if (system.minion?.enabled) {
+      system.kiPool.max = Math.max(0, Math.floor(system.kiPool.max / 2));
+      const mTrained = (system.minion.traits || []).filter(t => t === "mt_trained_000014").length;
+      system.kiPool.max += 2 * mTrained;
+    }
+
     // Default current KP to max only when truly unset (null/undefined), not when 0
     if (system.kiPool.value == null) system.kiPool.value = system.kiPool.max;
 
@@ -1186,7 +1237,10 @@ export class DBUActor extends Actor {
       const lightningInitBonus = (saveKey === "impulsive"
         && talents.includes("lightning_initiative") && system._hasInitiativeAdvantage) ? tier : 0;
 
-      const bonus = attrScore + profBonus + auraBonus + customSaveBonus + valorBonus + strugglingBonus + lightningInitBonus - drunkPenalty;
+      // Player Minion Weakness fallback (bT already 1): −2 Saving Throws
+      const minionSavePenalty = system._minionWeakPenalty || 0;
+
+      const bonus = attrScore + profBonus + auraBonus + customSaveBonus + valorBonus + strugglingBonus + lightningInitBonus - drunkPenalty - minionSavePenalty;
       // CT formula: max(7, 10 - proficiency(1) - mindful(1))
       // CT is only reduced by boolean flags (1 each), NOT by the full save bonus
       const profCT = isProficient ? 1 : 0;
@@ -1220,6 +1274,14 @@ export class DBUActor extends Actor {
     system.thresholds.injured.crossed = currentLP <= system.thresholds.injured.value;
     system.thresholds.critical.crossed = currentLP <= system.thresholds.critical.value;
 
+    // Player Minion: "Minions only possess the Healthy and Injured Health
+    // Thresholds" (minions.txt) — Bruised and Critical never apply.
+    const isMinionActor = !!system.minion?.enabled;
+    if (isMinionActor) {
+      system.thresholds.bruised.crossed = false;
+      system.thresholds.critical.crossed = false;
+    }
+
     // Penalties: crossed thresholds that have NOT been saved (checked = saved, no penalty).
     // Rules: "reduce your Combat Rolls by 1(bT) and your Stress Bonus by 1" (damage-conditions.txt)
     let penaltyCount = 0;
@@ -1240,9 +1302,12 @@ export class DBUActor extends Actor {
       + (system.thresholds.critical.crossed ? 1 : 0);
 
     // Auto-sync health status from current LP, matching MVP behavior.
+    // Minions skip Bruised/Critical (they only have Healthy and Injured).
     const _hsLabels = { healthy: "Healthy", bruised: "Bruised", injured: "Injured", critical: "Critical" };
     if (system.status) {
-      if (currentLP <= system.thresholds.critical.value) system.status.healthStatus = "critical";
+      if (isMinionActor) {
+        system.status.healthStatus = currentLP <= system.thresholds.injured.value ? "injured" : "healthy";
+      } else if (currentLP <= system.thresholds.critical.value) system.status.healthStatus = "critical";
       else if (currentLP <= system.thresholds.injured.value) system.status.healthStatus = "injured";
       else if (currentLP <= system.thresholds.bruised.value) system.status.healthStatus = "bruised";
       else system.status.healthStatus = "healthy";
@@ -1307,6 +1372,21 @@ export class DBUActor extends Actor {
       if (ss?.effects?.size && ss.sizeChoice && DBUActor.SIZE_DATA[ss.sizeChoice]) {
         size = ss.sizeChoice;
         if (system.status) system.status.currentSize = size;
+      }
+    }
+    // Player Minion — Different Scale trait (minions.txt): direct size set.
+    // 1 copy → Enormous/Tiny; 2 copies (same option) → Gigantic/Nano.
+    if (system.minion?.enabled) {
+      const dsCount = (system.minion.traits || []).filter(t => t === "mt_diff_scale_0005").length;
+      const dsOpt = system.minion.traitOptions?.["mt_diff_scale_0005"] || "";
+      if (dsCount > 0 && dsOpt) {
+        const target = /massive/i.test(dsOpt)
+          ? (dsCount >= 2 ? "gigantic" : "enormous")
+          : (dsCount >= 2 ? "nano" : "tiny");
+        if (DBUActor.SIZE_DATA[target]) {
+          size = target;
+          if (system.status) system.status.currentSize = size;
+        }
       }
     }
     // Avatar Aura type: "Increase your Size Category to Gigantic" (auras.txt:78)
@@ -3385,6 +3465,28 @@ export class DBUActor extends Actor {
               buffs.push({ active: true, effect: eff, T: 1, bT: 0, flat: 0, source: "Defiant Aura" });
             }
           }
+        }
+      }
+    }
+
+    // Player Minion: Weakness fallback (−2 Combat Rolls at bT1) + Combat-Roll
+    // Minion Traits (Trained +1/copy, No-Good −2(bT))
+    if (system.minion?.enabled) {
+      const mTraits = system.minion.traits || [];
+      if (system._minionWeakPenalty) {
+        for (const eff of ["Strike", "Dodge", "Wound"]) {
+          buffs.push({ active: true, effect: eff, flat: -system._minionWeakPenalty, bT: 0, T: 0, source: "Minion Weakness (bT 1)" });
+        }
+      }
+      const mTrained = mTraits.filter(t => t === "mt_trained_000014").length;
+      if (mTrained > 0) {
+        for (const eff of ["Strike", "Dodge", "Wound"]) {
+          buffs.push({ active: true, effect: eff, flat: mTrained, bT: 0, T: 0, source: "Trained Minion" });
+        }
+      }
+      if (mTraits.includes("mt_no_good_000012")) {
+        for (const eff of ["Strike", "Dodge", "Wound"]) {
+          buffs.push({ active: true, effect: eff, bT: -2, T: 0, flat: 0, source: "No-Good Minion" });
         }
       }
     }
