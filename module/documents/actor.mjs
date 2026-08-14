@@ -61,16 +61,37 @@ export class DBUActor extends Actor {
     // "All Minions have their base Tier of Power reduced by 1 (if their base
     // ToP is already 1, reduce their Saving Throws and Combat Rolls by 2)."
     system._minionWeakPenalty = 0;
+    system._minionZ = 0;
+    system._minionClassOpt = "";
+    system._minionAscended = false;
     if (system.minion?.enabled) {
-      if (baseTier > 1) {
-        baseTier -= 1;
-        tier = Math.max(1, tier - 1);
-        system.baseTier = baseTier;
-        system.tier = tier;
-      } else {
-        system._minionWeakPenalty = 2;
+      // Minion Class Minion Trait (Commander MP): resolve the chosen option
+      // and Z = the Master's Commander stacks (looked up by masterName).
+      // "Duplicate Minions are not considered Minions for the effects of the
+      // Commander Manifested Power" — skipped for Duplicates.
+      if (!system.minion.isDuplicate && (system.minion.traits || []).includes("mt_minion_class015")) {
+        system._minionClassOpt = String(system.minion.traitOptions?.["mt_minion_class015"] || "").toLowerCase();
+        system._minionAscended = system._minionClassOpt.includes("ascended");
+        try {
+          const master = game.actors?.getName?.(String(system.minion.masterName || "").trim());
+          const cmd = (master?.system?.transformations || []).find(t => t?.catalogKey === "commander" && t.active);
+          if (cmd) system._minionZ = parseInt(String(cmd.gradeOrStacks)) || 0;
+        } catch (e) { /* game/master not ready — Z stays 0 */ }
+      }
+      // Ascended Minion ignores the Weakness rule entirely
+      if (!system._minionAscended) {
+        if (baseTier > 1) {
+          baseTier -= 1;
+          tier = Math.max(1, tier - 1);
+          system.baseTier = baseTier;
+          system.tier = tier;
+        } else {
+          system._minionWeakPenalty = 2;
+        }
       }
     }
+    // Thresholds-NA display/logic flag: Ascended Minions keep normal Thresholds
+    system._minionThresholdsNA = !!(system.minion?.enabled && !system._minionAscended);
 
     // Cache gained active transformations from OSF once for all calculations
     system._gainedActiveTransformations = DBUActor._getActiveGainedTransformations(system);
@@ -339,10 +360,14 @@ export class DBUActor extends Actor {
 
     // ---- Player Minion trait Soak adjustments (post-automation) ----
     // Healthy Minion +1(T) Soak; No-Good Minion −2(bT) Soak.
+    // Minion Class (Commander): Big Tough +Z Soak; Weird One +Z Might.
     if (system.minion?.enabled && system.status) {
       const _mT = system.minion.traits || [];
       if (_mT.includes("mt_healthy_000007")) system.status.soak += tier;
       if (_mT.includes("mt_no_good_000012")) system.status.soak = Math.max(0, system.status.soak - 2 * baseTier);
+      const _mcZ = system._minionZ || 0;
+      if (_mcZ > 0 && system._minionClassOpt?.includes("big tough")) system.status.soak += _mcZ;
+      if (_mcZ > 0 && system._minionClassOpt?.includes("weird")) system.status.might = (system.status.might || 0) + _mcZ;
     }
 
     // ---- Equipment Quality Automation (apparel/weapon qualities) ----
@@ -873,6 +898,13 @@ export class DBUActor extends Actor {
       // Trained Minion (stackable): +2 Max LP per copy (KP handled after the
       // Ki Pool is computed below)
       system.lifePoints.max += 2 * countOf("mt_trained_000014");
+      // Minion Class (Commander MP) LP effects
+      if (system._minionClassOpt.includes("big tough")) {
+        system.lifePoints.max += 2 * (system.level || 1);
+      }
+      if (system._minionAscended) {
+        system.lifePoints.max *= 2;
+      }
     }
 
     // Default current LP to max only when truly unset (null/undefined), not when 0
@@ -897,9 +929,12 @@ export class DBUActor extends Actor {
         break;
       }
     }
-    // Player Minion Rules: Maximum Ki Points ×1/2, then Trained Minion +2/copy
+    // Player Minion Rules: Maximum Ki Points ×1/2, then Trained Minion +2/copy.
+    // Ascended Minion (Minion Class) ignores the Ki Points & Capacity rule.
     if (system.minion?.enabled) {
-      system.kiPool.max = Math.max(0, Math.floor(system.kiPool.max / 2));
+      if (!system._minionAscended) {
+        system.kiPool.max = Math.max(0, Math.floor(system.kiPool.max / 2));
+      }
       const mTrained = (system.minion.traits || []).filter(t => t === "mt_trained_000014").length;
       system.kiPool.max += 2 * mTrained;
     }
@@ -1237,10 +1272,13 @@ export class DBUActor extends Actor {
       const lightningInitBonus = (saveKey === "impulsive"
         && talents.includes("lightning_initiative") && system._hasInitiativeAdvantage) ? tier : 0;
 
-      // Player Minion Weakness fallback (bT already 1): −2 Saving Throws
+      // Player Minion Weakness fallback (bT already 1): −2 Saving Throws.
+      // Minion Class (Commander): Weird One / Ascended gain +Z Saving Throws.
       const minionSavePenalty = system._minionWeakPenalty || 0;
+      const minionClassSaves = (system._minionClassOpt?.includes("weird") || system._minionAscended)
+        ? (system._minionZ || 0) : 0;
 
-      const bonus = attrScore + profBonus + auraBonus + customSaveBonus + valorBonus + strugglingBonus + lightningInitBonus - drunkPenalty - minionSavePenalty;
+      const bonus = attrScore + profBonus + auraBonus + customSaveBonus + valorBonus + strugglingBonus + lightningInitBonus - drunkPenalty - minionSavePenalty + minionClassSaves;
       // CT formula: max(7, 10 - proficiency(1) - mindful(1))
       // CT is only reduced by boolean flags (1 each), NOT by the full save bonus
       const profCT = isProficient ? 1 : 0;
@@ -1276,7 +1314,8 @@ export class DBUActor extends Actor {
 
     // Player Minion: "Minions only possess the Healthy and Injured Health
     // Thresholds" (minions.txt) — Bruised and Critical never apply.
-    const isMinionActor = !!system.minion?.enabled;
+    // Ascended Minions (Commander's Minion Class) keep normal Thresholds.
+    const isMinionActor = !!system._minionThresholdsNA;
     if (isMinionActor) {
       system.thresholds.bruised.crossed = false;
       system.thresholds.critical.crossed = false;
@@ -3487,6 +3526,29 @@ export class DBUActor extends Actor {
       if (mTraits.includes("mt_no_good_000012")) {
         for (const eff of ["Strike", "Dodge", "Wound"]) {
           buffs.push({ active: true, effect: eff, bT: -2, T: 0, flat: 0, source: "No-Good Minion" });
+        }
+      }
+      // Minion Class (Commander MP) roll effects — Z resolved from the Master
+      const mcZ = system._minionZ || 0;
+      const mcOpt = system._minionClassOpt || "";
+      if (mcOpt.includes("pretty")) {
+        const peBonus = Math.ceil((system.attributes?.pe?.totalScore ?? 0) / 4);
+        if (peBonus > 0) {
+          for (const eff of ["Strike", "Dodge", "Wound"]) {
+            buffs.push({ active: true, effect: eff, flat: peBonus, bT: 0, T: 0, source: "Minion Class (Pretty One)" });
+          }
+        }
+        if (mcZ > 0) {
+          buffs.push({ active: true, effect: "Strike", flat: mcZ, bT: 0, T: 0, source: "Minion Class (Pretty One, Z)" });
+          buffs.push({ active: true, effect: "Dodge", flat: mcZ, bT: 0, T: 0, source: "Minion Class (Pretty One, Z)" });
+        }
+      }
+      if (mcOpt.includes("big tough") && mcZ > 0) {
+        buffs.push({ active: true, effect: "Wound", flat: mcZ, bT: 0, T: 0, source: "Minion Class (Big Tough, Z)" });
+      }
+      if (system._minionAscended && mcZ > 0) {
+        for (const eff of ["Strike", "Dodge", "Wound"]) {
+          buffs.push({ active: true, effect: eff, flat: mcZ, bT: 0, T: 0, source: "Minion Class (Ascended, Z)" });
         }
       }
     }

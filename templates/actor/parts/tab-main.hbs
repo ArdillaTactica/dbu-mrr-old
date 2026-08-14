@@ -252,68 +252,6 @@
       </table>
     </div>
 
-    {{!-- PLAYER MINION RULES --}}
-    <div class="section minion-rules-section">
-      <div class="section-header">Minion</div>
-      <div class="minion-toggle-bar">
-        <label class="minion-toggle" title="Special Minions (e.g. a Marvelous Minion, created via normal Character Creation) ignore most Minion Rules — leave this unchecked for them">
-          <input type="checkbox" name="system.minion.enabled" {{#if system.minion.enabled}}checked{{/if}} />
-          This character is a Minion (auto-applies the Minion Rules)
-        </label>
-      </div>
-      {{#unless system.minion.enabled}}
-      <div class="minion-master-info">
-        As a Master — Max Minions: <b>{{playerMinion.master.combatMax}}</b> in combat / <b>{{playerMinion.master.outsideMax}}</b> outside
-        {{#if playerMinion.master.army}}<span class="minion-trait-hint">(Minion Army: unlimited owned, up to 10 join an Encounter)</span>
-        {{else}}{{#unless playerMinion.master.hasMinionTalents}}<span class="minion-trait-hint">(Minion Talents raise this)</span>{{/unless}}{{/if}}
-      </div>
-      {{/unless}}
-      {{#if system.minion.enabled}}
-      <div class="minion-pm-config">
-        <div class="minion-pm-row">
-          <label>Master</label>
-          <input type="text" name="system.minion.masterName" value="{{system.minion.masterName}}" placeholder="Master's name" />
-          <label class="minion-check" title="Minion Races set Life Points to 1/2 instead of 1/5 and keep ALL their Racial Traits (minion-races.txt)">
-            <input type="checkbox" name="system.minion.isMinionRace" {{#if system.minion.isMinionRace}}checked{{/if}} /> Minion Race (LP ×1/2)
-          </label>
-          <label class="minion-check" title="Duplicates copy their Master's Attributes/Talents/Traits/Techniques and cannot gain Minion Traits">
-            <input type="checkbox" name="system.minion.isDuplicate" {{#if system.minion.isDuplicate}}checked{{/if}} /> Duplicate
-          </label>
-        </div>
-        <div class="minion-rules-note">
-          Auto-applied: base ToP −1{{#if system._minionWeakPenalty}} (already 1 → −2 Saves &amp; Combat Rolls){{/if}} ·
-          LP ×{{#if system.minion.isMinionRace}}1/2{{else}}1/5{{/if}} · KP ×1/2 · only Healthy/Injured Thresholds · no Ultimate STs.
-          Manual rules: Follower (needs the Command Maneuver, 1/Round), Single Attack per Round, no Karma Points, Empower ≤1/5 KP, Initiative right after the Master, Recovery Period 1d8(T) LP&amp;KP if not commanded.
-        </div>
-        {{#unless system.minion.isDuplicate}}
-        <div class="minion-traits-block">
-          <div class="minion-traits-header">
-            <span>Minion Traits <span class="minion-trait-hint" title="Gain 1(bT) Minion Traits at Minion Creation, using the Master's ToP (minions.txt)">(1(bT) at creation)</span></span>
-            <button type="button" class="add-btn" data-action="add-player-minion-trait" title="Add Minion Trait"><i class="fas fa-plus"></i></button>
-          </div>
-          {{#each playerMinion.traitRows}}
-          <div class="minion-trait-row">
-            <span class="minion-trait-name">{{name}}</span>
-            {{#if hasOptions}}
-            <select class="pm-trait-option" data-trait-id="{{id}}">
-              <option value="">-- Option --</option>
-              {{#each options}}<option value="{{this}}" {{#if (eq this ../option)}}selected{{/if}}>{{this}}</option>{{/each}}
-            </select>
-            {{/if}}
-            <button type="button" class="delete-btn" data-action="delete-player-minion-trait" data-index="{{idx}}" title="Remove"><i class="fas fa-times"></i></button>
-          </div>
-          <div class="minion-trait-effects">
-            {{#each effects}}<div class="minion-trait-effect"><b>[{{keyword}}]</b> {{text}}</div>{{/each}}
-          </div>
-          {{else}}
-          <div class="empty-message">No Minion Traits yet.</div>
-          {{/each}}
-        </div>
-        {{/unless}}
-      </div>
-      {{/if}}
-    </div>
-
     {{!-- DAMAGE CALCULATOR --}}
     <div class="section damage-calc-section">
       <div class="section-header">Damage Calculator</div>
@@ -360,17 +298,17 @@
       <table class="thresholds-table">
         <thead>
           <tr>
-            <th class="{{#if system.minion.enabled}}threshold-na{{/if}}">Bruised {{#if system.minion.enabled}}(N/A){{else}}({{system.thresholds.bruised.value}}){{/if}}</th>
+            <th class="{{#if system._minionThresholdsNA}}threshold-na{{/if}}">Bruised {{#if system._minionThresholdsNA}}(N/A){{else}}({{system.thresholds.bruised.value}}){{/if}}</th>
             <th>Injured ({{system.thresholds.injured.value}})</th>
-            <th class="{{#if system.minion.enabled}}threshold-na{{/if}}">Critical {{#if system.minion.enabled}}(N/A){{else}}({{system.thresholds.critical.value}}){{/if}}</th>
+            <th class="{{#if system._minionThresholdsNA}}threshold-na{{/if}}">Critical {{#if system._minionThresholdsNA}}(N/A){{else}}({{system.thresholds.critical.value}}){{/if}}</th>
             <th>Penalties</th>
           </tr>
         </thead>
         <tbody>
           <tr>
-            <td class="{{#if system.minion.enabled}}threshold-na{{/if}}">{{#if system.minion.enabled}}<span title="Minions only possess the Healthy and Injured Health Thresholds">—</span>{{else}}{{#if system.thresholds.bruised.crossed}}<i class="fas fa-times-circle" style="color:var(--danger-color,#e53935);"></i>{{else}}<i class="fas fa-check-circle" style="color:#4caf50;"></i>{{/if}}{{/if}}</td>
+            <td class="{{#if system._minionThresholdsNA}}threshold-na{{/if}}">{{#if system._minionThresholdsNA}}<span title="Minions only possess the Healthy and Injured Health Thresholds">—</span>{{else}}{{#if system.thresholds.bruised.crossed}}<i class="fas fa-times-circle" style="color:var(--danger-color,#e53935);"></i>{{else}}<i class="fas fa-check-circle" style="color:#4caf50;"></i>{{/if}}{{/if}}</td>
             <td>{{#if system.thresholds.injured.crossed}}<i class="fas fa-times-circle" style="color:var(--danger-color,#e53935);"></i>{{else}}<i class="fas fa-check-circle" style="color:#4caf50;"></i>{{/if}}</td>
-            <td class="{{#if system.minion.enabled}}threshold-na{{/if}}">{{#if system.minion.enabled}}<span title="Minions only possess the Healthy and Injured Health Thresholds">—</span>{{else}}{{#if system.thresholds.critical.crossed}}<i class="fas fa-times-circle" style="color:var(--danger-color,#e53935);"></i>{{else}}<i class="fas fa-check-circle" style="color:#4caf50;"></i>{{/if}}{{/if}}</td>
+            <td class="{{#if system._minionThresholdsNA}}threshold-na{{/if}}">{{#if system._minionThresholdsNA}}<span title="Minions only possess the Healthy and Injured Health Thresholds">—</span>{{else}}{{#if system.thresholds.critical.crossed}}<i class="fas fa-times-circle" style="color:var(--danger-color,#e53935);"></i>{{else}}<i class="fas fa-check-circle" style="color:#4caf50;"></i>{{/if}}{{/if}}</td>
             <td>{{#if system.thresholds.penalties}}-{{system.thresholds.penalties}}{{else}}0{{/if}}</td>
           </tr>
         </tbody>

@@ -21,6 +21,7 @@ export async function preloadHandlebarsTemplates() {
     "systems/DBU-MRR-OLD/templates/actor/parts/tab-combat.hbs",
     "systems/DBU-MRR-OLD/templates/actor/parts/tab-fusion.hbs",
     "systems/DBU-MRR-OLD/templates/actor/parts/tab-adversary.hbs",
+    "systems/DBU-MRR-OLD/templates/actor/parts/tab-minion.hbs",
     "systems/DBU-MRR-OLD/templates/actor/parts/tab-downtime.hbs",
     "systems/DBU-MRR-OLD/templates/actor/parts/tab-tf-customize.hbs",
     "systems/DBU-MRR-OLD/templates/actor/parts/combat-racial-bonuses.hbs",

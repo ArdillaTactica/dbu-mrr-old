@@ -1656,7 +1656,9 @@ export class DBUCharacterSheet extends ActorSheet {
           effects: data.effects || [],
           hasOptions: !!data.hasOptions,
           options: data.options || [],
-          option: m.traitOptions?.[id] || ""
+          option: m.traitOptions?.[id] || "",
+          isMinionClass: id === "mt_minion_class015",
+          commanderZ: system._minionZ ?? 0
         };
       })
     };
@@ -7442,7 +7444,8 @@ export class DBUCharacterSheet extends ActorSheet {
     const rows = catalog.map(t => {
       const count = selected.filter(id => id === t.id).length;
       const taken = count > 0 && !t.stackable;
-      const dangerNote = t.dangerousOnly ? ' <span class="trait-category-badge minion">Dangerous — not encouraged for players</span>' : "";
+      const dangerNote = (t.dangerousOnly ? ' <span class="trait-category-badge minion">Dangerous — not encouraged for players</span>' : "")
+        + (t.commanderOnly ? ' <span class="trait-category-badge">Granted by the Master\'s Commander MP</span>' : "");
       const countBadge = count > 0 && t.stackable ? ` <span class="trait-category-badge">×${count}</span>` : "";
       return `<div class="talent-selector-item ${taken ? "talent-selector-selected" : ""}" data-trait-id="${t.id}">
         <span class="talent-selector-name">${t.name}${dangerNote}${countBadge}</span>

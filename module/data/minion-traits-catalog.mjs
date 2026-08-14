@@ -123,6 +123,19 @@ export const MINION_TRAITS_CATALOG = [
     ]
   },
   {
+    "id": "mt_minion_class015",
+    "name": "Minion Class",
+    "commanderOnly": true,
+    "hasOptions": true,
+    "options": ["Pretty One", "Weird One with the Freaky Power", "Big Tough Stupid One", "Ascended Minion"],
+    "description": "Everyone's got a gimmick, and your gimmick helps you stand out among the crowd. Granted to ALL Minions of a Master with the Commander Manifested Power (Motley Crew). Duplicate Minions are excluded.",
+    "effects": [
+      { "activationType": "ruling", "keyword": "Ruling", "text": "All effects that refer to 'Z' refer to the number of stacks of Commander possessed by this Minion's Master (auto-resolved from the Master's name if their actor exists).", "usageLimit": null, "maxUses": 0 },
+      { "activationType": "ruling", "keyword": "Ruling", "text": "Each Master can only possess a single Minion who selected the Ascended Minion effect.", "usageLimit": null, "maxUses": 0 },
+      { "activationType": "option", "keyword": "Option + Choice", "text": "Pretty One: +ceil(PE Modifier/4) Combat Rolls, +Z Strike/Dodge. Weird One with the Freaky Power: gain a UA of up to 22 TP; +Z Might and Saving Throws. Big Tough Stupid One: +2 LP per Power Level; +Z Soak and Wound Rolls. Ascended Minion: Special Minion — ignores the Weakness, Single Attack, Thresholds, Initiative, and Ki Points & Capacity Minion Rules; double Maximum Life Points, +Z Combat Rolls and Saving Throws.", "usageLimit": null, "maxUses": 0 }
+    ]
+  },
+  {
     "id": "mt_aggressor_00001",
     "name": "Aggressor",
     "dangerousOnly": true,

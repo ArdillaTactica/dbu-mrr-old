@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.9] - 2026-08-14
+
+- Nueva pestaña de secuaces (`tab-minion`) en la hoja de personaje.
+- Mejoras en el catálogo de rasgos de secuaces (`minion-traits`).
+- Correcciones en la lógica del actor y en la hoja de personaje.
+- Mejoras en las pestañas de combate y principal.
+
 ## [1.0.8] - 2026-08-14
 
 - Mejoras en el catálogo de rasgos de secuaces (`minion-traits`).
