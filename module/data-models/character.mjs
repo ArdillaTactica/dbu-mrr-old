@@ -389,6 +389,7 @@ export default class DBUCharacterData extends foundry.abstract.TypeDataModel {
         lifeforce: new NumberField({ required: true, nullable: false, initial: 0, integer: true }),
         revengePoints: new NumberField({ required: true, nullable: false, initial: 0, integer: true }),
         crueltyStacks: new NumberField({ required: true, nullable: false, initial: 0, integer: true }),
+        holdingBackStacks: new NumberField({ required: true, nullable: false, initial: 0, integer: true, min: 0 }),
         observationStacks: new NumberField({ required: true, nullable: false, initial: 0, integer: true }),
         studiedStacks: new NumberField({ required: true, nullable: false, initial: 0, integer: true }),
         disdainStacks: new NumberField({ required: true, nullable: false, initial: 0, integer: true }),

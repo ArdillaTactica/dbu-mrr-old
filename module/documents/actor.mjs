@@ -60,6 +60,22 @@ export class DBUActor extends Actor {
     // Cache gained active transformations from OSF once for all calculations
     system._gainedActiveTransformations = DBUActor._getActiveGainedTransformations(system);
 
+    // ---- Initiative Advantage / lowest Initiative (combat state) ----
+    // Consumed by talents (Lightning Initiative, Patient Fighter). Guarded:
+    // prep can run before the game/combat is ready.
+    system._hasInitiativeAdvantage = false;
+    system._isLowestInitiative = false;
+    try {
+      if (typeof game !== "undefined" && game.combat) {
+        const _cb = game.combat.combatants.find(c => c.actorId === this.id);
+        system._hasInitiativeAdvantage = !!_cb?.getFlag("DBU-MRR-OLD", "initiativeAdvantage");
+        const _inits = game.combat.combatants.filter(c => c.initiative != null);
+        if (_cb?.initiative != null && _inits.length > 1) {
+          system._isLowestInitiative = !_inits.some(c => c.id !== _cb.id && c.initiative < _cb.initiative);
+        }
+      }
+    } catch (e) { /* not ready */ }
+
     // ---- Shapeshift (Unique Ability): Bestial-exchange effect ----
     // While active, the chosen Body-Category Secondary Racial Trait is exchanged
     // away — filter it from derived racialTraits so its automation doesn't apply.
@@ -330,9 +346,21 @@ export class DBUActor extends Actor {
       + (system._gainedActiveTransformations || []).filter(t => t.mastered).length;
     system.aptitudes.stressBonus = (system.aptitudes.stressBonus || 0) + masteredCount;
 
-    // Active signature aura: +1 (own or gained from one-sided fusion)
-    const hasActiveAura = (system.signatureAuras || []).some(a => a.active) || !!(system.fusion?.activeGainedAuraId);
-    if (hasActiveAura) system.aptitudes.stressBonus += 1;
+    // Transformation Lite (auras.txt:42): while in an Aura, reduce your Stress
+    // Bonus by 2 — unless the aura has the Strainless Aura Advantage ("Ignore
+    // the Transformation Lite rules") or an "Ignore Transformation Lite" buff.
+    const activeAuraForStress = this._getActiveAura(system);
+    if (activeAuraForStress) {
+      const strainless = (activeAuraForStress.advantages || []).some(a => a.name === "Strainless Aura");
+      if (!strainless && !system.aptitudes.ignoreTransformationLite) {
+        system.aptitudes.stressBonus -= 2;
+      }
+      // Stressful Aura: -1 Stress Test rolls per rank (disadvantage — applies
+      // even with Infusion)
+      for (const dis of (activeAuraForStress.disadvantages || [])) {
+        if (dis.name === "Stressful Aura") system.aptitudes.stressBonus -= (dis.ranks || 1);
+      }
+    }
 
     // Buff system: custom buffs + derived buffs with effect "Stress Bonus"
     system.aptitudes.stressBonus += this._getBuffTotal(system, "Stress Bonus");
@@ -623,12 +651,32 @@ export class DBUActor extends Actor {
           modifier += tier;
         }
 
-        // Boosting advantage: +ranks(T) to specific attribute in notes
+        // Boosting advantage: +ranks(T) to specific attribute in notes.
+        // Token match (not substring): "Magic" contains "ag"/"ma" and would
+        // otherwise hit Agility too.
         for (const adv of (aura.advantages || [])) {
           if (adv.name === "Boosting" && adv.notes) {
-            if (adv.notes.toLowerCase().includes(key)) {
+            const direct = this._notesMentionAttribute(adv.notes, key) > 0;
+            // "If you would select Force or Magic, the other Attribute also
+            // gains this bonus" (auras.txt Boosting effect)
+            const twin = (key === "fo" && this._notesMentionAttribute(adv.notes, "ma") > 0)
+              || (key === "ma" && this._notesMentionAttribute(adv.notes, "fo") > 0);
+            if (direct || twin) {
               modifier += (adv.ranks || 1) * tier;
             }
+          }
+        }
+      }
+
+      // Aura "Stat Drain" disadvantage: −1(bT) per time the attribute was
+      // selected (notes list selections, e.g. "Force, Force, Agility").
+      // Disadvantages hit the user even with Infusion → _getActiveAura.
+      const drainAura = this._getActiveAura(system);
+      if (drainAura && key !== "sc" && key !== "pe") {
+        for (const dis of (drainAura.disadvantages || [])) {
+          if (dis.name === "Stat Drain" && dis.notes) {
+            const times = this._notesMentionAttribute(dis.notes, key);
+            modifier -= times * (system.baseTier || 1);
           }
         }
       }
@@ -1004,19 +1052,21 @@ export class DBUActor extends Actor {
     // Custom buff "Might"
     might += this._getBuffTotal(system, "Might");
     system.status.might = might;
-    // Custom buff "Might for Clashes" — separate stat used in Might Clashes only
-    system.status.mightForClashes = might + this._getBuffTotal(system, "Might for Clashes");
+    // Custom buff "Might for Clashes" — separate stat used in Might Clashes only.
+    // Penetrating Fist L1: +1(T) Might Clash Dice Score (clashes ONLY, not Might).
+    system.status.mightForClashes = might + this._getBuffTotal(system, "Might for Clashes")
+      + ((system.talents || []).includes("penetrating_fist") ? tier : 0);
     // Custom buff "Threshold Breaker" — bonus when crossing health thresholds (stored for downstream)
     system.aptitudes.thresholdBreaker = this._getBuffTotal(system, "Threshold Breaker");
 
-    // --- Surgency = Force total ---
-    const surgency = foTotal;
+    // --- Surgency = Force total (+2(T) with Archetype Focus L2) ---
+    const talents = system.talents || [];
+    const surgency = foTotal + (talents.includes("archetype_focus") ? 2 * tier : 0);
 
     // --- Healing Surge ---
     // Base: "2d10(T) Life Points" + Surgency (Force Modifier) (actions-combat.txt)
     // Talent bonuses: Resilience +1d4(T), Second Wind +2(T), Lion's Heart +2(T)/threshold
     // Never Surrender: treat ToP as +1 for (T) in surges
-    const talents = system.talents || [];
     const surgeToP = talents.includes("never_surrender") ? tier + 1 : tier;
     // Compute thresholds crossed inline (thresholds.crossedCount isn't set until _calculateThresholds runs later)
     const _curLP = system.lifePoints?.value ?? system.lifePoints.max;
@@ -1132,7 +1182,11 @@ export class DBUActor extends Actor {
         strugglingBonus = Math.floor(myStacks / 3) * dominantTier;
       }
 
-      const bonus = attrScore + profBonus + auraBonus + customSaveBonus + valorBonus + strugglingBonus - drunkPenalty;
+      // Lightning Initiative L1: +1(T) Impulsive Saves while Initiative Advantage
+      const lightningInitBonus = (saveKey === "impulsive"
+        && talents.includes("lightning_initiative") && system._hasInitiativeAdvantage) ? tier : 0;
+
+      const bonus = attrScore + profBonus + auraBonus + customSaveBonus + valorBonus + strugglingBonus + lightningInitBonus - drunkPenalty;
       // CT formula: max(7, 10 - proficiency(1) - mindful(1))
       // CT is only reduced by boolean flags (1 each), NOT by the full save bonus
       const profCT = isProficient ? 1 : 0;
@@ -1255,6 +1309,25 @@ export class DBUActor extends Actor {
         if (system.status) system.status.currentSize = size;
       }
     }
+    // Avatar Aura type: "Increase your Size Category to Gigantic" (auras.txt:78)
+    // — raise-only, benefit (skipped with Infusion). Small Avatar disadvantage
+    // reduces the gained Size by 1 per rank ("cannot reduce your Size Category"
+    // — the raise-only guard covers that).
+    {
+      const avatarAura = this._getSelfBenefitAura(system);
+      if (avatarAura?.type === "Avatar") {
+        const order = DBUActor.SIZE_ORDER;
+        let smallRanks = 0;
+        for (const dis of (avatarAura.disadvantages || [])) {
+          if (dis.name === "Small Avatar") smallRanks += (dis.ranks || 1);
+        }
+        const targetIdx = order.indexOf("gigantic") - smallRanks;
+        if (targetIdx > order.indexOf(size)) {
+          size = order[targetIdx];
+          if (system.status) system.status.currentSize = size;
+        }
+      }
+    }
     // Custom buff "Size Category" — shift size by N categories
     const sizeBuff = this._getBuffTotal(system, "Size Category");
     if (sizeBuff !== 0) {
@@ -1288,6 +1361,14 @@ export class DBUActor extends Actor {
     }
     // Custom buff Super Stacks
     superStacks += this._getBuffTotal(system, "Super Stacks");
+    // Hefty Aura advantage: +1 Super Stack per rank while in the aura
+    // (auras.txt — benefit, skipped with Infusion)
+    {
+      const heftyAura = this._getSelfBenefitAura(system);
+      for (const adv of (heftyAura?.advantages || [])) {
+        if (adv.name === "Hefty Aura") superStacks += (adv.ranks || 1);
+      }
+    }
     superStacks = Math.min(3, Math.max(0, superStacks));
     system.status.superStacks = superStacks;
 
@@ -1332,36 +1413,34 @@ export class DBUActor extends Actor {
 
     // --- Soak ---
     // Manual: "Your Soak Value is equal to your Tenacity Modifier" with minimum 1(T)
-    // Formula: TE_Mod + (SizeMod × T) + AuraDR - AuraStatLoss - (Broken × 2T) + SuperStackSoak
-    const brokenStacks = this._getConditionStacks(system, "broken");
-    const brokenPenalty = brokenStacks * 2 * tier;
+    // Formula: TE_Mod + (SizeMod × T) + AuraDR - (Broken × 2T) + SuperStackSoak
 
-    // Aura DR and Stat Loss. Infusion: benefits go to the ally (skip them for
-    // self via _getSelfBenefitAura) but the user still suffers disadvantages.
+    // Aura DR. Infusion: benefits go to the ally (skip them for self via
+    // _getSelfBenefitAura). Attribute reductions from the Stat Drain
+    // disadvantage already flow in through TE/AG modifiers.
     let auraDR = 0;
-    let statLossSoak = 0;
-    let statLossDV = 0;
     const aura = this._getSelfBenefitAura(system);
     const auraAny = this._getActiveAura(system);
     if (aura) {
-      // Absorption advantage
+      // Absorption advantage: +1(T) DR per rank (auras.txt:105)
       for (const adv of (aura.advantages || [])) {
         if (adv.name === "Absorption") auraDR += (adv.ranks || 1) * tier;
       }
-      // Avatar type gets 2 free ranks of Absorption
-      if (aura.type === "Avatar") auraDR += 2 * tier;
     }
+
+    // Broken stacks = condition stacks + Vulnerable Aura ranks ("you suffer a
+    // number of Stacks of the Broken Combat Condition equal to the Ranks",
+    // auras.txt — disadvantage, applies even with Infusion). Capped at the
+    // condition's 3-stack maximum; stored for the damage-calc consumer.
+    let brokenStacks = this._getConditionStacks(system, "broken");
     if (auraAny) {
-      // Stat Loss: reduces the stat named in notes (applies even with Infusion)
       for (const dis of (auraAny.disadvantages || [])) {
-        if (dis.name === "Stat Loss") {
-          const lossAmount = (dis.ranks || 1) * tier;
-          const notesLower = dis.notes?.toLowerCase() || "";
-          if (notesLower.includes("soak")) statLossSoak += lossAmount;
-          else if (notesLower.includes("dodge") || notesLower.includes("defense")) statLossDV += lossAmount;
-        }
+        if (dis.name === "Vulnerable Aura") brokenStacks += (dis.ranks || 1);
       }
     }
+    brokenStacks = Math.min(3, brokenStacks);
+    if (system.status) system.status.effectiveBrokenStacks = brokenStacks;
+    const brokenPenalty = brokenStacks * 2 * tier;
 
     // Custom buff soak (unified: flat + bT×baseTier + T×tier)
     const customBuffSoak = this._getBuffTotal(system, "Soak")
@@ -1373,7 +1452,7 @@ export class DBUActor extends Actor {
     const doubleBaseBuff = this._getBuffTotal(system, "Double Base Soak");
     const basePortion = teTotal + (sizeData.soakMod * tier) + auraDR;
     const doubledPortion = basePortion * doubleBaseBuff;
-    const baseSoak = basePortion + doubledPortion - statLossSoak - brokenPenalty
+    const baseSoak = basePortion + doubledPortion - brokenPenalty
       + this._getEquipmentSoakBonus() + godKiSoak + superStackSoak + customBuffSoak + fissionSoak;
     // Manual: "minimum Soak Value of 1(T)" = 1 × Tier of Power
     system.status.rawSoak = baseSoak;  // Pre-minimum value for Broken extra damage check
@@ -1453,6 +1532,12 @@ export class DBUActor extends Actor {
     }
     system.status.boostedSpeed = Math.max(0, boostedSpeed);
 
+    // Lightning Initiative L1: +1(T) Speed while Initiative Advantage
+    if ((system.talents || []).includes("lightning_initiative") && system._hasInitiativeAdvantage) {
+      system.status.normalSpeed += tier;
+      system.status.boostedSpeed += tier;
+    }
+
     // --- Melee Reach ---
     let rangeBonus = 0;
     if (aura) {
@@ -1497,7 +1582,7 @@ export class DBUActor extends Actor {
     }
 
     const customBuffDefense = this._getBuffTotal(system, "Defense Value");
-    let defenseValue = agTotal + (sizeData.defenseMod * tier) + auraDefense + this._getEquipmentDefenseBonus() - statLossDV + customBuffDefense;
+    let defenseValue = agTotal + (sizeData.defenseMod * tier) + auraDefense + this._getEquipmentDefenseBonus() + customBuffDefense;
     // Raging state: "Reduce your Defense Value by 1(T)" (states.txt)
     if (system.combatStates?.raging) defenseValue -= tier;
     // Guard Down condition: reduce Defense Value by 2(T)
@@ -2829,7 +2914,9 @@ export class DBUActor extends Actor {
     // Check rawSoak (pre-minimum) since the tier minimum clamp would otherwise prevent this from firing.
     const rawSoak = system.status?.rawSoak ?? soak;
     if (rawSoak <= 0) {
-      const brokenStacks = this._getConditionStacks(system, "broken");
+      // effectiveBrokenStacks includes Vulnerable Aura ranks (set in _calculateCombatStats)
+      const brokenStacks = system.status?.effectiveBrokenStacks
+        ?? this._getConditionStacks(system, "broken");
       healthReduction += brokenStacks * 2 * tier;
     }
 
@@ -3125,6 +3212,24 @@ export class DBUActor extends Actor {
   }
 
   /**
+   * Count how many tokens in a notes string name the given attribute key.
+   * Tokenized (split on non-letters) so "Magic" doesn't substring-match
+   * "ag"/"ma". Accepts abbreviations ("FO") and full names ("Force").
+   */
+  _notesMentionAttribute(notes, key) {
+    const fullNames = {
+      ag: "agility", fo: "force", te: "tenacity", in: "insight",
+      sc: "scholarship", pe: "personality", ma: "magic"
+    };
+    const full = fullNames[key] || key;
+    let count = 0;
+    for (const token of String(notes).toLowerCase().split(/[^a-z]+/)) {
+      if (token === key || token === full) count++;
+    }
+    return count;
+  }
+
+  /**
    * Active aura whose benefits apply to THIS actor. Infusion (auras.txt:205)
    * sends the aura's effects to an ally: the user pays the costs but gains no
    * benefits — so bonus consumers (Sparking, Powerful Aura, skill effects)
@@ -3246,6 +3351,44 @@ export class DBUActor extends Actor {
 
     // --- Combat State Buffs ---
 
+    // Sparking Aura type: +1(T) to ALL Combat Rolls (auras.txt:54). Benefit —
+    // skipped with Infusion. The FO/MA modifier half of the effect lives in
+    // _calculateAttributeModifiers. DV stays untouched (not a Combat Roll).
+    {
+      const benefitAura = this._getSelfBenefitAura(system);
+      if (benefitAura?.type === "Sparking") {
+        for (const eff of ["Strike", "Dodge", "Wound"]) {
+          buffs.push({ active: true, effect: eff, T: 1, bT: 0, flat: 0, source: "Sparking Aura" });
+        }
+      }
+      // Push Through It: +1(T) Wound Rolls per rank of Tiring on this aura
+      if (benefitAura && (benefitAura.advantages || []).some(a => a.name === "Push Through It")) {
+        let tiringRanks = 0;
+        for (const dis of (benefitAura.disadvantages || [])) {
+          if (dis.name === "Tiring") tiringRanks += (dis.ranks || 1);
+        }
+        if (tiringRanks > 0) {
+          buffs.push({ active: true, effect: "Wound", T: tiringRanks, bT: 0, flat: 0, source: "Push Through It" });
+        }
+      }
+      // Defiant Aura: +1(T) Combat Rolls while below the Critical (R1),
+      // Injured (R2) or Bruised (R3) Health Threshold (auras.txt)
+      if (benefitAura) {
+        const hs = system.status?.healthStatus || "healthy";
+        for (const adv of (benefitAura.advantages || [])) {
+          if (adv.name !== "Defiant Aura") continue;
+          const r = adv.ranks || 1;
+          const gate = r >= 3 ? ["bruised", "injured", "critical"]
+            : r === 2 ? ["injured", "critical"] : ["critical"];
+          if (gate.includes(hs)) {
+            for (const eff of ["Strike", "Dodge", "Wound"]) {
+              buffs.push({ active: true, effect: eff, T: 1, bT: 0, flat: 0, source: "Defiant Aura" });
+            }
+          }
+        }
+      }
+    }
+
     // Evasive Stance: +1(T) Dodge Rolls (fighting-styles.txt)
     if (system.combatStates?.evasiveStance) {
       buffs.push({ active: true, effect: "Dodge", T: 1, bT: 0, flat: 0, source: "Evasive Stance" });
@@ -3306,6 +3449,18 @@ export class DBUActor extends Actor {
         if (mfStyle === "Wolf Style") buffs.push({ active: true, effect: "Dodge", T: mfThresholds * mult, bT: 0, flat: 0, source: "Martial Focus (Wolf)" });
         if (mfStyle === "Dragon Style") buffs.push({ active: true, effect: "Wound", T: 2 * mfThresholds * mult, bT: 0, flat: 0, source: "Martial Focus (Dragon)" });
       }
+    }
+
+    // Patient Fighter L2: +1(T) Combat Rolls while you have the lowest Initiative
+    if (talents.includes("patient_fighter") && system._isLowestInitiative) {
+      for (const eff of ["Strike", "Dodge", "Wound"]) {
+        buffs.push({ active: true, effect: eff, T: 1, bT: 0, flat: 0, source: "Patient Fighter (Lowest Initiative)" });
+      }
+    }
+
+    // Jump Start: +1(bT) Wound while NOT Holding Back (0 Holding Back stacks)
+    if (talents.includes("jump_start") && (system.tracking?.holdingBackStacks || 0) === 0) {
+      buffs.push({ active: true, effect: "Wound", bT: 1, T: 0, flat: 0, source: "Jump Start (Not Holding Back)" });
     }
 
     // Cruel Intentions (Arcosian): +1(T) Wound per Cruelty Stack (max 3, or 6

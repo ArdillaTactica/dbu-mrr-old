@@ -432,111 +432,88 @@ export function registerConfig() {
     },
 
     // ==================== PROFILE DATA ====================
+    // Source of truth: Manuales_Organizados/rules/attacking.txt (lines 80-288).
+    // kpCost here is the FULL listed profile cost (used by basic attacks);
+    // profileKpCosts above stores the ST-adjusted values used by _calcTechKP.
     profileData: {
-      // -- Multi-Foundation Profiles --
+      // -- Physical Profiles (Melee Range, +Force Mod to Wound) --
       "Simple": {
-        foundations: ["Physical", "Energy", "Magic"],
-        damageCat: "Standard", kpCost: 0, range: "Melee/Any",
+        foundations: ["Physical"],
+        damageCat: "Standard", kpCost: 0, range: "Melee",
         effect: "None."
       },
-      "Combination": {
-        foundations: ["Physical", "Energy", "Magic"],
-        damageCat: "Standard", kpCost: 3, range: "Melee/Any",
-        effect: "After you hit an Opponent but before you roll your Wound Roll, roll your Strike Roll against the Dice Score of their Dodge/Strike Roll an additional 3 times. For every additional time your Strike Roll exceeds their Dice Score, increase the Wound Roll by 2(T)."
-      },
-      "Launching": {
-        foundations: ["Physical", "Energy"],
-        damageCat: "Standard", kpCost: 3, range: "Melee/Any",
-        effect: "Gains the Knockback Advantage for free. Double any Collision Damage from Knockback movement."
-      },
-      "Mega Flare": {
-        foundations: ["Physical", "Energy", "Magic"],
-        damageCat: "Standard", kpCost: 4, range: "Melee/Any",
-        effect: "Max Energy Charges for this Profile is 10. For every Energy Charge, increase Wound Roll by 1(T). If 7+ Energy Charges, increase Damage Category by 1."
-      },
-      // -- Physical Profiles --
       "Blitz": {
         foundations: ["Physical"],
+        damageCat: "Standard", kpCost: 6, range: "Melee",
+        effect: "Gains the Charging Assault Advantage for free. If you move more Squares than your Normal Speed via Charging Assault, score a Critical Result on the Wound Roll regardless of the Natural Result. If Signature Technique, reduce KP Cost by 3(T)."
+      },
+      "Combination": {
+        foundations: ["Physical"],
         damageCat: "Standard", kpCost: 4, range: "Melee",
-        effect: "Gains the Charging Assault Advantage for free. If you move more Squares than your Normal Speed via Charging Assault, score a Critical Result on Wound Roll. If Signature Technique, reduce KP Cost by 2(T)."
+        effect: "After you hit, roll your Strike Roll against their Dodge/Strike Dice Score an additional 3 times. First success: +4(T) Wound; each additional success: +2(T) Wound."
       },
       "Crushing": {
         foundations: ["Physical"],
         damageCat: "Lethal", kpCost: 6, range: "Melee",
         effect: "Reduce the bonus to your Wound Roll from your Force by 1/2."
       },
-      "Pinpoint": {
+      "Launching": {
         foundations: ["Physical"],
         damageCat: "Standard", kpCost: 4, range: "Melee",
-        effect: "Ignores target's Soak Value equal to your Insight Modifier. If Critical Result on Strike Roll, double your Insight Modifier for this Maneuver."
+        effect: "Gains the Knockback Advantage for free. Reduce the target's Life Points by 1/2 of the Squares they moved through Knockback. If Signature Technique, reduce KP Cost by 2(T)."
       },
       "Powered": {
         foundations: ["Physical"],
         damageCat: "Standard", kpCost: 8, range: "Melee",
-        effect: "Apply your Damage Attribute an additional time. This Attacking Maneuver gains an Energy Charge."
+        effect: "Double the bonus to your Wound Roll from your Force and gain a free Energy Charge on this Attacking Maneuver."
       },
       "Soaring": {
         foundations: ["Physical"],
-        damageCat: "Direct", kpCost: 5, range: "Line AoE",
-        effect: "This Attacking Maneuver has a Standard Line AoE."
+        damageCat: "Direct", kpCost: 8, range: "Line AoE",
+        effect: "Gains the Ki Extension Advantage for free (Line AoE). Increase the Wound Roll by 1(T) for every 3 Squares away you are from your target (max. 6(T))."
       },
       "Sweeping": {
         foundations: ["Physical"],
         damageCat: "Standard", kpCost: 4, range: "Sphere AoE",
-        effect: "Minor Sphere AoE (centered on you). Allies not targeted. If you deal Damage, double the Diminishing Defense stacks."
+        effect: "Minor Sphere AoE (centered on you); Allies in the AoE are not targeted. If you deal Damage, double the Diminishing Defense penalty from this Attacking Maneuver."
       },
-      // -- Energy Profiles --
+      // -- Energy Profiles (Any range, +Force Mod to Wound, FO Score 3+) --
+      "Sphere": {
+        foundations: ["Energy"],
+        damageCat: "Standard", kpCost: 2, range: "Any",
+        effect: "None."
+      },
       "Beam": {
         foundations: ["Energy"],
-        damageCat: "Direct", kpCost: 8, range: "Any",
-        effect: "Gains an Energy Charge that does not count towards your maximum Energy Charges."
+        damageCat: "Direct", kpCost: 10, range: "Any",
+        effect: "This Attacking Maneuver has a free Energy Charge."
       },
       "Blast": {
         foundations: ["Energy"],
-        damageCat: "Direct", kpCost: 5, range: "Cone AoE",
-        effect: "This Attacking Maneuver has a Cone AoE."
-      },
-      "Clearing": {
-        foundations: ["Energy"],
-        damageCat: "Standard", kpCost: 6, range: "Sphere AoE",
-        effect: "Target a Square not at Long Range. Sphere AoE centered on chosen Square. Minimum Natural Result on Strike Roll is 5."
-      },
-      "Concentrated": {
-        foundations: ["Energy"],
-        damageCat: "Lethal", kpCost: 10, range: "Line AoE",
-        effect: "This Attacking Maneuver has a Line AoE. Ignore 1/2 of target's Damage Reduction."
+        damageCat: "Standard", kpCost: 5, range: "Cone AoE",
+        effect: "Standard Cone AoE starting from you. If this Attacking Maneuver only hits one Opponent, increase the Wound Roll by 1d4(T)."
       },
       "Cutting": {
         foundations: ["Energy"],
         damageCat: "Lethal", kpCost: 6, range: "Any",
         effect: "You only add 3/4 of your Awareness and 1/2 (rounded up) of your Haste to the Strike Roll for this Attacking Maneuver."
       },
-      "Sphere": {
-        foundations: ["Energy"],
-        damageCat: "Standard", kpCost: 2, range: "Any",
-        effect: "None."
-      },
       "Explosion": {
         foundations: ["Energy"],
-        damageCat: "Standard", kpCost: 5, range: "Sphere AoE",
-        effect: "Target a Square. This Attacking Maneuver has a Sphere AoE."
+        damageCat: "Standard", kpCost: 8, range: "Sphere AoE",
+        effect: "Target a Square not at Long Range; Sphere AoE centered on it. Increase your Strike Roll by 1(T). If Signature Technique, reduce KP Cost by 3(T)."
       },
       "Kiai": {
         foundations: ["Energy"],
-        damageCat: "Standard", kpCost: 5, range: "Cone AoE",
-        effect: "Shockwave-style energy attack with a Cone AoE."
+        damageCat: "Standard", kpCost: 5, range: "Any",
+        effect: "Reduce the Critical Target for Strike and Wound Rolls by 1 for this Attacking Maneuver. Gains the Knockback Advantage for free."
       },
       "Rapid Fire": {
         foundations: ["Energy"],
         damageCat: "Standard", kpCost: 5, range: "Any",
-        effect: "Multiple rapid energy projectiles."
+        effect: "After you hit, roll your Strike Roll against their Dodge/Strike Dice Score an additional 3 times. First success: +4(T) Wound; each additional success: +2(T) Wound."
       },
-      "Wave": {
-        foundations: ["Energy"],
-        damageCat: "Direct", kpCost: 6, range: "Line AoE",
-        effect: "Target a Square not at Long Range. Line AoE centered on chosen Square, pointing in any cardinal direction."
-      },
-      // -- Magic Profiles --
+      // -- Magic Profiles (Any range, +Magic Mod to Wound, MA Score 3+) --
       "Spell": {
         foundations: ["Magic"],
         damageCat: "Standard", kpCost: 2, range: "Any",
@@ -544,123 +521,110 @@ export function registerConfig() {
       },
       "Elemental (Dark)": {
         foundations: ["Magic"],
-        damageCat: "Standard", kpCost: 2, range: "Any",
-        effect: "When Ki Wagering, you may spend Life Points instead of Ki Points. Squares occupied by damaged targets have Light Level reduced by 1."
+        damageCat: "Standard", kpCost: 6, range: "Any",
+        effect: "Increase the Ki Wager by 1 for every 4 Ki Points spent. Reduce your Life Points by the amount your Ki Wager increased through this effect."
       },
       "Elemental (Earth)": {
         foundations: ["Magic"],
-        damageCat: "Direct", kpCost: 4, range: "Any",
-        effect: "After using (hit or miss), for each target you may create a Feature with Hardness Rank equal to highest adjacent on any Square within a Large Sphere AoE."
+        damageCat: "Standard", kpCost: 5, range: "Any",
+        effect: "Targets hit also receive Collision Damage as if they collided with Hardness 2 Terrain. You can only Ki Wager up to 1/4 of your Max Capacity."
       },
       "Elemental (Fire)": {
         foundations: ["Magic"],
         damageCat: "Direct", kpCost: 8, range: "Any",
-        effect: "If you knock an Opponent through a Health Threshold, they gain Broken. Damaged Squares become Aflame."
+        effect: "If this Attacking Maneuver knocks an Opponent through a Health Threshold, they suffer 2 stacks of Broken until the start of your next turn."
       },
       "Elemental (Ice)": {
         foundations: ["Magic"],
         damageCat: "Direct", kpCost: 8, range: "Any",
-        effect: "If you knock an Opponent through a Health Threshold, they gain Slowed. Damaged Squares become Frozen."
+        effect: "If this Attacking Maneuver knocks an Opponent through a Health Threshold, they suffer a stack of Slowed until the start of your next turn."
       },
       "Elemental (Light)": {
         foundations: ["Magic"],
-        damageCat: "Standard", kpCost: 2, range: "Any",
-        effect: "Gains the Full Wager Advantage for free. Damaged Squares have Light Level increased by 1."
+        damageCat: "Standard", kpCost: 6, range: "Any",
+        effect: "If your Ki Wager is 1/3+ of your Max Capacity, the base Damage Category is Direct; if higher than 2/3, it is Lethal."
       },
       "Elemental (Lightning)": {
         foundations: ["Magic"],
         damageCat: "Direct", kpCost: 8, range: "Any",
-        effect: "If you knock an Opponent through a Health Threshold, they gain Impediment. Damaged Squares become Electrified."
-      },
-      "Elemental (Metal)": {
-        foundations: ["Magic"],
-        damageCat: "Lethal", kpCost: 8, range: "Any",
-        effect: "Damaged Squares become Metallic with Dangerous Environment / Sharp Feature Quality. Hardness Rank increased to 3."
-      },
-      "Elemental (Plantlife)": {
-        foundations: ["Magic"],
-        damageCat: "Standard", kpCost: 3, range: "Any",
-        effect: "Gains Staggering Attack Advantage for free. After using, create Features with Hardness Rank 1 and Splintering Quality on adjacent unoccupied Squares."
-      },
-      "Elemental (Poison)": {
-        foundations: ["Magic"],
-        damageCat: "Direct", kpCost: 8, range: "Any",
-        effect: "If you knock an Opponent through a Health Threshold, they gain Poisoned. Damaged Squares become Poisoned."
+        effect: "If this Attacking Maneuver knocks an Opponent through a Health Threshold, they suffer Impediment until the start of your next turn."
       },
       "Elemental (Water)": {
         foundations: ["Magic"],
         damageCat: "Direct", kpCost: 8, range: "Any",
-        effect: "If you knock an Opponent through a Health Threshold, they gain Prone. Damaged Squares become Bog Environment."
+        effect: "If this Attacking Maneuver knocks an Opponent through a Health Threshold, they are knocked Prone."
       },
       "Elemental (Wind)": {
         foundations: ["Magic"],
-        damageCat: "Direct", kpCost: 4, range: "Any",
-        effect: "Gains the Knockback Advantage for free. When moving via Knockback, you can move the Character in any direction."
+        damageCat: "Standard", kpCost: 5, range: "Any",
+        effect: "Gains the Knockback Advantage for free. Any Collision Damage from this Knockback is doubled (target and anyone they collide with)."
+      },
+      "Mega Flare": {
+        foundations: ["Magic"],
+        damageCat: "Standard", kpCost: 10, range: "Any",
+        effect: "Double the amount of Energy Charges gained through the Energy Charge Maneuver for this Attacking Maneuver."
       }
     },
 
     // ==================== TECHNIQUE ADVANTAGES ====================
     techniqueAdvantagesData: {
       // -- Area Advantages --
-      "Controlled Blast": { tpPerRank: 5, maxRanks: 1, hasNotes: false, requirement: "Cone AoE", effect: "" },
-      "Hurricane Assault": { tpPerRank: 4, maxRanks: 1, hasNotes: false, requirement: "Sweeping Profile", effect: "" },
-      "Intense Blast": { tpPerRank: 15, maxRanks: 1, hasNotes: false, requirement: "AoE", effect: "" },
-      "Pinpoint Precision": { tpPerRank: 6, maxRanks: 1, hasNotes: false, requirement: "AoE Standard/Minor, no Concentrated Strike", effect: "" },
-      "Splitting": { tpPerRank: [4, 6], maxRanks: 2, hasNotes: false, requirement: "Energy or Magic, no AoE", effect: "" },
+      "Controlled Blast": { tpPerRank: 5, maxRanks: 1, hasNotes: false, requirement: "Blast Profile", effect: "" },
+      "Hurricane Assault": { tpPerRank: 6, maxRanks: 1, hasNotes: false, requirement: "Sweeping Profile", effect: "" },
+      "Intense Blast": { tpPerRank: [6, 14], maxRanks: 2, hasNotes: false, requirement: "Physical or Energy Foundation with an AoE", effect: "" },
+      "Pinpoint Precision": { tpPerRank: 4, maxRanks: 1, hasNotes: false, requirement: "AoE of Standard or Minor Magnitude", effect: "" },
+      "Splitting": { tpPerRank: 6, maxRanks: 1, hasNotes: false, requirement: "Energy or Magic Foundation, no AoE", effect: "" },
       "Terrain Destruction": { tpPerRank: [3, 5, 7], maxRanks: 3, hasNotes: false, requirement: "AoE", effect: "" },
-      "Widespread Assault": { tpPerRank: 8, maxRanks: 1, hasNotes: true, requirement: "No AoE", effect: "" },
+      "Ki Extension": { tpPerRank: 4, maxRanks: 1, hasNotes: true, requirement: "Physical Foundation, no AoE", effect: "Gains a Cone or Line AoE starting from your Square (chosen when first applied)." },
+      "All Consuming": { tpPerRank: 2, maxRanks: 1, hasNotes: false, requirement: "Sphere AoE, Ultimate Signature, 3 ranks of Terrain Destruction", effect: "AoE becomes Cataclysmic: engulfs the entire Battlefield, targets all other Characters." },
       // -- Charge Advantages --
       "Aura Gathering": { tpPerRank: 8, maxRanks: 1, hasNotes: false, requirement: "Ultimate Signature" },
-      "Concentrated Strike": { tpPerRank: 8, maxRanks: 1, hasNotes: false, requirement: "AoE, no Pinpoint Precision" },
+      "Concentrated Strike": { tpPerRank: 8, maxRanks: 1, hasNotes: false, requirement: "Soaring Profile" },
       "Maximum Charge": { tpPerRank: 6, maxRanks: 1, hasNotes: false, requirement: "Ultimate Signature" },
       // -- Magic Advantages --
-      "Explosion Sorcery": { tpPerRank: 12, maxRanks: 1, hasNotes: false, requirement: "Simple Profile Magic, no AoE/Splitting" },
-      "Reinforced Plantlife": { tpPerRank: [3, 4, 5], maxRanks: 3, hasNotes: false, requirement: "Elemental (Plantlife)" },
-      "Weather Calling": { tpPerRank: 10, maxRanks: 1, hasNotes: false, requirement: "Elemental (not Light/Dark/Metal/Water)" },
+      "Explosion Sorcery": { tpPerRank: 12, maxRanks: 1, hasNotes: false, requirement: "Spell Profile, no AoE or Splitting Advantage" },
+      "Katchin Throw": { tpPerRank: 4, maxRanks: 1, hasNotes: false, requirement: "Elemental (Earth) Profile, Ultimate Signature", effect: "Increase the Hardness of the Collision Damage inflicted by 2." },
+      "Magic Barrage": { tpPerRank: 11, maxRanks: 1, hasNotes: false, requirement: "Ultimate Signature, Magic Foundation, no AoE", effect: "Apply the effects of the Rapid Fire Profile to this Attacking Maneuver." },
+      "Weather Calling": { tpPerRank: [8, 8], maxRanks: 2, hasNotes: true, requirement: "Elemental (Any) Profile" },
       // -- Movement Advantages --
       "Back Flip": { tpPerRank: 2, maxRanks: 1, hasNotes: false, requirement: "Hit and Run, Energy/Magic/Soaring/Physical+Charging Assault, no AoE (except Line)" },
       "Charging Assault": { tpPerRank: 10, maxRanks: 1, hasNotes: false },
       "Express Ticket": { tpPerRank: 6, maxRanks: 1, hasNotes: false, requirement: "Charging Assault" },
-      "High-Speed Dash": { tpPerRank: 2, maxRanks: 1, hasNotes: false, requirement: "Hit and Run" },
+      "High-Speed Dash": { tpPerRank: 3, maxRanks: 1, hasNotes: false, requirement: "Hit and Run" },
       "Hit and Run": { tpPerRank: 8, maxRanks: 1, hasNotes: false },
-      "Knockback": { tpPerRank: 4, maxRanks: 1, hasNotes: false },
+      "Knockback": { tpPerRank: 6, maxRanks: 1, hasNotes: false },
       "Two-Step Strike": { tpPerRank: 8, maxRanks: 1, hasNotes: false, requirement: "Energy/Magic/Soaring/Physical+Charging Assault, no Concentration" },
       // -- Power Advantages --
       "Accurate": { tpPerRank: [3, 5, 7], maxRanks: 3, hasNotes: false, requirement: "No Inaccurate", effect: "+1(T) to Strike Rolls per rank." },
-      "Armor-Piercing": { tpPerRank: 8, maxRanks: 1, hasNotes: false, requirement: "Pinpoint Profile" },
       "Brutal Blitz": { tpPerRank: 7, maxRanks: 1, hasNotes: false, requirement: "Blitz Profile" },
       "Final Chance": { tpPerRank: 4, maxRanks: 1, hasNotes: false, requirement: "Ultimate Signature" },
-      "Full Wager": { tpPerRank: 10, maxRanks: 1, hasNotes: false },
       "Last Legs": { tpPerRank: 6, maxRanks: 1, hasNotes: false, requirement: "Ultimate Signature" },
       "Long Shot": { tpPerRank: [3, 4], maxRanks: 2, hasNotes: false },
       "Overwhelming Terror": { tpPerRank: 12, maxRanks: 1, hasNotes: false, requirement: "Terrify Maneuver" },
-      "Peppering Blows": { tpPerRank: [6, 8, 10], maxRanks: 3, hasNotes: false, requirement: "Combination Profile" },
-      "Power Burst": { tpPerRank: [6, 5, 4], maxRanks: 3, hasNotes: false, requirement: "Ultimate Signature" },
+      "Peppering Blows": { tpPerRank: 8, maxRanks: 1, hasNotes: false, requirement: "Combination Profile" },
+      "Power Burst": { tpPerRank: [4, 3, 2], maxRanks: 3, hasNotes: false, requirement: "Ultimate Signature" },
       "Power Shot": { tpPerRank: [4, 6, 8], maxRanks: 3, hasNotes: false, requirement: "No Low Penetration" },
       "Shattering Blow": { tpPerRank: [4, 6, 6, 8], maxRanks: 4, hasNotes: false, requirement: "Crushing Profile" },
-      "Sky Assault": { tpPerRank: 3, maxRanks: 1, hasNotes: false, requirement: "Energy or Magic" },
       "Super Advantage": { tpPerRank: 11, maxRanks: 1, hasNotes: true, requirement: "Ultimate Signature" },
-      "Transformation Boost": { tpPerRank: 6, maxRanks: 1, hasNotes: false, requirement: "Ultimate Signature" },
+      "Transformation Boost": { tpPerRank: 12, maxRanks: 1, hasNotes: false, requirement: "Ultimate Signature" },
       // -- Surprise Advantages --
-      "Counter": { tpPerRank: 7, maxRanks: 1, hasNotes: false },
+      "Counter": { tpPerRank: 5, maxRanks: 1, hasNotes: false },
       "Delayed": { tpPerRank: 8, maxRanks: 1, hasNotes: false, requirement: "Signature Technique only" },
       "Exploiting Technique": { tpPerRank: 7, maxRanks: 1, hasNotes: false, requirement: "No AoE/Mandatory Charge/Special Set Up/Grappling/Time-Skipped/Trick Technique/Lead Up" },
       "Fake Out": { tpPerRank: 10, maxRanks: 1, hasNotes: false, requirement: "Bluff 2+, Super Signature" },
-      "Instant Assault": { tpPerRank: 10, maxRanks: 1, hasNotes: false },
       "Low Stakes Attack": { tpPerRank: 5, maxRanks: 1, hasNotes: false, requirement: "Fake Out" },
       "Personal Bomb": { tpPerRank: 12, maxRanks: 1, hasNotes: false, requirement: "Delayed, Sphere AoE" },
       "Trick Attack": { tpPerRank: 4, maxRanks: 1, hasNotes: true, requirement: "Bluff or Acrobatics 2+" },
       // -- Technical Advantages --
-      "Condition": { tpPerRank: 14, maxRanks: 1, hasNotes: true, requirement: "Not Elemental (Fire/Ice/Water/Lightning/Poison)" },
-      "Deadly Drop": { tpPerRank: 8, maxRanks: 1, hasNotes: false, requirement: "Physical, Grappling, Restricted \u2013 High Environment" },
-      "Hefty Stagger": { tpPerRank: [4, 6], maxRanks: 2, hasNotes: false, requirement: "Staggering Attack" },
+      "Condition": { tpPerRank: 14, maxRanks: 1, hasNotes: true, requirement: "Not Elemental (Fire/Ice/Water/Lightning)" },
+      "Deadly Drop": { tpPerRank: 8, maxRanks: 1, hasNotes: false, requirement: "Physical Attack, Grappling Disadvantage, Restricted \u2013 Environment (Sky), Suplex Talent" },
       "Homing": { tpPerRank: [6, 8, 10], maxRanks: 3, hasNotes: false, requirement: "No AoE" },
       "Penetration": { tpPerRank: [12, 6, 6], maxRanks: 3, hasNotes: false, requirement: "No AoE (Sphere/Cone), no Low Penetration" },
       "Perfect Strike": { tpPerRank: 8, maxRanks: 1, hasNotes: false, requirement: "Simple Profile, Ultimate Signature" },
       "Powerbomb": { tpPerRank: [11, 4], maxRanks: 2, hasNotes: false, requirement: "Physical, Grappling" },
       "Rebound": { tpPerRank: 2, maxRanks: 1, hasNotes: false, requirement: "Homing" },
       "Staggering Attack": { tpPerRank: 6, maxRanks: 1, hasNotes: false },
-      "Sudden Blast": { tpPerRank: 4, maxRanks: 1, hasNotes: false, requirement: "Clearing Profile" },
+      "Sudden Blast": { tpPerRank: 6, maxRanks: 1, hasNotes: false, requirement: "Explosion Profile" },
       "Sustained": { tpPerRank: 6, maxRanks: 5, hasNotes: false },
       // -- Miscellaneous Advantages --
       "Alotta Lotta Attacks": { tpPerRank: [3, 5, 7], maxRanks: 3, hasNotes: false, requirement: "Combination Profile" },
@@ -669,61 +633,56 @@ export function registerConfig() {
       "Efficiency": { tpPerRank: [8, 7], maxRanks: 2, hasNotes: false, requirement: "No Inefficiency" },
       "Forceful Launch": { tpPerRank: [4, 6, 8], maxRanks: 3, hasNotes: false, requirement: "Launching Profile" },
       "Magical Flavor": { tpPerRank: 2, maxRanks: 1, hasNotes: true, requirement: "Spell Profile" },
-      "Precise Strike": { tpPerRank: 4, maxRanks: 1, hasNotes: false, requirement: "Launching Profile" },
-      "Throwing Technique": { tpPerRank: 5, maxRanks: 1, hasNotes: false, requirement: "Simple Physical" },
+      "Precise Strike": { tpPerRank: 4, maxRanks: 1, hasNotes: false, requirement: "Kiai Profile" },
+      "Throwing Technique": { tpPerRank: 5, maxRanks: 1, hasNotes: false, requirement: "Simple Profile, Weapon Requirement Disadvantage" },
       "Transformation Flare": { tpPerRank: 4, maxRanks: 1, hasNotes: false, requirement: "Restricted \u2013 Untransformed" },
       "Twin-Linked": { tpPerRank: 10, maxRanks: 1, hasNotes: true, requirement: "No Dead-Link for chosen roll" },
-      "Weapon Assisted": { tpPerRank: 2, maxRanks: 1, hasNotes: false },
+      "Weapon Assisted": { tpPerRank: 4, maxRanks: 1, hasNotes: false },
       // -- From official examples --
-      "Big Bang": { tpPerRank: 5, maxRanks: 3, hasNotes: false },
+      "Big Bang": { tpPerRank: [3, 2], maxRanks: 2, hasNotes: false, requirement: "Energy or Magic Foundation, not Cutting, no AoE" },
       "Broad Beam": { tpPerRank: 2, maxRanks: 1, hasNotes: false, requirement: "Beam Profile" },
-      "Chain Attack": { tpPerRank: 8, maxRanks: 1, hasNotes: true },
-      "Giant Sphere": { tpPerRank: 6, maxRanks: 1, hasNotes: false },
-      "Karmic": { tpPerRank: 8, maxRanks: 1, hasNotes: false },
-      "Widespread Magic": { tpPerRank: 5, maxRanks: 1, hasNotes: true, requirement: "Magic Foundation" }
+      "Chain Attack": { tpPerRank: 11, maxRanks: 1, hasNotes: true, requirement: "Ultimate Signature, Rapid Fire or Combination Profile" },
+      "Giant Sphere": { tpPerRank: 10, maxRanks: 1, hasNotes: false, requirement: "Ultimate Signature, Sphere Profile, Big Bang Advantage" },
+      "Karmic": { tpPerRank: 12, maxRanks: 1, hasNotes: false, requirement: "Ultimate Signature, Z-Soul Alignment is not Neutral" },
+      "Widespread Magic": { tpPerRank: 6, maxRanks: 1, hasNotes: true, requirement: "Magic Foundation" }
     },
 
     // ==================== TECHNIQUE DISADVANTAGES ====================
     techniqueDisadvantagesData: {
       // -- Movement Disadvantages --
-      "Drop Down": { tpPerRank: -2, maxRanks: 1, hasNotes: false, requirement: "Charging Assault, Restricted \u2013 Environment (High)" },
+      "Drop Down": { tpPerRank: -2, maxRanks: 1, hasNotes: false, requirement: "Charging Assault Advantage, Restricted \u2013 Environment (Sky)" },
       "Recoil": { tpPerRank: -2, maxRanks: 1, hasNotes: false, requirement: "Hit and Run" },
       // -- Resource Disadvantages --
       "All or Nothing": { tpPerRank: -5, maxRanks: 1, hasNotes: false },
-      "Backlash": { tpPerRank: [-2, -3, -3, -3, -3], maxRanks: 5, hasNotes: false },
-      "Inefficiency": { tpPerRank: [-6, -7], maxRanks: 2, hasNotes: false, requirement: "No Efficiency" },
+      "Backlash": { tpPerRank: [-2, -3, -4, -4, -4], maxRanks: 5, hasNotes: false },
+      "Inefficiency": { tpPerRank: [-6, -7], maxRanks: 2, hasNotes: false, requirement: "No Efficiency, you do not possess the Cosmic Efficiency Racial Trait" },
       // -- Restriction Disadvantages --
-      "Concentration": { tpPerRank: -4, maxRanks: 1, hasNotes: false, requirement: "Energy/Magic/Soaring/Physical+Widespread Assault or Charging Assault" },
+      "Concentration": { tpPerRank: -4, maxRanks: 1, hasNotes: false, requirement: "Energy/Magic Foundation, Soaring Profile, or Physical with the Ki Extension or Charging Assault Advantage" },
       "Grappling": { tpPerRank: -5, maxRanks: 1, hasNotes: false },
       "Restricted \u2013 Aura": { tpPerRank: -4, maxRanks: 1, hasNotes: true },
       "Restricted \u2013 Environment": { tpPerRank: -6, maxRanks: 1, hasNotes: true },
       "Restricted \u2013 State": { tpPerRank: -4, maxRanks: 1, hasNotes: true },
       "Restricted \u2013 Transformation": { tpPerRank: [-2, -4], maxRanks: 2, hasNotes: true },
-      "Restricted \u2013 Untransformed": { tpPerRank: -6, maxRanks: 1, hasNotes: false, requirement: "Possess a Form" },
+      "Restricted \u2013 Untransformed": { tpPerRank: -6, maxRanks: 1, hasNotes: false, requirement: "You possess a Core Transformation" },
       "Restricted \u2013 Weapon": { tpPerRank: [-2, -4], maxRanks: 2, hasNotes: true, requirement: "Weapon Assisted" },
       "Restricted \u2013 Weather": { tpPerRank: -4, maxRanks: 1, hasNotes: true },
       "Required Counter": { tpPerRank: -5, maxRanks: 1, hasNotes: false, requirement: "Counter" },
-      "Vehicle Attack": { tpPerRank: -4, maxRanks: 1, hasNotes: false, requirement: "Blitz Profile or Restricted \u2013 Weapon" },
       // -- Set-Up Disadvantages --
       "Lead Up": { tpPerRank: -6, maxRanks: 1, hasNotes: true, requirement: "No Mandatory Charge" },
       "Mandatory Charge": { tpPerRank: [-4, -8, -10], maxRanks: 3, hasNotes: false },
-      "Sneak Attack": { tpPerRank: -4, maxRanks: 1, hasNotes: false },
       "Special Set Up": { tpPerRank: -4, maxRanks: 1, hasNotes: true, requirement: "No Mandatory Charge or Lead Up" },
       // -- Targeting Disadvantages --
-      "Distant Explosion": { tpPerRank: -3, maxRanks: 1, hasNotes: false, requirement: "Sphere AoE, no Self-Explosion" },
       "Hostile Chase": { tpPerRank: -7, maxRanks: 1, hasNotes: false, requirement: "Homing 2+, Energy or Magic" },
-      "Limited Line": { tpPerRank: [-4, -2], maxRanks: 2, hasNotes: false, requirement: "Line AoE" },
-      "Self-Explosion": { tpPerRank: -6, maxRanks: 1, hasNotes: false, requirement: "Sphere AoE, no Distant Explosion" },
+      "Self-Explosion": { tpPerRank: -6, maxRanks: 1, hasNotes: false, requirement: "Sphere AoE" },
       "Skyward Strike": { tpPerRank: -8, maxRanks: 1, hasNotes: false, requirement: "No AoE, Energy/Magic/Physical+Charging Assault" },
-      "Small Scale Blast": { tpPerRank: -4, maxRanks: 1, hasNotes: false, requirement: "Sphere AoE, no Terrain Destruction" },
       "Volatile Explosion": { tpPerRank: -8, maxRanks: 1, hasNotes: false, requirement: "Sphere AoE" },
       // -- Weakness Disadvantages --
-      "Compressed Element": { tpPerRank: -4, maxRanks: 1, hasNotes: false, requirement: "Elemental (Fire/Ice/Lightning/Poison/Water/Dark/Light/Plantlife)" },
       "Exhaustive": { tpPerRank: [-6, -10], maxRanks: 2, hasNotes: false },
       "Inaccurate": { tpPerRank: [-4, -5, -6], maxRanks: 3, hasNotes: false, requirement: "No Accurate" },
       "Low Penetration": { tpPerRank: [-2, -3, -4], maxRanks: 3, hasNotes: false, requirement: "No Power Shot or Penetration" },
-      "Short Range": { tpPerRank: -2, maxRanks: 2, hasNotes: false, requirement: "Energy or Magic, no AoE" },
-      "Stat Drain": { tpPerRank: -7, maxRanks: 3, hasNotes: false },
+      "Short Range": { tpPerRank: -2, maxRanks: 3, hasNotes: false, requirement: "Energy or Magic Foundation, no AoE" },
+      "Stat Drain": { tpPerRank: -5, maxRanks: 3, hasNotes: false },
+      "Weapon Requirement": { tpPerRank: -3, maxRanks: 1, hasNotes: false, requirement: "Weapon Assisted Advantage" },
       // -- Miscellaneous Disadvantages --
       "Climax Attack": { tpPerRank: [-2, -3, -4], maxRanks: 3, hasNotes: false },
       "Dead-Link": { tpPerRank: -6, maxRanks: 1, hasNotes: true, requirement: "No Twin-Linked for chosen roll" },
@@ -731,20 +690,19 @@ export function registerConfig() {
       "Short Delay": { tpPerRank: -4, maxRanks: 1, hasNotes: false, requirement: "Delayed" },
       "United Attack": { tpPerRank: -10, maxRanks: 1, hasNotes: false },
       // -- From official examples --
-      "Blind Karma": { tpPerRank: -4, maxRanks: 1, hasNotes: false },
-      "Time-Skipped": { tpPerRank: -6, maxRanks: 1, hasNotes: false },
-      "Trick Technique": { tpPerRank: -5, maxRanks: 1, hasNotes: false }
+      "Blind Karma": { tpPerRank: -8, maxRanks: 1, hasNotes: false, requirement: "Karmic Advantage" },
+      "Time-Skipped": { tpPerRank: -3, maxRanks: 1, hasNotes: false, requirement: "Time to Make the Donuts Advancement" },
+      "Trick Technique": { tpPerRank: -8, maxRanks: 1, hasNotes: false, requirement: "Energy/Magic Foundation, Trap Attack Unique Ability" }
     },
 
     // ==================== AURA TYPES ====================
     auraTypes: {
-      "Sparking": { kpCost: 8, effect: "Increase all Combat Rolls and both Force and Magic Modifiers by 1(T)" },
-      "Burning": { kpCost: 6, effect: "At end of turn, reduce Life Points of all characters in Minor Sphere AoE by 3(T)" },
-      "Hazardous": { kpCost: 6, effect: "Create a Battle Weather at first Tier within Minor Sphere AoE (centered on you)" },
-      "Avatar": { kpCost: 8, effect: "Increase Size Category to Gigantic + 2 free ranks of Absorption Advantage" },
-      "Energy Focus": { kpCost: 8, effect: "Choose Melee Weapon Category, Size, and 2 Weapon Qualities; benefit from them on Unarmed Physical Attacks" },
-      "Draining Focus": { kpCost: 8, effect: "Each time you deal Damage with Attacking Maneuver, reduce opponent's Life and Ki by 2(bT)" },
-      "Shield": { kpCost: 12, effect: "Create barrier that absorbs damage instead of losing Life Points; Shield Durability = 5x Might" }
+      "Sparking": { kpCost: 8, effect: "Increase all of your Combat Rolls and both your Force and Magic Modifiers by 1(T)" },
+      "Burning": { kpCost: 6, effect: "At the end of each of your turns, reduce the Life Points of all other characters within the Minor Sphere AoE (centered on you) by 3(T)" },
+      "Hazardous": { kpCost: 6, effect: "When you create this Aura, select a Battle Weather and one Weather Effect. Within the Minor Sphere AoE, all other characters suffer from that Weather Effect" },
+      "Avatar": { kpCost: 8, effect: "Increase your Size Category to Gigantic (ignore the Size with Apparel rule for this increase)" },
+      "Energy Focus": { kpCost: 8, effect: "Choose one Melee Weapon Category, a Weapon Size and up to 2 Generic/Melee Weapon Qualities; your Unarmed Physical Attacks benefit from them" },
+      "Shield": { kpCost: 12, effect: "On activation, use Power Flare as if attacked +6(T) Dice Score = Shield Durability; it absorbs post-Soak Damage until 0 (then the Aura ends, excess damage hits you). No Attacking Maneuvers while active" }
     },
 
     // ==================== AURA ADVANTAGES ====================
@@ -764,14 +722,12 @@ export function registerConfig() {
       "Environmental Shielding": { tpPerRank: 6, maxRanks: 1, hasNotes: false, requirement: "Shield Aura" },
       "Expanded Shield": { tpPerRank: 10, maxRanks: 1, hasNotes: false, requirement: "Shield Aura" },
       "Protective": { tpPerRank: [6, 8, 10], maxRanks: 3, hasNotes: false },
-      "Solid Shield": { tpPerRank: 6, maxRanks: 1, hasNotes: false, requirement: "Expanded Shield" },
       "Dynamic Shield": { tpPerRank: 6, maxRanks: 1, hasNotes: false, requirement: "Shield Aura" },
       // Offensive
       "Burst Aura": { tpPerRank: [7, 8, 9], maxRanks: 3, hasNotes: false },
       "Charging Aura": { tpPerRank: 8, maxRanks: 1, hasNotes: false },
-      "Deadly Drain": { tpPerRank: [8, 8, 10], maxRanks: 3, hasNotes: false, requirement: "Draining Focus" },
-      "Defiant Aura": { tpPerRank: [2, 3, 3], maxRanks: 3, hasNotes: false, effect: "+1(T) per rank to Combat Rolls when below Health Thresholds." },
-      "Explosive Aura": { tpPerRank: 12, maxRanks: 1, hasNotes: false, requirement: "Burning Aura", effect: "When you Power Up, everyone in your Aura's AoE must dodge or take damage." },
+      "Defiant Aura": { tpPerRank: [2, 3, 3], maxRanks: 3, hasNotes: false, effect: "+1(T) Combat Rolls while below the Critical (Rank 1), Injured (Rank 2) or Bruised (Rank 3) Health Threshold." },
+      "Explosive Aura": { tpPerRank: 12, maxRanks: 1, hasNotes: false, requirement: "Burning Aura", effect: "If you use the Power Up or Transformation Maneuver, apply the Burning Aura effect as if it was the end of your turn." },
       "Flaring Aura": { tpPerRank: [6, 6, 8], maxRanks: 3, hasNotes: false, requirement: "Burning Aura" },
       "Powerful Aura": { tpPerRank: 4, maxRanks: 3, hasNotes: false },
       "Persistent Aura": { tpPerRank: [7, 8], maxRanks: 2, hasNotes: false },
@@ -781,10 +737,10 @@ export function registerConfig() {
       // Exceptional
       "Offensive Shield": { tpPerRank: 8, maxRanks: 1, hasNotes: false, requirement: "Shield Aura" },
       "Selective": { tpPerRank: 7, maxRanks: 1, hasNotes: false, requirement: "Burning Aura" },
-      "Strainless Aura": { tpPerRank: 7, maxRanks: 1, hasNotes: false },
+      "Strainless Aura": { tpPerRank: 7, maxRanks: 1, hasNotes: false, requirement: "No Stressful Aura Disadvantage" },
       "Tax Exempt": { tpPerRank: 5, maxRanks: 1, hasNotes: false },
       // Utility
-      "Efficiency": { tpPerRank: [8, 7], maxRanks: 2, hasNotes: false },
+      "Efficiency": { tpPerRank: [8, 7], maxRanks: 2, hasNotes: false, requirement: "No Inefficiency Disadvantage" },
       "Hefty Aura": { tpPerRank: [6, 6, 8], maxRanks: 3, hasNotes: false },
       "High Speed Aura": { tpPerRank: 2, maxRanks: 3, hasNotes: false, requirement: "Sparking Aura" },
       "Infusion": { tpPerRank: 6, maxRanks: 1, hasNotes: false },
@@ -801,23 +757,22 @@ export function registerConfig() {
       "Dangerous Aura": { tpPerRank: [-4, -4, -6], maxRanks: 3, hasNotes: false },
       "Degrading Shield": { tpPerRank: [-4, -6, -8], maxRanks: 3, hasNotes: false, requirement: "Shield Aura" },
       "Distracting Aura": { tpPerRank: [-1, -1, -2], maxRanks: 3, hasNotes: false },
-      "Heavy Aura": { tpPerRank: [-4, -4, -6], maxRanks: 3, hasNotes: false },
+      "Heavy Aura": { tpPerRank: [-4, -4, -6], maxRanks: 3, hasNotes: false, requirement: "No High Speed Aura Advantage" },
       "Immolate Self": { tpPerRank: -10, maxRanks: 1, hasNotes: false, requirement: "Burning Aura" },
       "Life Drain": { tpPerRank: [-2, -3, -4, -4, -4], maxRanks: 5, hasNotes: false },
-      "Stat Loss": { tpPerRank: [-6, -6], maxRanks: 2, hasNotes: true },
       "Stat Drain": { tpPerRank: -5, maxRanks: 3, hasNotes: true },
       "Tiring": { tpPerRank: [-4, -5, -6], maxRanks: 3, hasNotes: false },
       "Vulnerable Aura": { tpPerRank: [-6, -8, -8], maxRanks: 3, hasNotes: false },
       // Prohibitive
-      "Base Aura": { tpPerRank: -8, maxRanks: 1, hasNotes: false },
+      "Base Aura": { tpPerRank: -8, maxRanks: 1, hasNotes: false, requirement: "Access to a Core Transformation" },
       "Climactic": { tpPerRank: [-2, -3, -4], maxRanks: 3, hasNotes: false },
       "Focused": { tpPerRank: [-8, -8, -9], maxRanks: 3, hasNotes: false },
       "Fragile State": { tpPerRank: [-2, -3, -4], maxRanks: 3, hasNotes: false, requirement: "Required State" },
       "Harsh Focus": { tpPerRank: -5, maxRanks: 1, hasNotes: false },
-      "Numb": { tpPerRank: [-3, -4, -4], maxRanks: 3, hasNotes: false },
-      "Required State": { tpPerRank: -4, maxRanks: 1, hasNotes: true },
+      "Numb": { tpPerRank: [-3, -4, -4], maxRanks: 3, hasNotes: false, requirement: "Vigor Talent" },
+      "Required State": { tpPerRank: -4, maxRanks: 1, hasNotes: true, requirement: "No State of Mind Advantage" },
       // Miscellaneous
-      "Inefficiency": { tpPerRank: [-6, -7], maxRanks: 2, hasNotes: false },
+      "Inefficiency": { tpPerRank: [-6, -7], maxRanks: 2, hasNotes: false, requirement: "No Efficiency Advantage" },
       "Small Avatar": { tpPerRank: [-3, -3], maxRanks: 2, hasNotes: false, requirement: "Avatar Aura" },
       "Restricted Aura": { tpPerRank: -6, maxRanks: 1, hasNotes: true, requirement: "Access to a Transformation" },
       "Stressful Aura": { tpPerRank: -5, maxRanks: 3, hasNotes: false, requirement: "Restricted Aura, no Strainless Aura" },

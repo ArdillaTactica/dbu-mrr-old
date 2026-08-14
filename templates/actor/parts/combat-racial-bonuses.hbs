@@ -484,12 +484,12 @@
         {{#if arcosianBonuses.has.keratinousPlating}}
         <div class="racial-option-row">
           <label class="racial-option-label">Plating Type:</label>
-          <select name="system.keratinousPlatingOption" class="racial-option-select">
-            <option value="none" {{#if (eq arcosianBonuses.platingOpt "none")}}selected{{/if}}>-- Select --</option>
-            <option value="dense" {{#if (eq arcosianBonuses.platingOpt "dense")}}selected{{/if}}>Dense Plating (+{{arcosianBonuses.platingDenseDR}} DR)</option>
-            <option value="sleek" {{#if (eq arcosianBonuses.platingOpt "sleek")}}selected{{/if}}>Sleek Plating (+{{arcosianBonuses.platingSleekDefense}} Defense)</option>
-            <option value="royal" {{#if (eq arcosianBonuses.platingOpt "royal")}}selected{{/if}}>Royal Plating (+{{arcosianBonuses.platingRoyalStress}} Stress Test)</option>
-            <option value="combat" {{#if (eq arcosianBonuses.platingOpt "combat")}}selected{{/if}}>Combat Plating (+{{arcosianBonuses.platingCombatWound}} Wound)</option>
+          <select class="racial-option-select kp-plating-select">
+            <option value="none" {{#if (eq arcosianBonuses.platingOptKey "none")}}selected{{/if}}>-- Select --</option>
+            <option value="dense" {{#if (eq arcosianBonuses.platingOptKey "dense")}}selected{{/if}}>Dense Plating (+1(bT) DR)</option>
+            <option value="sleek" {{#if (eq arcosianBonuses.platingOptKey "sleek")}}selected{{/if}}>Sleek Plating (+1(bT) Defense)</option>
+            <option value="royal" {{#if (eq arcosianBonuses.platingOptKey "royal")}}selected{{/if}}>Royal Plating (+1 Stress Test)</option>
+            <option value="combat" {{#if (eq arcosianBonuses.platingOptKey "combat")}}selected{{/if}}>Combat Plating (+2(bT) Wound)</option>
           </select>
         </div>
         {{/if}}

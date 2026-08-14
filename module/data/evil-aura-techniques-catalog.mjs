@@ -29,14 +29,14 @@ export const EVIL_AURA_TECHNIQUES = [
     isWeapon: false,
     isLimitBreak: false,
     advantages: [
-      { name: "Twin-Linked (Wound)", ranks: 1, notes: "Wound", tpCost: 0, dynamicTP: 0 },
+      { name: "Twin-Linked", ranks: 1, notes: "Wound", tpCost: 0, dynamicTP: 0 },
       { name: "Knockback",           ranks: 1, notes: "",      tpCost: 0, dynamicTP: 0 },
       { name: "Power Shot",          ranks: 2, notes: "",      tpCost: 0, dynamicTP: 0 },
     ],
     disadvantages: [
       { name: "Self-Explosion",                       ranks: 1, notes: "",                  tpCost: 0, dynamicTP: 0 },
-      { name: "Lead Up (Explosion)",                  ranks: 1, notes: "Explosion",        tpCost: 0, dynamicTP: 0 },
-      { name: "Restriction – Transformation (2)",     ranks: 1, notes: "Evil Aura Grade 2", tpCost: 0, dynamicTP: 0 },
+      { name: "Lead Up",                              ranks: 1, notes: "Explosion",        tpCost: 0, dynamicTP: 0 },
+      { name: "Restricted – Transformation",     ranks: 1, notes: "Evil Aura Grade 2", tpCost: 0, dynamicTP: 0 },
     ],
     rulesKpCost: 13   // (T) — actual cost is 13×tier; but in-system kpCost auto-derived; this is informational
   },
@@ -55,11 +55,11 @@ export const EVIL_AURA_TECHNIQUES = [
     isWeapon: false,
     isLimitBreak: false,
     advantages: [
-      { name: "Condition (Poisoned)", ranks: 1, notes: "Poisoned", tpCost: 0, dynamicTP: 0 },
+      { name: "Condition", ranks: 1, notes: "Poisoned", tpCost: 0, dynamicTP: 0 },
       { name: "Splitting",            ranks: 1, notes: "",         tpCost: 0, dynamicTP: 0 },
     ],
     disadvantages: [
-      { name: "Restriction – Transformation (2)", ranks: 1, notes: "Evil Aura Grade 2", tpCost: 0, dynamicTP: 0 },
+      { name: "Restricted – Transformation", ranks: 1, notes: "Evil Aura Grade 2", tpCost: 0, dynamicTP: 0 },
     ],
     rulesKpCost: 7
   },
@@ -85,7 +85,7 @@ export const EVIL_AURA_TECHNIQUES = [
     disadvantages: [
       { name: "Mandatory Charge",                 ranks: 1, notes: "",                  tpCost: 0, dynamicTP: 0 },
       { name: "All or Nothing",                   ranks: 1, notes: "",                  tpCost: 0, dynamicTP: 0 },
-      { name: "Restriction – Transformation (2)", ranks: 1, notes: "Evil Aura Grade 2", tpCost: 0, dynamicTP: 0 },
+      { name: "Restricted – Transformation", ranks: 1, notes: "Evil Aura Grade 2", tpCost: 0, dynamicTP: 0 },
     ],
     rulesKpCost: 8
   },
@@ -105,11 +105,11 @@ export const EVIL_AURA_TECHNIQUES = [
     isLimitBreak: false,
     advantages: [
       { name: "Splitting",          ranks: 1, notes: "",       tpCost: 0, dynamicTP: 0 },
-      { name: "Condition (Shaken)", ranks: 1, notes: "Shaken", tpCost: 0, dynamicTP: 0 },
+      { name: "Condition", ranks: 1, notes: "Shaken", tpCost: 0, dynamicTP: 0 },
       { name: "Accurate",           ranks: 1, notes: "",       tpCost: 0, dynamicTP: 0 },
     ],
     disadvantages: [
-      { name: "Restriction – Transformation (2)", ranks: 1, notes: "Evil Aura Grade 2", tpCost: 0, dynamicTP: 0 },
+      { name: "Restricted – Transformation", ranks: 1, notes: "Evil Aura Grade 2", tpCost: 0, dynamicTP: 0 },
     ],
     rulesKpCost: 10
   },
@@ -134,7 +134,7 @@ export const EVIL_AURA_TECHNIQUES = [
     ],
     disadvantages: [
       { name: "Mandatory Charge",                 ranks: 1, notes: "",                  tpCost: 0, dynamicTP: 0 },
-      { name: "Restriction – Transformation (2)", ranks: 1, notes: "Evil Aura Grade 2", tpCost: 0, dynamicTP: 0 },
+      { name: "Restricted – Transformation", ranks: 1, notes: "Evil Aura Grade 2", tpCost: 0, dynamicTP: 0 },
     ],
     rulesKpCost: 8
   },

@@ -55,6 +55,19 @@
             </div>
             {{/each}}
           </div>
+          {{#if isArchetypeFocus}}
+          <div class="pb-bestial-section">
+            <div class="option-limit">Archetype Focus — chosen Foundation (−1 CT Strike/Wound)</div>
+            <div class="bestial-option-row">
+              <select class="af-foundation-select">
+                <option value="">-- Choose Foundation --</option>
+                {{#each archetypeFoundationOptions}}
+                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{value}}</option>
+                {{/each}}
+              </select>
+            </div>
+          </div>
+          {{/if}}
         </div>
         {{/each}}
       </div>

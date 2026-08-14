@@ -56,6 +56,10 @@
           {{#if system.aspectEffects.perfectKiControlActive}}<i class="fas fa-check-circle"></i> Active{{else}}<i class="fas fa-times-circle"></i> Off{{/if}}
         </span>
       </div>
+      <div class="ki-stat">
+        <label>Holding Back</label>
+        <input type="number" name="system.tracking.holdingBackStacks" value="{{system.tracking.holdingBackStacks}}" min="0" title="Holding Back stacks — suppressing your power. Affects Jump Start / All-Out Start (need 0 stacks), Reserved Combatant (needs 1+), Weights apparel, scouter concealment." style="width: 50px; text-align: center;" />
+      </div>
       {{#if system.godKi.hasAccess}}
       <div class="ki-stat ki-status">
         <label>Divine Ki</label>

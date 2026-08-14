@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.7] - 2026-08-14
+
+- Mejoras en las técnicas de aura maligna (`evil-aura-techniques`).
+- Mejoras en la automatización racial de arcosianos y en los talentos.
+- Correcciones en el modelo de datos del personaje, la lógica del actor y la
+  hoja de personaje.
+- Mejoras en las pestañas de combate y talentos, y en los bonos raciales de
+  combate.
+
 ## [1.0.6] - 2026-08-09
 
 - Nuevos parciales de plantilla: bonos raciales y de transformación en combate,

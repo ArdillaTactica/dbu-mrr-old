@@ -162,10 +162,16 @@ export function applyArcosianBonuses(system, tier, baseTier) {
     }
   }
 
+  // Normalized option key for the UI select ("dense"/"sleek"/"royal"/
+  // "combat"/"none") — platingOpt itself may be a full catalog name
+  // ("dense plating") or a legacy short key ("dense").
+  const platingOptKey = ["dense", "sleek", "royal", "combat"].find(k => platingOpt.includes(k)) || "none";
+
   // Store derived data for UI display
   system.arcosianBonuses = {
     has,
     platingOpt,
+    platingOptKey,
     survivorSteadfast,
     platingBaseSoak,
     platingDenseDR,

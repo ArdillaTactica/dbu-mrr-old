@@ -1097,23 +1097,46 @@ export class DBUCharacterSheet extends ActorSheet {
         talentKpReduction = 2;
       }
     }
-    const finalKP = Math.max(profileBaseKP, kpCost + kpIncrease - kpReduction - talentKpReduction);
-    return { profileBaseKP, tpFull, kpCost, kpReduction: kpReduction + talentKpReduction, kpIncrease, finalKP };
+    // Supreme Fist L1: −2(T) KP on Unarmed Physical Attacks.
+    // NOTE: _calcTechKP works in (T)-units (paid KP = finalKP × tier at roll
+    // time), so the reduction is a FLAT 2 here — adding 2×tier would double-scale.
+    if (talents.includes("supreme_fist") && tech.foundation === "Physical" && !tech.isWeapon) {
+      talentKpReduction += 2;
+    }
+    let finalKP = Math.max(profileBaseKP, kpCost + kpIncrease - kpReduction - talentKpReduction);
+    // Tiring aura disadvantage (auras.txt): +1(T) KP per rank on all Attacking
+    // Maneuvers used while in the aura — applies even with Infusion. A usage
+    // surcharge external to the technique's own cost, so it lands AFTER the
+    // profile-KP floor (a floored ST still pays it). Flat = (T)-units here.
+    const tiringAura = this.actor._getActiveAura(this.actor.system);
+    let tiringIncrease = 0;
+    if (tiringAura) {
+      for (const dis of (tiringAura.disadvantages || [])) {
+        if (dis.name === "Tiring") tiringIncrease += (dis.ranks || 1);
+      }
+    }
+    finalKP += tiringIncrease;
+    return { profileBaseKP, tpFull, kpCost, kpReduction: kpReduction + talentKpReduction, kpIncrease: kpIncrease + tiringIncrease, finalKP };
   }
 
   _calcTechTPCost(tech) {
     // Base: 8 TP for all Signature Techniques
     let total = 8;
-    // +4 TP if Ultimate
-    if (tech.type === "ultimate") total += 4;
     // Sum advantages TP (positive)
     for (const adv of (tech.advantages || [])) total += (adv.tpCost || 0);
     // Sum disadvantages TP (negative - reduces cost)
     for (const disadv of (tech.disadvantages || [])) total += (disadv.tpCost || 0);
     // Subtract free TP
     total -= (tech.freeTP || 0);
-    // Minimum TP is 8
-    return Math.max(8, total);
+    // "The overall TP Cost of a Signature Technique cannot be less than 8."
+    total = Math.max(8, total);
+    // Ultimate Signature Techniques: +6 TP "added to the total AFTER completing
+    // the calculations" (signature.txt:16/39) — i.e. after the 8-TP floor.
+    // Type strings vary by data era ("ultimate" from the dropdown, "Ultimate
+    // Signature" from config.techniqueTypes) — normalize with a regex.
+    // OLD BUG: compared `=== "ultimate"` (never matched "Ultimate Signature") and added +4.
+    if (/ultimate/i.test(tech.type || "")) total += 6;
+    return total;
   }
 
   _calcTechStrike(tech, system, tier) {
@@ -1147,14 +1170,14 @@ export class DBUCharacterSheet extends ActorSheet {
       Energy: system.aptitudes?.strikeEnergy,
       Magic: system.aptitudes?.strikeMagic
     }[tech.foundation]) || 0;
-    let totalMod = haste + awareness + accurateBonus - inaccuratePenalty - ssPenStrike + strikeBuffTotal + foundationStrikeBuff;
+    // Unarmed Physical Attack (Physical ST without the Weapon flag):
+    // Rapid Fist +1(T) Strike and "Unarmed Strike" custom buffs.
+    const unarmedStrikeBuff = (tech.foundation === "Physical" && !tech.isWeapon)
+      ? (system.aptitudes?.unarmedStrike || 0) : 0;
+    let totalMod = haste + awareness + accurateBonus - inaccuratePenalty - ssPenStrike + strikeBuffTotal + foundationStrikeBuff + unarmedStrikeBuff;
     const baseTier = system.baseTier || 1;
 
-    // Aura combat roll bonus (Sparking type)
-    const activeAura = this.actor._getSelfBenefitAura(system);
-    if (activeAura && activeAura.type === "Sparking") {
-      totalMod += tier;
-    }
+    // Sparking Combat Roll bonus now flows through strikeBuffTotal (derived buff)
     // Shaken condition: -2(T)
     const shakenStacks = this._getConditionStacks(system, "shaken");
     if (shakenStacks > 0) {
@@ -1220,7 +1243,14 @@ export class DBUCharacterSheet extends ActorSheet {
       Energy: system.aptitudes?.woundEnergy,
       Magic: system.aptitudes?.woundMagic
     }[tech.foundation]) || 0;
-    let totalMod = damageAttr + extraDamageAttr + powerShotBonus - lowPenPenalty + woundBuffTotal + foundationWoundBuff;
+    // Unarmed Physical Attack (Physical ST without the Weapon flag):
+    // Iron Fist +2(T) Wound and "Unarmed Wound" custom buffs.
+    const unarmedWoundBuff = (tech.foundation === "Physical" && !tech.isWeapon)
+      ? (system.aptitudes?.unarmedWound || 0) : 0;
+    // All-Out Start: +1(bT) Wound on Signature Techniques while NOT Holding Back
+    const allOutSigWound = (system.tracking?.holdingBackStacks || 0) === 0
+      ? (system.aptitudes?.allOutStartSigWound || 0) : 0;
+    let totalMod = damageAttr + extraDamageAttr + powerShotBonus - lowPenPenalty + woundBuffTotal + foundationWoundBuff + unarmedWoundBuff + allOutSigWound;
 
     // Aura wound bonus (Powerful Aura advantage)
     const activeAura = this.actor._getSelfBenefitAura(system);
@@ -1352,6 +1382,13 @@ export class DBUCharacterSheet extends ActorSheet {
 
     let woundCT = 10 - mindful - (Number(apt.woundCTBonus) || 0);
     if (talents.includes("powerful_strike")) woundCT -= 1;
+
+    // Archetype Focus L1: −1 CT on Strike & Wound with the chosen Foundation
+    if (foundation && talents.includes("archetype_focus")
+        && system.talentSelections?.archetypeFocusFoundation === foundation) {
+      strikeCT -= 1;
+      woundCT -= 1;
+    }
     const perFoundation = {
       Physical: apt.woundCTPhysical, Energy: apt.woundCTEnergy, Magic: apt.woundCTMagic
     }[foundation];
@@ -1402,7 +1439,10 @@ export class DBUCharacterSheet extends ActorSheet {
 
     const preparedAuras = auras.map(a => {
       const tpCost = this._calcAuraTPCost(a);
-      const calculatedKP = this._calcAuraKPCharge(a, tpCost);
+      // KP scales with the aura's FULL TP — Free TP reduces what the player
+      // PAYS, not the aura's power (same model as _calcTechKP's tpFull)
+      const tpFull = this._calcAuraTPCost({ ...a, freeTP: 0 });
+      const calculatedKP = this._calcAuraKPCharge(a, tpFull);
       const efficiency = this._calcAuraEfficiency(a, tier);
 
       const auraTypeData = config.auraTypes?.[a.type] || { kpCost: 6, effect: "" };
@@ -1468,7 +1508,8 @@ export class DBUCharacterSheet extends ActorSheet {
         for (const sa of suppAuras) {
           const cloned = foundry.utils.deepClone(sa);
           const tpCost = this._calcAuraTPCost(cloned);
-          const calculatedKP = this._calcAuraKPCharge(cloned, tpCost);
+          const tpFull = this._calcAuraTPCost({ ...cloned, freeTP: 0 });
+          const calculatedKP = this._calcAuraKPCharge(cloned, tpFull);
           const efficiency = this._calcAuraEfficiency(cloned, tier);
           const auraTypeData = config.auraTypes?.[cloned.type] || { kpCost: 6, effect: "" };
           const baseKP = auraTypeData.kpCost;
@@ -1877,8 +1918,15 @@ export class DBUCharacterSheet extends ActorSheet {
       const isTechnical = /technical/i.test(data.abilityType || "");
       const ecApplies = isTechnical && uaTalents.includes("energy_control")
         && (uaTalents.includes("technique_master") || String(ecSelection) === `ua:${ua.abilityKey}`);
-      const kpEffective = (kpResolved != null && ecApplies)
+      let kpEffective = (kpResolved != null && ecApplies)
         ? Math.max(0, kpResolved - 2 * uaTier) : kpResolved;
+      // Tiring aura: +1(T) KP per rank on Unique Abilities while in the aura
+      if (kpEffective != null) {
+        const tAura = this.actor._getActiveAura(system);
+        for (const dis of (tAura?.disadvantages || [])) {
+          if (dis.name === "Tiring") kpEffective += (dis.ranks || 1) * uaTier;
+        }
+      }
       // Sustained heuristic: effects that require paying the KP Cost each turn
       const isSustained = /pay the (KP|Ki Point) Cost/i.test(data.effect || "");
 
@@ -2570,9 +2618,9 @@ export class DBUCharacterSheet extends ActorSheet {
     const guardDown = isCondActive("guardDown");
     const eqPenalty = system.equipment?.combatPenalty || 0;
 
-    // Active aura bonuses
+    // Active aura bonuses (Sparking Combat Rolls flow via strike/dodge/wound
+    // derived-buff totals now)
     const activeAura = this.actor._getSelfBenefitAura(system);
-    const sparkingBonus = (activeAura && activeAura.type === "Sparking") ? tier : 0;
     let auraWoundBonus = 0;
     if (activeAura) {
       for (const adv of (activeAura.advantages || [])) {
@@ -2672,7 +2720,28 @@ export class DBUCharacterSheet extends ActorSheet {
         Energy: system.aptitudes?.strikeEnergy,
         Magic: system.aptitudes?.strikeMagic
       }[ref.foundation]) || 0;
-      const strikeMod = haste + awareness + sparkingBonus - strikePenShaken - strikePenLR - eqPenalty - ssPenStrike + strikeBuffTotal + stateAllMod + foundationStrikeBuff + weaponStrikeMod;
+      // Unarmed Physical Attack: Physical foundation with no weapon selected —
+      // Rapid Fist (+1(T) Strike) / Iron Fist (+2(T) Wound) and "Unarmed
+      // Strike/Wound" custom buffs (aptitudes.unarmedStrike/unarmedWound).
+      const isUnarmed = ref.foundation === "Physical" && !wItem;
+      const unarmedStrikeBuff = isUnarmed ? (system.aptitudes?.unarmedStrike || 0) : 0;
+      let unarmedWoundBuff = isUnarmed ? (system.aptitudes?.unarmedWound || 0) : 0;
+
+      // Close Range Shot / Far Shot: range-gated Wound on Unarmed Energy/Magic
+      // attacks (gate on the ref's Target Range vs melee reach).
+      const isUnarmedEM = (ref.foundation === "Energy" || ref.foundation === "Magic") && !wItem;
+      if (isUnarmedEM) {
+        const reachM = String(system.status?.meleeReach || "1").match(/^1\+(\d+)/);
+        const meleeReachNum = 1 + (reachM ? Number(reachM[1]) : 0);
+        const refTalents = system.talents || [];
+        if (refTalents.includes("close_range_shot") && targetRange <= meleeReachNum) {
+          unarmedWoundBuff += 2 * tier;
+        }
+        if (refTalents.includes("far_shot") && targetRange > meleeReachNum) {
+          unarmedWoundBuff += (targetRange >= 8 ? 3 : 1) * tier;
+        }
+      }
+      const strikeMod = haste + awareness - strikePenShaken - strikePenLR - eqPenalty - ssPenStrike + strikeBuffTotal + stateAllMod + foundationStrikeBuff + weaponStrikeMod + unarmedStrikeBuff;
       const strikeFormula = this._buildFormula(strikeTopDice, strikeGreaterDice, strikeMod, stateStrikeExtra);
 
       // --- WOUND ---
@@ -2690,7 +2759,7 @@ export class DBUCharacterSheet extends ActorSheet {
         Energy: system.aptitudes?.woundEnergy,
         Magic: system.aptitudes?.woundMagic
       }[ref.foundation]) || 0;
-      const woundMod = damageAttr + extraDmgAttr + wager + woundPSBonus + auraWoundBonus + stateWoundMod + stateAllMod + woundBuffTotal + foundationWoundBuff + weaponWoundMod;
+      const woundMod = damageAttr + extraDmgAttr + wager + woundPSBonus + auraWoundBonus + stateWoundMod + stateAllMod + woundBuffTotal + foundationWoundBuff + weaponWoundMod + unarmedWoundBuff;
       // Attack Refs are Basic Attacking Maneuvers (not Signature Techniques),
       // so per attacking.txt:31 each Energy Charge adds 1d6(T) to the Wound Roll
       // (Sig Techs use d8 — handled separately in _calcTechWound).
@@ -3458,7 +3527,20 @@ export class DBUCharacterSheet extends ActorSheet {
       const ref = system.attackRefs[i];
       if (!ref.name) continue;
       const profile = (configDBU.profileData || {})[ref.profile] || {};
-      const kiCost = (profile.kpCost || 0) * trackerTier;
+      let kiCost = (profile.kpCost || 0) * trackerTier;
+      // Supreme Fist L1: −2(T) KP on Unarmed Physical Attacks (floor 0)
+      const refUnarmedPhys = ref.foundation === "Physical"
+        && (!ref.weaponEquipped || String(ref.weaponEquipped).toLowerCase() === "unarmed");
+      if (refUnarmedPhys && (system.talents || []).includes("supreme_fist")) {
+        kiCost = Math.max(0, kiCost - 2 * trackerTier);
+      }
+      // Tiring aura: +1(T) KP per rank on Attacking Maneuvers while in the aura
+      {
+        const tAura = this.actor._getActiveAura(system);
+        for (const dis of (tAura?.disadvantages || [])) {
+          if (dis.name === "Tiring") kiCost += (dis.ranks || 1) * trackerTier;
+        }
+      }
       const prep = prepRefs[i] || {};
       // Unified CTs — includes talents (Focused Strike, Critical Specialist for
       // armed attacks), Mindful state, and CT buffs. Fixes the old fallback that
@@ -5647,7 +5729,17 @@ export class DBUCharacterSheet extends ActorSheet {
     for (const id of selectedIds) {
       const talentData = catalog.find(t => t.id === id);
       if (!talentData) continue;
-      results.push(foundry.utils.deepClone(talentData));
+      const talent = foundry.utils.deepClone(talentData);
+      // Archetype Focus: Foundation selector on the card (−1 CT Strike/Wound
+      // with the chosen Foundation, consumed by _calcCombatCTs)
+      if (talent.id === "archetype_focus") {
+        const chosen = system.talentSelections?.archetypeFocusFoundation || "";
+        talent.isArchetypeFocus = true;
+        talent.archetypeFoundationOptions = ["Physical", "Energy", "Magic"].map(f => ({
+          value: f, selected: f === chosen
+        }));
+      }
+      results.push(talent);
     }
     return results;
   }
@@ -6136,6 +6228,9 @@ export class DBUCharacterSheet extends ActorSheet {
     html.on("change", ".pb-bestial-option", this._onPartBeastBestialOption.bind(this));
     html.on("change", ".de-meta-select", this._onDivergentMetaSelect.bind(this));
     html.on("change", ".de-meta-config", this._onDivergentMetaConfig.bind(this));
+    html.on("change", ".af-foundation-select", async (ev) => {
+      await this.actor.update({ "system.talentSelections.archetypeFocusFoundation": ev.currentTarget.value });
+    });
     html.on("click", ".cruelty-increment", this._onCrueltyChange.bind(this, 1));
     html.on("click", ".cruelty-decrement", this._onCrueltyChange.bind(this, -1));
     html.on("click", "[data-action='use-surge']", this._onUseSurge.bind(this));
@@ -6228,6 +6323,20 @@ export class DBUCharacterSheet extends ActorSheet {
 
     // Legendary Trait selection dropdown
     html.on("change", ".lt-trait-select", this._onLegendaryTraitSelect.bind(this));
+
+    // Keratinous Plating option (Arcosian) — writes BOTH the canonical
+    // racialOptionSelections entry (which the automation reads first) and the
+    // legacy keratinousPlatingOption field, so the panel and the traits-dialog
+    // selection can never diverge.
+    html.on("change", ".kp-plating-select", async (event) => {
+      const key = event.currentTarget.value;
+      const KP_ID = "04608f3cb55d47a1";
+      const fullNames = { dense: "Dense Plating", sleek: "Sleek Plating", royal: "Royal Plating", combat: "Combat Plating" };
+      const updateData = { "system.keratinousPlatingOption": key };
+      if (key === "none") updateData[`system.racialOptionSelections.${KP_ID}.-=4`] = null;
+      else updateData[`system.racialOptionSelections.${KP_ID}.4`] = fullNames[key];
+      await this.actor.update(updateData);
+    });
 
     // Unique Abilities CRUD
     html.on("click", "[data-action='add-unique']", this._onAddUnique.bind(this));
@@ -7488,11 +7597,17 @@ export class DBUCharacterSheet extends ActorSheet {
     if (!tech?.advantages?.[advIndex]) return;
     if (field === "name") {
       tech.advantages[advIndex].name = el.value;
-      // Auto-calculate TP cost based on name and ranks
+      // Keep ranks, but clamp them to the new advantage's maxRanks
+      const maxR = CONFIG.DBU?.techniqueAdvantagesData?.[el.value]?.maxRanks || 99;
+      tech.advantages[advIndex].ranks = Math.min(tech.advantages[advIndex].ranks || 1, maxR);
       tech.advantages[advIndex].tpCost = this._lookupAdvTP(el.value, tech.advantages[advIndex].ranks);
     } else if (field === "ranks") {
-      tech.advantages[advIndex].ranks = Number(el.value) || 1;
-      tech.advantages[advIndex].tpCost = this._lookupAdvTP(tech.advantages[advIndex].name, Number(el.value) || 1);
+      const advName = tech.advantages[advIndex].name;
+      const maxR = CONFIG.DBU?.techniqueAdvantagesData?.[advName]?.maxRanks || 99;
+      let r = Number(el.value) || 1;
+      if (r > maxR) { ui.notifications.warn(`${advName} allows at most ${maxR} rank(s).`); r = maxR; }
+      tech.advantages[advIndex].ranks = r;
+      tech.advantages[advIndex].tpCost = this._lookupAdvTP(advName, r);
     } else if (field === "dynamicTP") {
       tech.advantages[advIndex].dynamicTP = Number(el.value) || 0;
     } else {
@@ -7536,10 +7651,16 @@ export class DBUCharacterSheet extends ActorSheet {
     if (!tech?.disadvantages?.[disadvIndex]) return;
     if (field === "name") {
       tech.disadvantages[disadvIndex].name = el.value;
+      const maxR = CONFIG.DBU?.techniqueDisadvantagesData?.[el.value]?.maxRanks || 99;
+      tech.disadvantages[disadvIndex].ranks = Math.min(tech.disadvantages[disadvIndex].ranks || 1, maxR);
       tech.disadvantages[disadvIndex].tpCost = this._lookupDisadvTP(el.value, tech.disadvantages[disadvIndex].ranks);
     } else if (field === "ranks") {
-      tech.disadvantages[disadvIndex].ranks = Number(el.value) || 1;
-      tech.disadvantages[disadvIndex].tpCost = this._lookupDisadvTP(tech.disadvantages[disadvIndex].name, Number(el.value) || 1);
+      const disName = tech.disadvantages[disadvIndex].name;
+      const maxR = CONFIG.DBU?.techniqueDisadvantagesData?.[disName]?.maxRanks || 99;
+      let r = Number(el.value) || 1;
+      if (r > maxR) { ui.notifications.warn(`${disName} allows at most ${maxR} rank(s).`); r = maxR; }
+      tech.disadvantages[disadvIndex].ranks = r;
+      tech.disadvantages[disadvIndex].tpCost = this._lookupDisadvTP(disName, r);
     } else if (field === "dynamicTP") {
       tech.disadvantages[disadvIndex].dynamicTP = Number(el.value) || 0;
     } else {
@@ -7607,6 +7728,15 @@ export class DBUCharacterSheet extends ActorSheet {
       const updateData = {};
       // If activating a gained aura, deactivate any own active aura
       if (!wasActive) {
+        // Entry gates apply to gained auras too — resolve the suppressed
+        // actor's aura row ("suppActorId_auraId" key format).
+        const sepIdx = gainedAuraKey.indexOf("_");
+        if (sepIdx > -1) {
+          const suppActor = game.actors?.get(gainedAuraKey.substring(0, sepIdx));
+          const gAura = (suppActor?.system?.signatureAuras || [])
+            .find(x => x.id === Number(gainedAuraKey.substring(sepIdx + 1)));
+          if (gAura && this._auraEntryBlocked(gAura)) return;
+        }
         const auras = foundry.utils.deepClone(this.actor.system.signatureAuras || []);
         let ownChanged = false;
         for (const a of auras) {
@@ -7625,16 +7755,7 @@ export class DBUCharacterSheet extends ActorSheet {
     const aura = auras.find(a => a.id === auraId);
     if (!aura) return;
     const newState = !aura.active;
-    // Base Aura (auras.txt:507): cannot be used while in a Core Transformation
-    if (newState && (aura.disadvantages || []).some(d => d.name === "Base Aura")) {
-      const FORM_TYPES = ["form_alternate", "form_legendary"];
-      const inCoreTransformation = (this.actor.system.transformations || [])
-        .some(t => t?.active && FORM_TYPES.includes(t.transformationType));
-      if (inCoreTransformation) {
-        ui.notifications.warn(`${aura.name || "Aura"} has Base Aura — it cannot be used while you are in a Core Transformation.`);
-        return;
-      }
-    }
+    if (newState && this._auraEntryBlocked(aura)) return;
     // Deactivate all other auras (only one can be active at a time)
     if (newState) {
       for (const a of auras) { if (a.id !== auraId) a.active = false; }
@@ -7659,6 +7780,58 @@ export class DBUCharacterSheet extends ActorSheet {
         </div>`
       });
     }
+  }
+
+  /**
+   * Shared aura entry gates — Base Aura (blocked in a Core Transformation),
+   * Restricted Aura (must be in the Transformation named in its notes) and
+   * Climactic (must be below the rank-gated Health Threshold). Used by both
+   * own and OSF-gained aura activation. Returns true (after warning) when
+   * entry must be blocked.
+   */
+  _auraEntryBlocked(aura) {
+    const sys = this.actor.system;
+    // Base Aura (auras.txt:507): cannot be used while in a Core Transformation
+    if ((aura.disadvantages || []).some(d => d.name === "Base Aura")) {
+      const FORM_TYPES = ["form_alternate", "form_legendary"];
+      const inCore = [...(sys.transformations || []), ...(sys._gainedActiveTransformations || [])]
+        .some(t => t?.active && FORM_TYPES.includes(t.transformationType));
+      if (inCore) {
+        ui.notifications.warn(`${aura.name || "Aura"} has Base Aura — it cannot be used while you are in a Core Transformation.`);
+        return true;
+      }
+    }
+    // Restricted Aura (auras.txt:647): only within the selected Transformation
+    // or Line (row notes). Empty notes = not yet configured — never block.
+    const restricted = (aura.disadvantages || []).find(d => d.name === "Restricted Aura");
+    const wanted = String(restricted?.notes || "").trim().toLowerCase();
+    if (restricted && wanted) {
+      const activeTrans = [...(sys.transformations || []), ...(sys._gainedActiveTransformations || [])]
+        .filter(t => t?.active);
+      const match = activeTrans.some(t => {
+        const n = String(t.name || "").trim().toLowerCase();
+        return n && (n.includes(wanted) || wanted.includes(n));
+      });
+      if (!match) {
+        ui.notifications.warn(`${aura.name || "Aura"} has Restricted Aura — it can only be used within "${restricted.notes}". Activate that Transformation first (or fix the disadvantage's notes so it matches the Transformation's name).`);
+        return true;
+      }
+    }
+    // Climactic (auras.txt): only enter below the Bruised (R1), Injured (R2)
+    // or Critical (R3) Health Threshold.
+    const climactic = (aura.disadvantages || []).find(d => d.name === "Climactic");
+    if (climactic) {
+      const r = climactic.ranks || 1;
+      const hs = sys.status?.healthStatus || "healthy";
+      const gate = r >= 3 ? ["critical"] : r === 2 ? ["injured", "critical"]
+        : ["bruised", "injured", "critical"];
+      if (!gate.includes(hs)) {
+        const thName = r >= 3 ? "Critical" : r === 2 ? "Injured" : "Bruised";
+        ui.notifications.warn(`${aura.name || "Aura"} has Climactic (${r}) — you can only enter it while below the ${thName} Health Threshold.`);
+        return true;
+      }
+    }
+    return false;
   }
 
   async _onAuraFieldChange(event) {
@@ -7713,8 +7886,12 @@ export class DBUCharacterSheet extends ActorSheet {
       aura.advantages[advIndex].ranks = 1;
       aura.advantages[advIndex].tpCost = this._lookupAuraAdvTP(el.value, 1);
     } else if (field === "ranks") {
-      aura.advantages[advIndex].ranks = Number(el.value) || 1;
-      aura.advantages[advIndex].tpCost = this._lookupAuraAdvTP(aura.advantages[advIndex].name, Number(el.value) || 1);
+      const advName = aura.advantages[advIndex].name;
+      const maxR = CONFIG.DBU?.auraAdvantagesData?.[advName]?.maxRanks || 99;
+      let r = Number(el.value) || 1;
+      if (r > maxR) { ui.notifications.warn(`${advName} allows at most ${maxR} rank(s).`); r = maxR; }
+      aura.advantages[advIndex].ranks = r;
+      aura.advantages[advIndex].tpCost = this._lookupAuraAdvTP(advName, r);
     } else if (field === "dynamicTP") {
       aura.advantages[advIndex].dynamicTP = Number(el.value) || 0;
     } else {
@@ -7761,8 +7938,12 @@ export class DBUCharacterSheet extends ActorSheet {
       aura.disadvantages[disadvIndex].ranks = 1;
       aura.disadvantages[disadvIndex].tpCost = this._lookupAuraDisadvTP(el.value, 1);
     } else if (field === "ranks") {
-      aura.disadvantages[disadvIndex].ranks = Number(el.value) || 1;
-      aura.disadvantages[disadvIndex].tpCost = this._lookupAuraDisadvTP(aura.disadvantages[disadvIndex].name, Number(el.value) || 1);
+      const disName = aura.disadvantages[disadvIndex].name;
+      const maxR = CONFIG.DBU?.auraDisadvantagesData?.[disName]?.maxRanks || 99;
+      let r = Number(el.value) || 1;
+      if (r > maxR) { ui.notifications.warn(`${disName} allows at most ${maxR} rank(s).`); r = maxR; }
+      aura.disadvantages[disadvIndex].ranks = r;
+      aura.disadvantages[disadvIndex].tpCost = this._lookupAuraDisadvTP(disName, r);
     } else if (field === "dynamicTP") {
       aura.disadvantages[disadvIndex].dynamicTP = Number(el.value) || 0;
     } else {
@@ -11120,8 +11301,8 @@ export class DBUCharacterSheet extends ActorSheet {
             tbMessages.push(`${entry.name}: +${updLP - baseLP} LP (${pr.label})`);
           }
         } else if (pr.type === "patience") {
-          // Reserved Combatant: only if Holding Back
-          const holdingBack = this.actor.system.combatStates?.holdingBack;
+          // Reserved Combatant: only if Holding Back (1+ Holding Back stacks)
+          const holdingBack = (this.actor.system.tracking?.holdingBackStacks || 0) > 0;
           if (holdingBack) {
             const currentPatience = this.actor.system.tracking?.patienceStacks ?? 0;
             talentPerRoundUpdates["system.tracking.patienceStacks"] = currentPatience + pr.amount;
@@ -13676,6 +13857,8 @@ export class DBUCharacterSheet extends ActorSheet {
     const ecSurcharge = Math.min(Math.max(0, Number(system.damageCalc?.incomingEC) || 0), 4);
     let cost = (8 + ecSurcharge) * tier;
     if (this.actor._isConditionActive?.(system, "guardDown")) cost = Math.ceil(cost * 1.5);
+    // Effective Defenses: Guard KP cost −2(T) (floor 0)
+    cost = Math.max(0, cost - (system.aptitudes?.guardKPReduction || 0));
     return cost;
   }
 
@@ -14915,6 +15098,16 @@ export class DBUCharacterSheet extends ActorSheet {
       const hfAura = this.actor._getActiveAura(this.actor.system);
       if (hfAura && (hfAura.disadvantages || []).some(d => d.name === "Harsh Focus")) {
         ui.notifications.warn(`${hfAura.name || "Your Aura"} has Harsh Focus — you cannot use the Signature Technique Maneuver while in this Aura.`);
+        return;
+      }
+    }
+    // Shield Aura type (auras.txt:94): "You cannot use any Attacking Maneuvers
+    // while this Aura is active" — unless it has the Offensive Shield Advantage.
+    {
+      const shAura = this.actor._getActiveAura(this.actor.system);
+      if (shAura?.type === "Shield"
+          && !(shAura.advantages || []).some(a => a.name === "Offensive Shield")) {
+        ui.notifications.warn(`${shAura.name || "Your Shield Aura"} is active — you cannot use Attacking Maneuvers while in a Shield Aura (add Offensive Shield to allow it).`);
         return;
       }
     }

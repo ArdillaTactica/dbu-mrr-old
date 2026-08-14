@@ -191,10 +191,10 @@ function applyBonusesForTalent(id, system, tier, baseTier, talentSet, tempMods, 
       break;
     }
     case "penetrating_fist": {
-      system.status = system.status || {};
-      system.status.might = (system.status.might || 0) + tier;
-      totals.might += tier;
-      entry.bonuses.push(`+${tier} Might (Penetrating Fist)`);
+      // L1 (+1(T) Might CLASH Dice Score) is applied where mightForClashes is
+      // computed in actor.mjs — NOT to general Might (old bug: raised Might
+      // itself, and mightForClashes was already final so it never saw it).
+      entry.bonuses.push(`+${tier} Might Clash Dice Score (Penetrating Fist)`);
       // Lv2: triggered — Might Clash on hit
       entry.conditionals.push("1/Rnd: On Unarmed Physical hit, Might Clash → +1 Damage Category");
       break;
@@ -444,21 +444,29 @@ function applyBonusesForTalent(id, system, tier, baseTier, talentSet, tempMods, 
       break;
     }
     case "close_range_shot": {
-      if (system.aptitudes) {
-        system.aptitudes.woundEnergy = (system.aptitudes.woundEnergy || 0) + 2 * tier;
-        system.aptitudes.woundMagic = (system.aptitudes.woundMagic || 0) + 2 * tier;
-      }
-      entry.bonuses.push(`+${2 * tier} Wound (Energy/Magic in Melee)`);
-      entry.conditionals.push("1/Rnd: On hit in adjacent square, Might Clash → target can't move");
+      // Wound bonus is RANGE-GATED — applied per attack in the attack-ref prep
+      // (targetRange vs melee reach, Unarmed Energy/Magic only). The old code
+      // added it to woundEnergy/woundMagic unconditionally (every E/M attack).
+      entry.bonuses.push(`+${2 * tier} Wound (Unarmed Energy/Magic in Melee — auto via Target Range)`);
+      // Merged from a formerly-unreachable duplicate case (dup labels: first wins)
+      entry.triggered.push({
+        id: "close_range_shot_lock",
+        name: "Close Range Lockdown",
+        description: "1/Round: on hit in Melee with Unarmed Energy/Magic, win Might Clash to stop target using Movement",
+        usageLimit: "round", maxUses: 1
+      });
       break;
     }
     case "far_shot": {
-      if (system.aptitudes) {
-        system.aptitudes.woundEnergy = (system.aptitudes.woundEnergy || 0) + tier;
-        system.aptitudes.woundMagic = (system.aptitudes.woundMagic || 0) + tier;
-      }
-      entry.bonuses.push(`+${tier} Wound (Energy/Magic outside Melee, +${3 * tier} if 8+ squares)`);
-      entry.conditionals.push("1/Rnd: On hit outside Melee, Might Clash → push target");
+      // Wound bonus is RANGE-GATED — applied per attack in the attack-ref prep.
+      entry.bonuses.push(`+${tier} Wound (Unarmed Energy/Magic outside Melee, +${3 * tier} at 8+ squares — auto via Target Range)`);
+      // Merged from a formerly-unreachable duplicate case
+      entry.triggered.push({
+        id: "far_shot_push",
+        name: "Far Shot Push",
+        description: "1/Round: on ranged Unarmed Energy/Magic hit, win Might Clash to push target away up to your Might",
+        usageLimit: "round", maxUses: 1
+      });
       break;
     }
     case "fierce_counter": {
@@ -624,27 +632,8 @@ function applyBonusesForTalent(id, system, tier, baseTier, talentSet, tempMods, 
       });
       break;
     }
-    case "close_range_shot": {
-      entry.conditionals.push(`+${2 * tier} Wound with Unarmed Energy/Magic attacks in Melee`);
-      entry.triggered.push({
-        id: "close_range_shot_lock",
-        name: "Close Range Lockdown",
-        description: "1/Round: on hit in Melee with Unarmed Energy/Magic, win Might Clash to stop target using Movement",
-        usageLimit: "round", maxUses: 1
-      });
-      break;
-    }
-    case "far_shot": {
-      entry.conditionals.push(`Outside Melee: +${tier} Wound with Unarmed Energy/Magic attacks`);
-      entry.conditionals.push(`8+ squares away: +${3 * tier} Wound total with Unarmed Energy/Magic attacks`);
-      entry.triggered.push({
-        id: "far_shot_push",
-        name: "Far Shot Push",
-        description: "1/Round: on ranged Unarmed Energy/Magic hit, win Might Clash to push target away up to your Might",
-        usageLimit: "round", maxUses: 1
-      });
-      break;
-    }
+    // (close_range_shot / far_shot duplicate cases removed — merged into the
+    // first occurrences above; duplicate switch labels are unreachable.)
     case "point_blank_shot": {
       // Pure triggered talent — no passive bonus per rule
       entry.bonuses.push(`Point Blank: enables +1 Damage Category on Melee unarmed Energy/Magic`);
