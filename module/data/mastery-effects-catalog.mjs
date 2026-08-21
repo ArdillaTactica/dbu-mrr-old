@@ -12,15 +12,15 @@ export const MASTERY_EFFECTS_CATALOG = {
   "all_out_form": {
     name: "Mastery: The Truth of your Power",
     attrBonuses: {},
-    aspectsToRemove: ["Draining"],    // effect 1: loses a level of Draining; effect 5: loses a level of Draining
-    aspectsToAdd: ["Natural"],         // effect 5: replaces Strainless with Natural (Strainless removed, Natural added)
+    // effects 1+5 remove 2 total Draining levels (= the form's full Draining
+    // LV2, so aspectsToRemove covers it — do NOT also apply drainingReduction,
+    // it subtracts from the GLOBAL pool and would steal levels from other
+    // active transformations). Effect 5 replaces Strainless with Natural.
+    aspectsToRemove: ["Draining", "Strainless"],
+    aspectsToAdd: ["Natural"],
     conditionals: [
-      // effect 1: loses a level of Draining → drainingReduction
-      { type: "drainingReduction", value: 1, condition: { always: true } },
       // effect 1: gains a level of High Speed
       { type: "highSpeedLevel", value: 1, condition: { always: true } },
-      // effect 5: loses a level of Draining → additional drainingReduction
-      { type: "drainingReduction", value: 1, condition: { always: true } },
       // effect 5: gains a level of High Speed
       { type: "highSpeedLevel", value: 1, condition: { always: true } },
     ],
@@ -94,13 +94,15 @@ export const MASTERY_EFFECTS_CATALOG = {
   "descended_super_saiyan": {
     name: "Mastery: Bloodline Mastery",
     attrBonuses: {},
-    aspectsToRemove: ["Draining", "Exhausting"],  // effect 1: loses a level of Draining; effect 5: loses Draining and Exhausting
+    // effect 5 removes Draining ENTIRELY (subsumes effect 1's single level) —
+    // no drainingReduction on top, it would drain the global pool from other
+    // active transformations.
+    aspectsToRemove: ["Draining", "Exhausting"],
     aspectsToAdd: [],
     conditionals: [
-      // effect 1: loses a level of Draining and gains a level of High Speed
-      { type: "drainingReduction", value: 1, condition: { always: true } },
+      // effect 1: gains a level of High Speed
       { type: "highSpeedLevel", value: 1, condition: { always: true } },
-      // effect 5: loses Draining and Exhausting, gains a level of High Speed
+      // effect 5: gains a level of High Speed
       { type: "highSpeedLevel", value: 1, condition: { always: true } },
     ],
     narrative: [
@@ -419,14 +421,15 @@ export const MASTERY_EFFECTS_CATALOG = {
   "super_form": {
     name: "Mastery: Super Warrior",
     attrBonuses: {},
-    aspectsToRemove: ["Draining", "Strainless"],  // effect 1: loses a level of Draining; effect 4: loses Draining, replaces Strainless with Natural
-    aspectsToAdd: ["Natural"],                      // effect 4: gains Natural (replaces Strainless)
+    // effects 1+4 remove 2 total Draining levels (= the form's full Draining
+    // LV2 → aspectsToRemove covers it; no drainingReduction on top — global
+    // pool). Effect 4 replaces Strainless with Natural.
+    aspectsToRemove: ["Draining", "Strainless"],
+    aspectsToAdd: ["Natural"],
     conditionals: [
-      // effect 1: loses a level of Draining and gains a level of High Speed
-      { type: "drainingReduction", value: 1, condition: { always: true } },
+      // effect 1: gains a level of High Speed
       { type: "highSpeedLevel", value: 1, condition: { always: true } },
-      // effect 4: loses a level of Draining and gains a level of High Speed
-      { type: "drainingReduction", value: 1, condition: { always: true } },
+      // effect 4: gains a level of High Speed
       { type: "highSpeedLevel", value: 1, condition: { always: true } },
     ],
     narrative: [
@@ -697,7 +700,7 @@ export const MASTERY_EFFECTS_CATALOG = {
   // ---------------------------------------------------------------------------
   // WRATHFUL — Mastery: Caging the Beast
   // ---------------------------------------------------------------------------
-  "wrathful": {
+  "great_wrathful": {
     name: "Mastery: Caging the Beast",
     attrBonuses: {},
     aspectsToRemove: ["Rampaging"],   // effects 1+5: loses Rampaging (1 level then full)
@@ -867,12 +870,12 @@ export const MASTERY_EFFECTS_CATALOG = {
   "ancestral_super_saiyan_3": {
     name: "Mastery: Ancient Secrets of the Super Saiyan 3",
     attrBonuses: {},
-    aspectsToRemove: ["Power High", "Exhausting", "Long Transformation", "Draining"],  // effect 1+3: loses all these
+    // effect 1 loses Power High/Exhausting/Long Transformation + 2 Draining
+    // levels; effect 3 removes the REST of Draining → full removal covers it
+    // (no drainingReduction on top — it hits the global pool).
+    aspectsToRemove: ["Power High", "Exhausting", "Long Transformation", "Draining"],
     aspectsToAdd: ["Strainless"],  // effect 3: gains Strainless
-    conditionals: [
-      // effect 1: loses 2 levels of Draining
-      { type: "drainingReduction", value: 2, condition: { always: true } },
-    ],
+    conditionals: [],
     narrative: [
       // effect 2: While in the Undying State, double the bonus to your Wound Rolls from your Battle Born stacks.
       "While you are in the Undying State, double the bonus to your Wound Rolls from your Battle Born stacks.",
@@ -1151,12 +1154,12 @@ export const MASTERY_EFFECTS_CATALOG = {
   "brilliant_evolution": {
     name: "Mastery: Truly Brilliant",
     attrBonuses: {},
-    aspectsToRemove: ["Long Transformation", "Draining", "Weakening"],  // effect 1: reduces Draining by 2, loses Long Transformation; effect 4: loses Draining and Weakening
+    // effect 1 reduces Draining by 2 + loses Long Transformation; effect 4
+    // removes Draining ENTIRELY + Weakening → full removal covers it (no
+    // drainingReduction on top — it hits the global pool).
+    aspectsToRemove: ["Long Transformation", "Draining", "Weakening"],
     aspectsToAdd: ["Strainless"],  // effect 4: gains Strainless
-    conditionals: [
-      // effect 1: reduces Draining by 2
-      { type: "drainingReduction", value: 2, condition: { always: true } },
-    ],
+    conditionals: [],
     narrative: [
       // effect 2: Ignore the first effect of Brilliant Plating.
       "Ignore the first effect of Brilliant Plating.",
@@ -1252,11 +1255,12 @@ export const MASTERY_EFFECTS_CATALOG = {
   "perfected_super_saiyan": {
     name: "The Golden Warrior of Legend",
     attrBonuses: {},
-    aspectsToRemove: ["Draining", "Dedicated"],  // effect 1: loses 1 Draining + Dedicated; effect 3: loses remaining Draining
+    // effect 1 loses 1 Draining level + Dedicated; effect 3 removes the REST
+    // of Draining → full removal covers it (no drainingReduction on top — it
+    // hits the global pool).
+    aspectsToRemove: ["Draining", "Dedicated"],
     aspectsToAdd: ["Strainless", "Realization", "Scaling", "Perfect Ki Control"],  // effect 1: gains Strainless, Realization, Scaling (LV2); effect 3: gains Perfect Ki Control
     conditionals: [
-      // effect 1: loses 1 level of Draining
-      { type: "drainingReduction", value: 1, condition: { always: true } },
       // effect 1: gains Scaling (LV2)
       { type: "scalingAspectLevel", value: 2, condition: { always: true } },
     ],
@@ -1663,7 +1667,10 @@ export const MASTERY_EFFECTS_CATALOG = {
   "ultra_instinct_complete": {
     name: "Mastery: Surpassing the Gods",
     attrBonuses: {},
-    aspectsToRemove: ["Draining"],  // effects 3+4: loses 2 total levels of Draining
+    // effects 3+4 lose 2 LEVELS of Draining (never the whole aspect) — keep
+    // the level-based reduction and do NOT also remove the aspect string
+    // (doing both double-subtracted from the global draining pool).
+    aspectsToRemove: [],
     aspectsToAdd: ["Natural"],       // effect 4: gains Natural
     conditionals: [
       // effects 3+4: loses 2 levels of Draining total

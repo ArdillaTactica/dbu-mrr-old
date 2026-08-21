@@ -57,6 +57,22 @@ export class DBUActor extends Actor {
     let baseTier = system.baseTier;
     const level = system.level || 1;
 
+    // Stale-data migration (derived-only): Metamorphosis stage rows created
+    // before the catalog fix stored tierRequirement "1+" (the manual's printed
+    // access value), but Weakest State treats the requirement as S+1 "for all
+    // effects" (Draining tier multiplier, Step-by-Step, Exhausting exception).
+    // Only the known-stale "1+"/empty is refreshed — custom values are kept.
+    {
+      const _metaCat = CONFIG.DBU?.transformationsCatalog ?? {};
+      for (const trans of system.transformations || []) {
+        if (!["limited_suppression", "partial_suppression", "true_form"].includes(trans?.catalogKey)) continue;
+        const stored = String(trans.tierRequirement || "").trim();
+        if (stored === "" || stored === "1+" || stored === "1") {
+          trans.tierRequirement = _metaCat[trans.catalogKey]?.tierRequirement || stored;
+        }
+      }
+    }
+
     // ---- Player Minion: Weakness rule (minions.txt) ----
     // "All Minions have their base Tier of Power reduced by 1 (if their base
     // ToP is already 1, reduce their Saving Throws and Combat Rolls by 2)."
@@ -358,6 +374,28 @@ export class DBUActor extends Actor {
       + (system.status.dr || 0)
       + (system.talentBonuses?.totals?.dr || 0);
 
+    // ---- Super Stack wound dice FINAL recompute (post-automation) ----
+    // The combat-stats pass computes a first value, but category/count bonuses
+    // can be written later in the chain (Pushing for Power's
+    // superStackExtraDiceCategoryBonus in legendary-forms) — recompute here so
+    // every source lands: Hefty Muscle (+1 cat, own toggle), the "Super Stack
+    // Dice Category" buff, form bonuses, and the "Super Stack Extra Dice"
+    // buff (extra dice COUNT).
+    {
+      const _ssStacks = system.status?.superStacks || 0;
+      if (_ssStacks > 0) {
+        const _ssSizes = ["d4", "d6", "d8", "d10"];
+        const _heftyOn = (system.talents || []).includes("hefty_muscle")
+          && system.effectTracking?.enabledPassives?.["talent_hefty_muscle_1"] !== false;
+        const _ssCat = (system.aptitudes.superStackDiceCategoryBonus || 0)
+          + (system.aptitudes.superStackExtraDiceCategoryBonus || 0)
+          + (_heftyOn ? 1 : 0);
+        const _ssDie = _ssSizes[Math.max(0, Math.min(_ssStacks - 1 + _ssCat, 3))];
+        const _ssCount = tier + (system.aptitudes.superStackExtraDice || 0);
+        system.aptitudes.superStackWoundDice = `${_ssCount}${_ssDie}`;
+      }
+    }
+
     // ---- Player Minion trait Soak adjustments (post-automation) ----
     // Healthy Minion +1(T) Soak; No-Good Minion −2(bT) Soak.
     // Minion Class (Commander): Big Tough +Z Soak; Weird One +Z Might.
@@ -389,9 +427,13 @@ export class DBUActor extends Actor {
     // Racial automation functions accumulated their bonuses above.
     // Now add remaining sources that don't belong in any single automation file.
 
-    // Mastered transformation count: +1 per mastered transformation (own + gained active)
-    const masteredCount = (system.transformations || []).filter(t => t.mastered).length
-      + (system._gainedActiveTransformations || []).filter(t => t.mastered).length;
+    // Mastered transformation count: +1 per mastered transformation (own + gained active).
+    // Peaked aspect: "cannot be Mastered, but is always considered Mastered
+    // for effects" (transformation-aspects.txt:158) — count Peaked forms too.
+    const _isMasteredOrPeaked = (t) => t.mastered
+      || (t.aspects || []).some(a => String(a).trim() === "Peaked");
+    const masteredCount = (system.transformations || []).filter(_isMasteredOrPeaked).length
+      + (system._gainedActiveTransformations || []).filter(_isMasteredOrPeaked).length;
     system.aptitudes.stressBonus = (system.aptitudes.stressBonus || 0) + masteredCount;
 
     // Transformation Lite (auras.txt:42): while in an Aura, reduce your Stress
@@ -439,6 +481,15 @@ export class DBUActor extends Actor {
     // ---- Battle Born: add stack bonuses to combat roll totals ----
     // bb.strikeBonus/dodgeBonus/woundBonus are computed in applySaiyanBonuses (racial automation)
     // but need to be added to the buff totals AFTER all automation has run.
+    // "States" buff: +X to Combat Rolls while any Combat State is active —
+    // statesBonus is already gated on anyStateActive at compute time; it was
+    // previously computed but never added anywhere (dead field revived).
+    if (system.aptitudes.statesBonus) {
+      system.aptitudes.strikeBuffTotal = (system.aptitudes.strikeBuffTotal || 0) + system.aptitudes.statesBonus;
+      system.aptitudes.dodgeBuffTotal = (system.aptitudes.dodgeBuffTotal || 0) + system.aptitudes.statesBonus;
+      system.aptitudes.woundBuffTotal = (system.aptitudes.woundBuffTotal || 0) + system.aptitudes.statesBonus;
+    }
+
     const bb = system.battleBorn || {};
     if (bb.strikeBonus) system.aptitudes.strikeBuffTotal = (system.aptitudes.strikeBuffTotal || 0) + bb.strikeBonus;
     if (bb.dodgeBonus) system.aptitudes.dodgeBuffTotal = (system.aptitudes.dodgeBuffTotal || 0) + bb.dodgeBonus;
@@ -554,11 +605,14 @@ export class DBUActor extends Actor {
         // Rule: "reduce the Attribute Modifier Bonuses by 1(T) (cannot reduce below 1(T))"
         const hasPreludeAspect = (trans.aspects || []).some(a => String(a).trim() === "Prelude");
         const preludeApplies = hasPreludeAspect && trans.preludeActive;
-        // Normal transformation attribute bonuses
+        // Normal transformation attribute bonuses. The row's Grade feeds
+        // "G(T)" AMBs (Graded forms: Giant Form / Crusher Form / Great
+        // Namekian — previously parsed to 0).
+        const _transGrade = parseInt(String(trans.gradeOrStacks || "").match(/(\d+)/)?.[1] || "0");
         if (trans.attrBonuses) {
           const val = trans.attrBonuses[key];
           if (val) {
-            let amb = DBUActor.parseAttrBonus(val, tier, system.baseTier);
+            let amb = DBUActor.parseAttrBonus(val, tier, system.baseTier, _transGrade);
             if (preludeApplies && amb > 0) {
               amb = Math.max(tier, amb - tier); // reduce by 1(T), floor at 1(T)
             }
@@ -646,9 +700,10 @@ export class DBUActor extends Actor {
           const gainedTrans = (suppActor.system?.transformations || []).find(t => t.id === transId);
           if (!gainedTrans) continue;
 
-          // Normal transformation attribute bonuses
+          // Normal transformation attribute bonuses (Grade feeds "G(T)" AMBs)
           if (gainedTrans.attrBonuses?.[key]) {
-            modifier += DBUActor.parseAttrBonus(gainedTrans.attrBonuses[key], tier, system.baseTier);
+            const _gGrade = parseInt(String(gainedTrans.gradeOrStacks || "").match(/(\d+)/)?.[1] || "0");
+            modifier += DBUActor.parseAttrBonus(gainedTrans.attrBonuses[key], tier, system.baseTier, _gGrade);
           }
           // Mastery attribute bonuses
           if (gainedTrans.mastered && gainedTrans.catalogKey) {
@@ -915,6 +970,10 @@ export class DBUActor extends Actor {
     const modifyKi = system.kiPool?.modify || 0;
     system.kiPool.max = 50 + ((resLevel - 1) * 12) + modifyKi;
     // Custom buff "Max Ki Points" / "Max Ki Pool" (unified: flat + bT×baseTier + T×tier)
+    // Accept both names — the catalog dropdown offers "Max Ki Pool" while
+    // older data may use "Max Ki Points" (previously only the latter worked)
+    // (single call — the aliasMap in _getBuffTotal already accepts both names;
+    // calling both spellings DOUBLE-COUNTED one buff row)
     system.kiPool.max += this._getBuffTotal(system, "Max Ki Points");
     // Custom buff "Max Ki Pool ±1/4" — each unit adds 1/4 of base max (pre-buff)
     const kpQuarterBuff = this._getBuffTotal(system, "Max Ki Pool ±1/4");
@@ -1252,9 +1311,13 @@ export class DBUActor extends Actor {
       const isProficient = allProfSaves ? allProfSaves.includes(saveKey) : (saveKey === system.proficientSave);
       const profBonus = isProficient ? tier : 0;
 
-      // Custom buff saves (e.g., "Impulsive Save", "All Saves")
-      const customSaveBonus = this._getBuffTotal(system, `${saveKey.charAt(0).toUpperCase() + saveKey.slice(1)} Save`)
-        + allSavesBuff;
+      // Custom buff saves — accept singular AND plural ("Impulsive Save" /
+      // "Impulsive Saves"; the catalog dropdown offers the plural form, which
+      // previously did nothing) + "All Saves"
+      const saveCap = saveKey.charAt(0).toUpperCase() + saveKey.slice(1);
+      // (single call — the aliasMap accepts singular AND plural; calling both
+      // spellings DOUBLE-COUNTED one buff row)
+      const customSaveBonus = this._getBuffTotal(system, `${saveCap} Save`) + allSavesBuff;
 
       // Enhanced Save aspect — applied later via _applyTransformationAspects (removed dead code here)
 
@@ -1370,9 +1433,17 @@ export class DBUActor extends Actor {
       let growthLevel = 0;
       for (const t of growthTrans) {
         if (!t?.active) continue;
+        const _tGrade = parseInt(String(t.gradeOrStacks || "").match(/(\d+)/)?.[1] || "0");
         for (const asp of (t.aspects || [])) {
-          const m = String(asp).trim().match(/^Growth(?:\s*\(?\s*LV\s*(\d+)\s*\)?)?/i);
-          if (m) growthLevel = Math.max(growthLevel, Math.min(3, m[1] ? parseInt(m[1]) : 1));
+          // Accept "Growth", "Growth (LV2)", "Growth (Level 2)" and the Graded
+          // forms' "Growth (Level G)" / "Growth (LVG)" — G = the row's Grade
+          // (previously fell back to level 1 regardless of Grade).
+          const m = String(asp).trim().match(/^Growth(?:\s*\(?\s*(?:LV|Level)\s*(\d+|G)\s*\)?)?/i);
+          if (m) {
+            const lv = m[1] === undefined ? 1
+              : (/^g$/i.test(m[1]) ? Math.max(1, _tGrade) : parseInt(m[1]));
+            growthLevel = Math.max(growthLevel, Math.min(3, lv));
+          }
         }
       }
       if (growthLevel > 0) {
@@ -1521,10 +1592,16 @@ export class DBUActor extends Actor {
     system.aptitudes.superStackDiceCategoryBonus = this._getBuffTotal(system, "Super Stack Dice Category");
     system.aptitudes.superStackSoak = superStackSoak;
     // Super Stack Extra Dice: 1d4(T) base, +1 category per stack after first
-    // 1 stack=1d4, 2 stacks=1d6, 3 stacks=1d8 (scaled by tier)
+    // 1 stack=1d4, 2 stacks=1d6, 3 stacks=1d8 (scaled by tier).
+    // Hefty Muscle talent L1: +1 Dice Category (gated on its effect toggle);
+    // "Super Stack Dice Category" buffs stack on top (the aptitude was
+    // previously computed but never consumed here — dead field revived).
     if (superStacks > 0) {
       const ssDieSizes = ["d4", "d6", "d8", "d10"];
-      const ssDie = ssDieSizes[Math.min(superStacks - 1, 3)];
+      const heftyOn = (system.talents || []).includes("hefty_muscle")
+        && system.effectTracking?.enabledPassives?.["talent_hefty_muscle_1"] !== false;
+      const ssCatBonus = (system.aptitudes.superStackDiceCategoryBonus || 0) + (heftyOn ? 1 : 0);
+      const ssDie = ssDieSizes[Math.max(0, Math.min(superStacks - 1 + ssCatBonus, 3))];
       system.aptitudes.superStackWoundDice = `${tier}${ssDie}`;
     } else {
       system.aptitudes.superStackWoundDice = "";
@@ -1841,7 +1918,9 @@ export class DBUActor extends Actor {
     const fissionCRPenalty = system.fusion?._fissionCombatRollPenalty || 0;
     // Health Threshold Penalties: -1(bT) per failed Steadfast Check (doubled if Poisoned)
     const thresholdCRPenalty = system.thresholds?.penalties || 0;
-    // "Combat Rolls" buff applies to all three (Strike, Dodge, Wound)
+    // "Combat Rolls" buff applies to all three (Strike, Dodge, Wound).
+    // "Strike (All)" / "Wound (All)" are the catalog dropdown's names for the
+    // plain Strike/Wound buffs — accept both (the (All) forms did nothing).
     const combatRollsBuff = this._getBuffTotal(system, "Combat Rolls");
     system.aptitudes.strikeBuffTotal = this._getBuffTotal(system, "Strike") + combatRollsBuff - fissionCRPenalty - thresholdCRPenalty;
     system.aptitudes.dodgeBuffTotal = this._getBuffTotal(system, "Dodge") + combatRollsBuff - fissionCRPenalty - thresholdCRPenalty;
@@ -2476,7 +2555,19 @@ export class DBUActor extends Actor {
     const allTransForAspects = [...(system.transformations || []), ...(system._gainedActiveTransformations || [])];
     for (const trans of allTransForAspects) {
       if (!trans.active) continue;
-      const aspects = trans.aspects || [];
+      // Same stored-else-catalog fallback the sheet display uses (cloned so
+      // the mastery filter below can't mutate the shared catalog array).
+      // Stale-data migration: Metamorphosis stage rows created before the
+      // catalog fix stored ["Natural","Dedicated"] (the old wrong aspects for
+      // limited/partial/true_form) — treat those as stale and re-read the
+      // catalog. Full Suppression legitimately IS Natural+Dedicated.
+      const _catForAspects = trans.catalogKey ? (CONFIG.DBU?.transformationsCatalog ?? {})[trans.catalogKey] : null;
+      const _staleMetaAspects = ["limited_suppression", "partial_suppression", "true_form"].includes(trans.catalogKey)
+        && Array.isArray(trans.aspects) && trans.aspects.length === 2
+        && trans.aspects.includes("Natural") && trans.aspects.includes("Dedicated");
+      const aspects = (trans.aspects && trans.aspects.length > 0 && !_staleMetaAspects)
+        ? trans.aspects
+        : [...(_catForAspects?.aspects || [])];
       // Prelude rule: "you do not benefit from ... the Strainless Aspect while in this Transformation"
       const preludeBlocksStrainless = trans.preludeActive && aspects.some(a => String(a).trim() === "Prelude");
 
@@ -2588,8 +2679,10 @@ export class DBUActor extends Actor {
           rampagingLevel = Math.max(rampagingLevel, 1);
         }
 
-        // --- Temporary [LV~5] ---
-        const tmpMatch = clean.match(/Temporary\s*\(([^)]+)\)/i);
+        // --- Temporary [LV~5] --- (also matches "Temporary Form (LVx)" —
+        // the plain /Temporary\s*\(/ regex missed the "Form" infix and fell
+        // back to level 1 regardless of the written level)
+        const tmpMatch = clean.match(/Temporary(?:\s+Form)?\s*\(([^)]+)\)/i);
         if (tmpMatch) {
           const lv = DBUActor._parseAspectLevel(tmpMatch[1], grade);
           if (lv !== null) temporaryLevel = Math.max(temporaryLevel, Math.min(lv, 5));
@@ -2723,7 +2816,8 @@ export class DBUActor extends Actor {
             const hasWeakening = (trans.aspects || []).some(a => a.trim() === "Weakening");
             if (!hasWeakening) continue;
             if (trans.attrBonuses?.[key]) {
-              weakeningBonus += DBUActor.parseAttrBonus(trans.attrBonuses[key], tier, system.baseTier);
+              const _wGrade = parseInt(String(trans.gradeOrStacks || "").match(/(\d+)/)?.[1] || "0");
+              weakeningBonus += DBUActor.parseAttrBonus(trans.attrBonuses[key], tier, system.baseTier, _wGrade);
             }
             if (trans.mastered && trans.catalogKey) {
               const mCat = CONFIG.DBU?.masteryEffectsCatalog ?? {};
@@ -3702,9 +3796,14 @@ export class DBUActor extends Actor {
   /**
    * Parse attribute bonus strings: "+2", "+1(T)", "+1(bT)", "–"
    */
-  static parseAttrBonus(val, tier, baseTier) {
+  static parseAttrBonus(val, tier, baseTier, grade = 0) {
     if (!val || val === "–" || val === "-" || val === "—") return 0;
     const str = String(val).trim();
+    // "G(T)" / "+G(bT)" — scales with the transformation's Grade (Graded
+    // forms: Giant Form, Crusher Form, Great Namekian). Previously parsed
+    // silently to 0.
+    const gMatch = str.match(/^\+?\s*G\s*\((bT|T)\)$/i);
+    if (gMatch) return (grade || 0) * (/bt/i.test(gMatch[1]) ? (baseTier || tier) : tier);
     const bTMatch = str.match(/([+-]?\d+)\s*\(bT\)/i);
     if (bTMatch) return parseInt(bTMatch[1]) * (baseTier || tier);
     const tMatch = str.match(/([+-]?\d+)\s*\(T\)/i);

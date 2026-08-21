@@ -1196,7 +1196,9 @@ export class DBUCharacterSheet extends ActorSheet {
     // Rapid Fist +1(T) Strike and "Unarmed Strike" custom buffs.
     const unarmedStrikeBuff = (tech.foundation === "Physical" && !tech.isWeapon)
       ? (system.aptitudes?.unarmedStrike || 0) : 0;
-    let totalMod = haste + awareness + accurateBonus - inaccuratePenalty - ssPenStrike + strikeBuffTotal + foundationStrikeBuff + unarmedStrikeBuff;
+    // "Armed Strike" custom buff — weapon-based STs (mirror of unarmed)
+    const armedStrikeBuff = tech.isWeapon ? (system.aptitudes?.armedStrike || 0) : 0;
+    let totalMod = haste + awareness + accurateBonus - inaccuratePenalty - ssPenStrike + strikeBuffTotal + foundationStrikeBuff + unarmedStrikeBuff + armedStrikeBuff;
     const baseTier = system.baseTier || 1;
 
     // Sparking Combat Roll bonus now flows through strikeBuffTotal (derived buff)
@@ -1223,11 +1225,11 @@ export class DBUCharacterSheet extends ActorSheet {
     const grCat = dp.greaterCatBonus || {};
     const grApply = dp.greaterApplyCount || {};
     const topCatBonus = (topCat.global || 0) + (topCat.strike || 0);
-    const topDice = this._resolveExtraDice(tier, 0, topCatBonus);
+    const topDice = this._applyTopCount(system, "strike", this._resolveExtraDice(tier, 0, topCatBonus));
     const hasGreater = !isImpediment && (combatStates.superior || (grApply.global || 0) > 0 || (grApply.strike || 0) > 0);
     const grCatBonus = (grCat.global || 0) + (grCat.strike || 0);
     const greaterDice = hasGreater ? this._resolveExtraDice(tier, 1, grCatBonus) : "";
-    const formula = this._buildFormula(topDice, greaterDice, totalMod);
+    const formula = this._buildFormula(topDice, greaterDice, totalMod, this._extraDicePool(system, "strike"));
 
     return { formula };
   }
@@ -1269,10 +1271,12 @@ export class DBUCharacterSheet extends ActorSheet {
     // Iron Fist +2(T) Wound and "Unarmed Wound" custom buffs.
     const unarmedWoundBuff = (tech.foundation === "Physical" && !tech.isWeapon)
       ? (system.aptitudes?.unarmedWound || 0) : 0;
+    // "Armed Wound" custom buff — weapon-based STs (mirror of unarmed)
+    const armedWoundBuff = tech.isWeapon ? (system.aptitudes?.armedWound || 0) : 0;
     // All-Out Start: +1(bT) Wound on Signature Techniques while NOT Holding Back
     const allOutSigWound = (system.tracking?.holdingBackStacks || 0) === 0
       ? (system.aptitudes?.allOutStartSigWound || 0) : 0;
-    let totalMod = damageAttr + extraDamageAttr + powerShotBonus - lowPenPenalty + woundBuffTotal + foundationWoundBuff + unarmedWoundBuff + allOutSigWound;
+    let totalMod = damageAttr + extraDamageAttr + powerShotBonus - lowPenPenalty + woundBuffTotal + foundationWoundBuff + unarmedWoundBuff + armedWoundBuff + allOutSigWound;
 
     // Aura wound bonus (Powerful Aura advantage)
     const activeAura = this.actor._getSelfBenefitAura(system);
@@ -1292,7 +1296,7 @@ export class DBUCharacterSheet extends ActorSheet {
     const grCat = dp.greaterCatBonus || {};
     const grApply = dp.greaterApplyCount || {};
     const topCatBonus = (topCat.global || 0) + (topCat.wound || 0);
-    const topDice = this._resolveExtraDice(tier, 0, topCatBonus);
+    const topDice = this._applyTopCount(system, "wound", this._resolveExtraDice(tier, 0, topCatBonus));
     const hasGreater = !isImpediment && (combatStates.superior || (grApply.global || 0) > 0 || (grApply.wound || 0) > 0);
     const grCatBonus = (grCat.global || 0) + (grCat.wound || 0);
     const greaterDice = hasGreater ? this._resolveExtraDice(tier, 1, grCatBonus) : "";
@@ -1300,7 +1304,13 @@ export class DBUCharacterSheet extends ActorSheet {
     // Signature Technique" (attacking.txt). Maximum Charge (signature.txt:765,
     // Ultimate only): charge Extra Dice go up one Dice Category (d8 → d10).
     const hasMaxCharge = (tech.advantages || []).some(a => a.name === "Maximum Charge");
-    const chargeDie = hasMaxCharge ? "d10" : "d8";
+    // Charge die chain with the "Energy Charge Dice Category" and "Signature
+    // Energy Charge Dice Category" buffs (previously dead aptitudes)
+    const chargeChain = ["d4", "d6", "d8", "d10", "d12"];
+    const chargeCatIdx = 2 + (hasMaxCharge ? 1 : 0)
+      + (system.aptitudes?.energyChargeDiceCategory || 0)
+      + (system.aptitudes?.signatureEnergyChargeDiceCategory || 0);
+    const chargeDie = chargeChain[Math.max(0, Math.min(chargeCatIdx, chargeChain.length - 1))];
     let chargesExtra = charges > 0 ? `+${charges * tier}${chargeDie}` : "";
     if (tech.profile === "Mega Flare" && charges > 0) chargesExtra += `+${charges * tier}`;
     // Super Stack wound extra dice (Physical/Energy foundations only)
@@ -1311,11 +1321,11 @@ export class DBUCharacterSheet extends ActorSheet {
     // Maneuvers, so the Raging (+1d4(T), Aspect-bumped) and Surging (+1d4(T))
     // states apply to their Wound Rolls just like Basic Attacks.
     const ragingExtra = this._ragingWoundDice(system, tier);
-    const surgingExtra = combatStates.surging ? `+${tier}d4` : "";
+    const surgingExtra = combatStates.surging ? `+${this._surgingWoundDice(system, tier)}` : "";
     // Synthetic Muscle (cybernetic trait): +1d4(T) Wound on Physical/Energy attacks
     const synthExtra = (system._cyberSynthWoundDice && (tech.foundation === "Physical" || tech.foundation === "Energy"))
       ? `+${this._scaleDiceByTier("1d4", tier)}` : "";
-    const formula = this._buildFormula(topDice, greaterDice, totalMod, chargesExtra + ssExtra + ragingExtra + surgingExtra + synthExtra);
+    const formula = this._buildFormula(topDice, greaterDice, totalMod, chargesExtra + ssExtra + ragingExtra + surgingExtra + synthExtra + this._extraDicePool(system, "wound"));
 
     let damageCat = profileInfo.damageCat || "Standard";
     if (tech.profile === "Mega Flare" && charges >= 7) damageCat = "Direct";
@@ -1381,6 +1391,18 @@ export class DBUCharacterSheet extends ActorSheet {
   }
 
   /**
+   * Surging State Wound Extra Dice: base 1d4(T); the "Surging Dice Size" buff
+   * bumps the die category and "Surging Extra Dice" adds flat dice on top —
+   * both aptitudes were previously computed but never consumed.
+   */
+  _surgingWoundDice(system, tier) {
+    const chain = ["d4", "d6", "d8", "d10", "d12"];
+    const cat = Math.max(0, Math.min(system.aptitudes?.surgingDiceSize || 0, chain.length - 1));
+    const count = tier + (system.aptitudes?.surgingExtraDice || 0);
+    return `${count}${chain[cat]}`;
+  }
+
+  /**
    * Unified Critical Targets for combat rolls. Aggregates:
    * - Talents: Focused Strike / Powerful Strike / Instinctual Evasion (-1 each),
    *   Critical Specialist (-1 Strike, Armed Attacks only)
@@ -1401,6 +1423,12 @@ export class DBUCharacterSheet extends ActorSheet {
     let strikeCT = 10 - mindful - (Number(apt.strikeCTBonus) || 0);
     if (talents.includes("focused_strike")) strikeCT -= 1;
     if (talents.includes("critical_specialist") && isWeapon) strikeCT -= 1;
+    // Per-foundation Strike CT buffs ("Strike CT (Physical/Energy/Magic)") —
+    // previously computed but never applied (the wound mirror below was).
+    const perFoundationStrike = {
+      Physical: apt.strikeCTPhysical, Energy: apt.strikeCTEnergy, Magic: apt.strikeCTMagic
+    }[foundation];
+    strikeCT -= Number(perFoundationStrike) || 0;
 
     let woundCT = 10 - mindful - (Number(apt.woundCTBonus) || 0);
     if (talents.includes("powerful_strike")) woundCT -= 1;
@@ -1722,8 +1750,26 @@ export class DBUCharacterSheet extends ActorSheet {
         ? t.structuredTraits
         : (catEntry?.traitGroups ? JSON.parse(JSON.stringify(catEntry.traitGroups)) : []);
       const effectCount = structuredTraits.reduce((n, g) => n + (g.effects ? g.effects.length : 0), 0);
-      // Resolve aspects: prefer stored, fallback to catalog
-      const aspects = (t.aspects && t.aspects.length > 0) ? t.aspects : (catEntry?.aspects || []);
+      // Resolve aspects: prefer stored, fallback to catalog. Mastered rows
+      // display the POST-mastery aspect list even while inactive (the
+      // actor-side mastery filter only runs for active forms). Metamorphosis
+      // rows storing the pre-fix ["Natural","Dedicated"] are stale → catalog.
+      const _staleMeta = ["limited_suppression", "partial_suppression", "true_form"].includes(t.catalogKey)
+        && Array.isArray(t.aspects) && t.aspects.length === 2
+        && t.aspects.includes("Natural") && t.aspects.includes("Dedicated");
+      let aspects = (t.aspects && t.aspects.length > 0 && !_staleMeta) ? [...t.aspects] : [...(catEntry?.aspects || [])];
+      if (t.mastered && t.catalogKey) {
+        const _mCat = (CONFIG.DBU?.masteryEffectsCatalog ?? {})[t.catalogKey];
+        if (_mCat?.aspectsToRemove?.length) {
+          const _rm = _mCat.aspectsToRemove.map(r => r.toLowerCase());
+          aspects = aspects.filter(a => !_rm.some(r => String(a).toLowerCase().includes(r)));
+        }
+        if (_mCat?.aspectsToAdd?.length) {
+          for (const _add of _mCat.aspectsToAdd) {
+            if (!aspects.some(a => String(a).toLowerCase().includes(_add.toLowerCase()))) aspects.push(_add);
+          }
+        }
+      }
       const entry = {
         ...t,
         transIndex: i,
@@ -1820,7 +1866,19 @@ export class DBUCharacterSheet extends ActorSheet {
               ? st.structuredTraits
               : (catEntry?.traitGroups ? JSON.parse(JSON.stringify(catEntry.traitGroups)) : []);
             const effectCount = sTraits.reduce((n, g) => n + (g.effects ? g.effects.length : 0), 0);
-            const aspects = (st.aspects && st.aspects.length > 0) ? st.aspects : (catEntry?.aspects || []);
+            let aspects = (st.aspects && st.aspects.length > 0) ? [...st.aspects] : [...(catEntry?.aspects || [])];
+            if (st.mastered && st.catalogKey) {
+              const _gmCat = (CONFIG.DBU?.masteryEffectsCatalog ?? {})[st.catalogKey];
+              if (_gmCat?.aspectsToRemove?.length) {
+                const _grm = _gmCat.aspectsToRemove.map(r => r.toLowerCase());
+                aspects = aspects.filter(a => !_grm.some(r => String(a).toLowerCase().includes(r)));
+              }
+              if (_gmCat?.aspectsToAdd?.length) {
+                for (const _gadd of _gmCat.aspectsToAdd) {
+                  if (!aspects.some(a => String(a).toLowerCase().includes(_gadd.toLowerCase()))) aspects.push(_gadd);
+                }
+              }
+            }
 
             const gainedEntry = {
               ...foundry.utils.deepClone(st),
@@ -1988,6 +2046,15 @@ export class DBUCharacterSheet extends ActorSheet {
         for (const dis of (tAura?.disadvantages || [])) {
           if (dis.name === "Tiring") kpEffective += (dis.ranks || 1) * uaTier;
         }
+        // "Ki Point Cost Unique Abilities" buffs (delta; negative = discount),
+        // Magical/Technical variants by ability type, and Deep Control's
+        // all-maneuver reduction — previously dead aptitudes.
+        const uaType = String(data.abilityType || "");
+        kpEffective = Math.max(0, kpEffective
+          + (system.aptitudes?.kiCostUnique || 0)
+          + (/magical/i.test(uaType) ? (system.aptitudes?.kiCostUniqueMagical || 0) : 0)
+          + (/technical/i.test(uaType) ? (system.aptitudes?.kiCostUniqueTechnical || 0) : 0)
+          - (system.aptitudes?.allManeuverKiReduction || 0));
       }
       // Sustained heuristic: effects that require paying the KP Cost each turn
       const isSustained = /pay the (KP|Ki Point) Cost/i.test(data.effect || "");
@@ -2605,7 +2672,7 @@ export class DBUCharacterSheet extends ActorSheet {
 
     const getTopDice = (rollType) => {
       const catBonus = (topCat.global || 0) + (topCat[rollType] || 0);
-      return this._resolveExtraDice(tier, 0, catBonus);
+      return this._applyTopCount(system, rollType, this._resolveExtraDice(tier, 0, catBonus));
     };
 
     // --- Combat State Modifiers ---
@@ -2634,10 +2701,12 @@ export class DBUCharacterSheet extends ActorSheet {
 
     // Raging: +1d4(T) Wound Rolls, Dice Category bumped by the Raging Aspect.
     stateWoundExtra += this._ragingWoundDice(system, tier);
-    // Surging: +1d4(T) Strike & Wound Rolls (vs targeted opponent)
+    // Surging: +1d4(T) Strike & Wound Rolls (vs targeted opponent) — die
+    // category/count adjustable via the Surging buffs (_surgingWoundDice)
     if (combatStates.surging) {
-      stateStrikeExtra += `+${tier}d4`;
-      stateWoundExtra += `+${tier}d4`;
+      const surgingDice = this._surgingWoundDice(system, tier);
+      stateStrikeExtra += `+${surgingDice}`;
+      stateWoundExtra += `+${surgingDice}`;
     }
     // Mindful: -1(T) Wound Rolls
     if (combatStates.mindful) stateWoundMod -= tier;
@@ -2769,7 +2838,14 @@ export class DBUCharacterSheet extends ActorSheet {
         awareness = Math.floor(awareness * 3 / 4);
       }
       const strikePenShaken = isShaken ? 2 * tier : 0;
-      const strikePenLR = (targetRange >= 9) ? 2 * baseTier : 0;
+      // Long Range threshold: 9 + sizes-above-Large + "Long Range Distance"
+      // buff (status.longRangeNumeric — the hardcoded 9 ignored both).
+      // Poor Eyesight L2 (custom species flaw): −1(T) Combat Rolls vs Long
+      // Range targets (longRangeCombatRollPenalty was written but never read).
+      const lrThreshold = system.status?.longRangeNumeric || 9;
+      const isAtLongRange = targetRange >= lrThreshold;
+      const lrEyesightPen = isAtLongRange ? (system.aptitudes?.longRangeCombatRollPenalty || 0) : 0;
+      const strikePenLR = (isAtLongRange ? 2 * baseTier : 0) + lrEyesightPen;
       // Diminishing Offense is NOT baked into the prep formula — it's applied
       // dynamically at roll time from the auto attack counter (see
       // _onRollTrackerAttack), so the same formula stays valid all round.
@@ -2788,6 +2864,10 @@ export class DBUCharacterSheet extends ActorSheet {
       const isUnarmed = ref.foundation === "Physical" && !wItem;
       const unarmedStrikeBuff = isUnarmed ? (system.aptitudes?.unarmedStrike || 0) : 0;
       let unarmedWoundBuff = isUnarmed ? (system.aptitudes?.unarmedWound || 0) : 0;
+      // "Armed Strike/Wound" custom buffs — apply when a weapon IS selected
+      // (mirror of the unarmed pair; aptitudes were written but never read).
+      const armedStrikeBuff = wItem ? (system.aptitudes?.armedStrike || 0) : 0;
+      const armedWoundBuff = wItem ? (system.aptitudes?.armedWound || 0) : 0;
 
       // Close Range Shot / Far Shot: range-gated Wound on Unarmed Energy/Magic
       // attacks (gate on the ref's Target Range vs melee reach).
@@ -2803,8 +2883,8 @@ export class DBUCharacterSheet extends ActorSheet {
           unarmedWoundBuff += (targetRange >= 8 ? 3 : 1) * tier;
         }
       }
-      const strikeMod = haste + awareness - strikePenShaken - strikePenLR - eqPenalty - ssPenStrike + strikeBuffTotal + stateAllMod + foundationStrikeBuff + weaponStrikeMod + unarmedStrikeBuff;
-      const strikeFormula = this._buildFormula(strikeTopDice, strikeGreaterDice, strikeMod, stateStrikeExtra);
+      const strikeMod = haste + awareness - strikePenShaken - strikePenLR - eqPenalty - ssPenStrike + strikeBuffTotal + stateAllMod + foundationStrikeBuff + weaponStrikeMod + unarmedStrikeBuff + armedStrikeBuff;
+      const strikeFormula = this._buildFormula(strikeTopDice, strikeGreaterDice, strikeMod, stateStrikeExtra + this._extraDicePool(system, "strike"));
 
       // --- WOUND ---
       const isMagic = ref.foundation === "Magic";
@@ -2821,7 +2901,7 @@ export class DBUCharacterSheet extends ActorSheet {
         Energy: system.aptitudes?.woundEnergy,
         Magic: system.aptitudes?.woundMagic
       }[ref.foundation]) || 0;
-      const woundMod = damageAttr + extraDmgAttr + wager + woundPSBonus + auraWoundBonus + stateWoundMod + stateAllMod + woundBuffTotal + foundationWoundBuff + weaponWoundMod + unarmedWoundBuff;
+      const woundMod = damageAttr + extraDmgAttr + wager + woundPSBonus + auraWoundBonus + stateWoundMod + stateAllMod + woundBuffTotal + foundationWoundBuff + weaponWoundMod + unarmedWoundBuff + armedWoundBuff - lrEyesightPen;
       // Attack Refs are Basic Attacking Maneuvers (not Signature Techniques),
       // so per attacking.txt:31 each Energy Charge adds 1d6(T) to the Wound Roll
       // (Sig Techs use d8 — handled separately in _calcTechWound).
@@ -2833,7 +2913,7 @@ export class DBUCharacterSheet extends ActorSheet {
       // Synthetic Muscle (cybernetic trait): +1d4(T) Wound on Physical/Energy attacks
       const cyberSynthExtra = (system._cyberSynthWoundDice && (ref.foundation === "Physical" || ref.foundation === "Energy"))
         ? `+${this._scaleDiceByTier("1d4", tier)}` : "";
-      const woundFormula = this._buildFormula(woundTopDice, woundGreaterDice, woundMod, chargesStr + ssWoundExtra + stateWoundExtra + cyberSynthExtra);
+      const woundFormula = this._buildFormula(woundTopDice, woundGreaterDice, woundMod, chargesStr + ssWoundExtra + stateWoundExtra + cyberSynthExtra + this._extraDicePool(system, "wound"));
       let damageCat = profile.damageCat || "Standard";
       // Mega Flare: 7+ charges → upgrade damage category
       if (ref.profile === "Mega Flare" && charges >= 7) {
@@ -2857,7 +2937,7 @@ export class DBUCharacterSheet extends ActorSheet {
       // Unified dodge buff total (talents, states, maneuvers, custom buffs)
       const dodgeBuffTotal = system.aptitudes?.dodgeBuffTotal ?? 0;
       const dodgeMod = dv - ssPenDodge + dodgeBuffTotal + stateAllMod;
-      const dodgeFormula = this._buildFormula(dodgeTopDice, dodgeGreaterDice, dodgeMod);
+      const dodgeFormula = this._buildFormula(dodgeTopDice, dodgeGreaterDice, dodgeMod, this._extraDicePool(system, "dodge"));
 
       // --- DUEL CLASH ---
       const bestAttr = Math.max(fo, ma);
@@ -2924,6 +3004,32 @@ export class DBUCharacterSheet extends ActorSheet {
     const DICE_CAT = ["", "1d4", "1d6", "1d8", "1d10", "1d10+1d4", "1d10+1d6", "1d10+1d8", "2d10", "2d10+1d4", "2d10+1d6", "2d10+1d8", "3d10", "3d10+1d4", "3d10+1d6"];
     const idx = Math.max(0, Math.min(DICE_CAT.length - 1, (tier - 1) + baseStep + catBonus));
     return DICE_CAT[idx];
+  }
+
+  /**
+   * "Extra dN (Combat Rolls/Strike/Dodge/Wound)" custom buffs — flat dice
+   * appended to a roll formula (the pools were computed in actor prep but
+   * never consumed). Returns e.g. "+2d6+1d10" or "".
+   */
+  _extraDicePool(system, rollType) {
+    const ed = system.dicePools?.extraDice || {};
+    let out = "";
+    for (const die of ["d4", "d6", "d8", "d10"]) {
+      const n = (ed.combatRolls?.[die] || 0) + (ed[rollType]?.[die] || 0);
+      if (n > 0) out += `+${n}${die}`;
+    }
+    return out;
+  }
+
+  /**
+   * "ToP Extra Dice (All/Strike/Dodge/Wound)" custom buffs — apply the ToP
+   * Extra Dice pool additional times (topApplyCount was written but never
+   * consumed; global already includes the base 1).
+   */
+  _applyTopCount(system, rollType, topDice) {
+    const ta = system.dicePools?.topApplyCount || {};
+    const applies = Math.max(1, (ta.global || 1) + (ta[rollType] || 0));
+    return (topDice && applies > 1) ? Array(applies).fill(topDice).join("+") : topDice;
   }
 
   _buildFormula(topDice, greaterDice, mod, extra = "") {
@@ -3200,10 +3306,12 @@ export class DBUCharacterSheet extends ActorSheet {
     for (const id of talentIds) {
       const talent = talentCatalog.find(t => t.id === id);
       if (!talent) continue;
-      const talentKey = talent.name.toLowerCase().replace(/[^a-z0-9]/g, "_");
+      // Use the CATALOG id — applyTalentBonuses reads `talent_${id}_${level}`;
+      // deriving the key from the display name diverged for names with
+      // apostrophes (Lion's Heart → "lion_s_heart" vs id "lions_heart").
       for (const eff of (talent.effects || [])) {
         if (["option", "multi-option", "choice"].includes(eff.activationType)) continue;
-        const effectId = `talent_${talentKey}_${eff.level || 0}`;
+        const effectId = `talent_${id}_${eff.level || 0}`;
         const effectType = eff.activationType || "passive";
         const maxUses = eff.maxUses || (effectType === "limited" ? 1 : 0);
         const usageLimit = eff.usageLimit || null;
@@ -3603,6 +3711,12 @@ export class DBUCharacterSheet extends ActorSheet {
           if (dis.name === "Tiring") kiCost += (dis.ranks || 1) * trackerTier;
         }
       }
+      // "Ki Point Cost Attacks" buffs (delta; negative = discount) and Deep
+      // Control's all-maneuver reduction — previously dead aptitudes.
+      kiCost = Math.max(0, kiCost
+        + (system.aptitudes?.kiCostAttacks || 0)
+        + (system.aptitudes?.kiCostAttacksNoCap || 0)
+        - (system.aptitudes?.allManeuverKiReduction || 0));
       const prep = prepRefs[i] || {};
       // Unified CTs — includes talents (Focused Strike, Critical Specialist for
       // armed attacks), Mindful state, and CT buffs. Fixes the old fallback that
@@ -3647,7 +3761,12 @@ export class DBUCharacterSheet extends ActorSheet {
       stSources.push({
         key: `tech_${tech.id}`,
         name: tech.name,
-        kiCost: (tech.finalKP || 0) * trackerTier,
+        // finalKP×tier plus the "Ki Point Cost Attacks" buff deltas and Deep
+        // Control's all-maneuver reduction (previously dead aptitudes)
+        kiCost: Math.max(0, (tech.finalKP || 0) * trackerTier
+          + (system.aptitudes?.kiCostAttacks || 0)
+          + (system.aptitudes?.kiCostAttacksNoCap || 0)
+          - (system.aptitudes?.allManeuverKiReduction || 0)),
         strikeFormula: tech.strikeFormula || "",
         woundFormula: tech.woundFormula || "",
         strikeCT: tech.strikeCT || 10,
@@ -3734,6 +3853,9 @@ export class DBUCharacterSheet extends ActorSheet {
             .map((t, idx) => ({ t, idx }))
             .filter(({ t }) => {
               if (t.active) return false;
+              // Metamorphosis stages are usable below their S+1 requirement
+              // (Weakest State L2 applies penalties instead of blocking entry).
+              if (["full_suppression", "limited_suppression", "partial_suppression", "true_form"].includes(t.catalogKey)) return true;
               const req = parseInt(String(t.tierRequirement || "").match(/(\d+)/)?.[1] || "0");
               return req <= (system.tier || 1);
             })
@@ -4032,7 +4154,7 @@ export class DBUCharacterSheet extends ActorSheet {
 
     const resolveTop = (rollType) => {
       const catBonus = (topCat.global || 0) + (topCat[rollType] || 0);
-      return this._resolveExtraDice(tier, 0, catBonus);
+      return this._applyTopCount(system, rollType, this._resolveExtraDice(tier, 0, catBonus));
     };
     const isImpediment = (system.conditions || []).some(c => c.id === "impediment" && c.active);
     const resolveGreater = (rollType) => {
@@ -4577,12 +4699,13 @@ export class DBUCharacterSheet extends ActorSheet {
     for (const id of talentIds) {
       const talent = talentCatalog.find(t => t.id === id);
       if (!talent) continue;
-      const talentKey = talent.name.toLowerCase().replace(/[^a-z0-9]/g, "_");
+      // Catalog id (not name-derived) — must match the effect-panel/automation
+      // `talent_${id}_${level}` format (Lion's Heart apostrophe divergence).
       for (const eff of (talent.effects || [])) {
         if (["option", "multi-option", "choice"].includes(eff.activationType)) continue;
         const isTrackable = ["limited", "triggered"].includes(eff.activationType);
         resources.push({
-          id: `talent_${talentKey}_${eff.level || 0}`,
+          id: `talent_${id}_${eff.level || 0}`,
           sourceName: talent.name,
           sourceType: "talent",
           level: eff.level || 0,
@@ -6329,6 +6452,7 @@ export class DBUCharacterSheet extends ActorSheet {
 
     // Player Minion (Main tab)
     html.on("click", "[data-action='add-player-minion-trait']", this._onAddPlayerMinionTrait.bind(this));
+    html.on("click", "[data-action='create-duplicate-minion']", this._onCreateDuplicateMinion.bind(this));
     html.on("click", "[data-action='delete-player-minion-trait']", this._onDeletePlayerMinionTrait.bind(this));
     html.on("change", ".pm-trait-option", async (event) => {
       const traitId = event.currentTarget.dataset.traitId;
@@ -7470,6 +7594,52 @@ export class DBUCharacterSheet extends ActorSheet {
       }
     }, { width: 520, height: 500, classes: ["dbu-old", "talent-selector-dialog"] });
     dlg.render(true);
+  }
+
+  /**
+   * Create a Duplicate Minion (minions.txt:38 / Multi-Form Technique): clone
+   * this actor — the clone carries Attributes, Talents, Racial Traits, STs,
+   * Auras, UAs and Transformations with their Option selections, and if the
+   * Master is transformed the copy is created transformed — then flag it as
+   * an enabled Duplicate Minion so the Minion Rules automation applies.
+   * Snapshot only: it does NOT sync with later changes to the Master.
+   */
+  async _onCreateDuplicateMinion(event) {
+    event.preventDefault();
+    if (!game.user.can("ACTOR_CREATE")) {
+      ui.notifications.warn("You don't have permission to create Actors — ask your GM to press this button (or to grant Actor creation).");
+      return;
+    }
+    const src = this.actor.toObject();
+    // Numbered name (Mass Multi-Form allows up to 3 Duplicates)
+    const base = `${this.actor.name} (Duplicate`;
+    const count = game.actors.filter(a => a.name.startsWith(base)).length;
+    src.name = count > 0 ? `${base} ${count + 1})` : `${base})`;
+    if (src.prototypeToken) src.prototypeToken.name = src.name;
+    const sys = src.system;
+    // Duplicate + Minion Rules flags (Minion Traits blocked by isDuplicate)
+    sys.minion = { enabled: true, isDuplicate: true, isMinionRace: false, masterName: this.actor.name, traits: [], traitOptions: {} };
+    // The rule copies the CHARACTER, not their current combat round — clear
+    // transient combat state ({} lets the schema refill its defaults).
+    sys.customBuffs = [];
+    sys.conditions = (sys.conditions || []).map(c => ({ ...c, active: false, stacks: 0, roundApplied: null }));
+    sys.combatStates = {};
+    sys.tracking = {};
+    sys.combatTabState = {};
+    sys.effectTracking = { enabledPassives: sys.effectTracking?.enabledPassives ?? {}, usedEffects: { round: {}, encounter: {} } };
+    // Links are NOT copied: Battle Jacket (bidirectional ids) and fusion state
+    sys.pilotedJacketId = "";
+    sys.fusion = {};
+    const dup = await Actor.create(src);
+    if (!dup) return;
+    // Fill current LP/KP to the minion-rule maxima (LP÷5 — or ÷2 for Minion
+    // Races — and KP÷2 are derived on the new actor's prepared data).
+    await dup.update({
+      "system.lifePoints.value": dup.system.lifePoints?.max ?? 0,
+      "system.kiPool.value": dup.system.kiPool?.max ?? 0
+    });
+    ui.notifications.info(`Duplicate Minion "${dup.name}" created. Remember the manual bits: Master's ToP −1 while it exists (Multi-Form), defeat on a failed Steadfast Check, and it cannot target its Master as an Ally.`);
+    dup.sheet.render(true);
   }
 
   async _onDeletePlayerMinionTrait(event) {
@@ -17328,7 +17498,10 @@ export class DBUCharacterSheet extends ActorSheet {
         for (const [key, entry] of Object.entries(catalog)) {
           if (owned.has(key)) continue;
           const reqTier = parseInt(String(entry.tierRequirement || "1")) || 1;
-          if (reqTier > tier) continue;
+          // Metamorphosis stages: printed ACCESS requirement is 1+ (the S+1
+          // values in tierRequirement are Weakest State's "for all effects").
+          const isMetaStage = ["full_suppression", "limited_suppression", "partial_suppression", "true_form"].includes(key);
+          if (reqTier > tier && !isMetaStage) continue;
           if (!this._meetsRacialRequirement(system.race, entry.racialRequirement)) continue;
           options.push([key, `${entry.name} (${entry.category || ""}, ToP ${entry.tierRequirement || "1+"})`]);
         }

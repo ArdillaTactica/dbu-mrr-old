@@ -41,9 +41,14 @@ export function computeDuelSide(actor, { mode = "clash", ec = 0, ps = 0, foundat
   let dice = "1d10";
   let mod = 0;
 
+  // "Duel Clash Bonus" custom buff — applies to both Power Duels and Duel
+  // Clashes (previously computed in actor.mjs but never consumed).
+  const duelClashBuff = Number(system.aptitudes?.duelClashBonus) || 0;
+
   if (mode === "power") {
     mod = system.status?.mightForClashes ?? system.status?.might ?? 0;
     breakdown.push(`Might +${mod}`);
+    if (duelClashBuff) { mod += duelClashBuff; breakdown.push(`Duel Clash Buff +${duelClashBuff}`); }
   } else {
     // Base Die + the Wound Roll's Tier of Power Extra Dice (rule: "Any Tier of
     // Power Extra Dice that would be applied to the Wound Roll of the
@@ -77,6 +82,7 @@ export function computeDuelSide(actor, { mode = "clash", ec = 0, ps = 0, foundat
     if (smallStates > 0) breakdown.push(`States(1T) +${tier * smallStates}`);
     if (powerStacks + bbWound > 0) breakdown.push(`Wound res. +${tier * (powerStacks + bbWound)}`);
     mod += tier * smallTotal;
+    if (duelClashBuff) { mod += duelClashBuff; breakdown.push(`Duel Clash Buff +${duelClashBuff}`); }
   }
 
   const woundCT = sheet._calcCombatCTs(system, { foundation }).woundCT;

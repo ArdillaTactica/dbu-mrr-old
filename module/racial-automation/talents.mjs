@@ -67,13 +67,17 @@ export function applyTalentBonuses(system, tier, baseTier) {
   for (const id of talents) {
     const entry = { name: id, catalogKey: id, bonuses: [], conditionals: [], triggered: [], perRound: [] };
 
-    // Check if any passive effect for this talent is disabled via the effect panel toggle
+    // Check if any passive effect for this talent is disabled via the effect
+    // panel toggle. NOTE: this is all-or-nothing per talent (the snapshot
+    // restore undoes EVERY stat the talent applied) — talents whose case
+    // handles its own per-effect toggles (resilience) are excluded.
+    const SELF_TOGGLED = ["resilience"];
     const catEntry = catalog.find(t => t.id === id);
-    const passiveDisabled = catEntry?.effects?.some(eff => {
+    const passiveDisabled = !SELF_TOGGLED.includes(id) && (catEntry?.effects?.some(eff => {
       if ((eff.activationType || "passive") !== "passive") return false;
       const effectId = `talent_${id}_${eff.level || 0}`;
       return enabledPassives[effectId] === false;
-    }) ?? false;
+    }) ?? false);
 
     // Snapshot before applying — if passive is disabled we restore after
     const snap = passiveDisabled ? _takeSnapshot(system) : null;
@@ -154,9 +158,17 @@ function applyBonusesForTalent(id, system, tier, baseTier, talentSet, tempMods, 
   switch (id) {
     // ========== CATEGORY A: Flat Numeric Bonuses ==========
     case "resilience": {
-      addSoak(system, baseTier);
-      totals.soak += baseTier;
-      entry.bonuses.push(`+${baseTier} Soak (Resilience)`);
+      // Self-managed per-effect toggle (excluded from the global snapshot
+      // mechanism): the L1 Soak passive only turns off via ITS OWN effect
+      // toggle — disabling the L2 surge display must not kill the Soak.
+      const _resSoakOff = system.effectTracking?.enabledPassives?.["talent_resilience_1"] === false;
+      if (!_resSoakOff) {
+        addSoak(system, baseTier);
+        totals.soak += baseTier;
+        entry.bonuses.push(`+${baseTier} Soak (Resilience)`);
+      } else {
+        entry.conditionals.push(`(Off) +${baseTier} Soak (Resilience)`);
+      }
       // Lv2: display-only surge bonus
       entry.conditionals.push(`Healing Surge/Combat Recovery LP +1d4(${tier})`);
       break;
@@ -1782,6 +1794,18 @@ function applyBonusesForTalent(id, system, tier, baseTier, talentSet, tempMods, 
       break;
     }
     case "vigor": {
+      // "For each Health Threshold you are below, increase your Soak Value
+      // and Defense Value by 1(bT)" — crossedCount is computed in
+      // _calculateThresholds (runs before talent automation).
+      const _vigorCrossed = system.thresholds?.crossedCount || 0;
+      if (_vigorCrossed > 0) {
+        const _vigorAmt = _vigorCrossed * baseTier;
+        addSoak(system, _vigorAmt);
+        totals.soak += _vigorAmt;
+        system.aptitudes.defenseValue = (system.aptitudes.defenseValue || 0) + _vigorAmt;
+        totals.defense += _vigorAmt;
+        entry.bonuses.push(`+${_vigorAmt} Soak & Defense (Vigor: ${_vigorCrossed} Threshold${_vigorCrossed > 1 ? "s" : ""} below)`);
+      }
       entry.conditionals.push(`Per Health Threshold below current max: +${baseTier} Soak and +${baseTier} Defense`);
       break;
     }

@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.10] - 2026-08-14
+
+- Mejoras en los catálogos de efectos de maestría (`mastery-effects`),
+  transformaciones (`transformations`) y habilidades únicas
+  (`unique-abilities`).
+- Correcciones y mejoras en el sistema de duelos.
+- Mejoras en la automatización de talentos y en la lógica del actor.
+- Correcciones en la hoja de personaje y en la pestaña de secuaces.
+
 ## [1.0.9] - 2026-08-14
 
 - Nueva pestaña de secuaces (`tab-minion`) en la hoja de personaje.

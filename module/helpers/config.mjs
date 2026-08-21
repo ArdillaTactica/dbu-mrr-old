@@ -1049,6 +1049,8 @@ export function registerConfig() {
       // Dice Categories
       "Energy Charge Dice Category", "Signature Energy Charge Dice Category",
       "Raging Dice Size", "Surging Dice Size", "Superior Dice Size", "Attacking Damage Category",
+      // Surges
+      "Healing Surge", "Power Surge",
       // Other
       "Ignore Transformation Lite", "I'm being Bludgeoned"
     ],

@@ -19,6 +19,16 @@
     <div class="minion-rules-note">
       <b>Creating a Minion (minions.txt):</b> outside of combat (over a day, ARC permission), spend 2 Karma Points (−1 per 2 Skill Ranks of Science, Persuasion or Use Magic — whichever is highest). Build the Minion as a character of your Power Level following Minion Creation, then tick the checkbox above on ITS sheet.
     </div>
+    <div class="minion-traits-block">
+      <div class="minion-traits-header">
+        <span>Duplicate Minion <span class="minion-trait-hint" title="Duplicates copy their Master's Attributes, Talents, Racial Traits, Signature Techniques, Auras, Unique Abilities and Transformations (with the same Options), then apply the Minion Rules. They cannot gain Minion Traits (minions.txt:38)">(Multi-Form Technique, etc.)</span></span>
+        <button type="button" class="add-btn" data-action="create-duplicate-minion" title="Create a Duplicate Minion: an exact copy of this character with the Minion Rules + Duplicate flag applied"><i class="fas fa-clone"></i></button>
+      </div>
+      <div class="minion-rules-note">
+        Creates a snapshot copy — re-create the Duplicate if this character changes (Growing Minions).
+        Manual rules: the Master's ToP −1 while a Multi-Form Duplicate exists (use a custom buff / Holding Back), Duplicates defeated on a failed Steadfast Check, erasing them as an Instant Maneuver, and a Duplicate cannot target its Master or fellow Duplicates as Allies.
+      </div>
+    </div>
     {{/unless}}
     {{#if system.minion.enabled}}
     <div class="minion-pm-config">

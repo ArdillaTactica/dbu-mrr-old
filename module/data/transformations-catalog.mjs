@@ -4749,7 +4749,7 @@ export const TRANSFORMATIONS_CATALOG = {
     stressTest: 0,
     maxStacks: 0,
     attrBonuses: {"ag":"*","fo":"*","te":"*","sc":"–","in":"–","ma":"*","pe":"–"},
-    aspects: ["Variant ( Evil Aura )", "�Graded", "Enhanced Save (Cognitive)", "Transcendent", "Raging (LV1)"],
+    aspects: ["Variant ( Evil Aura )", "Graded", "Enhanced Save (Cognitive)", "Transcendent", "Raging (LV1)"],
     traitGroups: [
       {
         name: "Dark Saiya Power (Villainous Form)",
@@ -8680,11 +8680,13 @@ export const TRANSFORMATIONS_CATALOG = {
     category: "form_alternate",
     racialRequirement: "Arcosian",
     prerequisites: "Mutant Option of Divergent Evolution",
-    tierRequirement: "1+",
+    // Manual prints "1+" (access), but Weakest State treats the requirement as
+    // S+1 "for all effects" (stage 1 → 2). Access gates exempt Metamorphosis.
+    tierRequirement: "2+",
     stressTest: 12,
     maxStacks: 0,
     attrBonuses: {"ag":"+1(T)","fo":"+1(T)","te":"+1(T)","sc":"–","in":"+1(T)","ma":"+1(T)","pe":"–"},
-    aspects: ["Natural", "Dedicated"],
+    aspects: ["Enhanced Save (Corporeal/Impulsive)", "High Speed (LV1)", "Draining (LV1)", "Power High (LV1)", "Dedicated"],
     traitGroups: [
       {
         name: "Death Strike",
@@ -8715,11 +8717,12 @@ export const TRANSFORMATIONS_CATALOG = {
     category: "form_alternate",
     racialRequirement: "Arcosian",
     prerequisites: "Mutant Option of Divergent Evolution",
-    tierRequirement: "1+",
+    // Weakest State: requirement is S+1 for all effects (stage 2 → 3).
+    tierRequirement: "3+",
     stressTest: 17,
     maxStacks: 0,
     attrBonuses: {"ag":"+2(T)","fo":"+2(T)","te":"+2(T)","sc":"–","in":"+1(T)","ma":"+2(T)","pe":"–"},
-    aspects: ["Natural", "Dedicated"],
+    aspects: ["Enhanced Save (Corporeal/Impulsive)", "High Speed (LV2)", "Draining (LV1)", "Power High (LV2)", "Dedicated"],
     traitGroups: [
       {
         name: "Bursting Power",
@@ -8749,11 +8752,12 @@ export const TRANSFORMATIONS_CATALOG = {
     category: "form_alternate",
     racialRequirement: "Arcosian",
     prerequisites: "Mutant Option of Divergent Evolution",
-    tierRequirement: "1+",
+    // Weakest State: requirement is S+1 for all effects (stage 3 → 4).
+    tierRequirement: "4+",
     stressTest: 22,
     maxStacks: 0,
     attrBonuses: {"ag":"+3(T)","fo":"+3(T)","te":"+3(T)","sc":"–","in":"+1(T)","ma":"+3(T)","pe":"–"},
-    aspects: ["Natural", "Dedicated"],
+    aspects: ["Enhanced Save (Corporeal/Impulsive)", "High Speed (LV3)", "Draining (LV2)", "Power High (LV3)", "Long Transformation (LV2)", "Dedicated", "Exhausting"],
     traitGroups: [
       {
         name: "100% Power",
@@ -13146,7 +13150,7 @@ export const TRANSFORMATIONS_CATALOG = {
     stressTest: 30,
     maxStacks: 0,
     attrBonuses: {"ag":"+5(T)","fo":"+5(T)","te":"+5(T)","sc":"–","in":"+2(T)","ma":"+5(T)","pe":"–"},
-    aspects: ["God Ki", "Graded", "Perfect Ki Control", "Variant ( Super Saiyan Ros� )", "Enhanced Save (Impulsive/Corporeal)", "High Speed (LV3)", "Strainless", "Glowing", "Light Dependent", "Difficult (LV1)"],
+    aspects: ["God Ki", "Graded", "Perfect Ki Control", "Variant ( Super Saiyan Rosé )", "Enhanced Save (Impulsive/Corporeal)", "High Speed (LV3)", "Strainless", "Glowing", "Light Dependent", "Difficult (LV1)"],
     traitGroups: [
       {
         name: "God of Another World (Deific Saiyan)",

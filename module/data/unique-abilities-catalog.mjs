@@ -206,7 +206,7 @@ export const UNIQUE_ABILITIES_DATA = {
         name: "Ki Deception",
         prerequisites: "2+ Skill Ranks in Bluff",
         tpCost: 10,
-        effect: "Instead of the Movement Maneuver, you may use the Basic Attack Maneuver through the effects of Down Burst. If you do, and the Attacking Maneuver targets only one Opponent, make a Clash (Bluff vs Perception/Clairvoyance) against that Opponent. If you win, apply an Energy Charge to that Attacking Maneuver."
+        effect: "Instead of the Movement Maneuver, you may use the Basic Attack Maneuver through the effects of Down Burst. If you do, and the Attacking Maneuver targets only one Opponent, make a Clash (Bluff vs Perception/Intuition) against that Opponent. If you win, apply an Energy Charge to that Attacking Maneuver."
       }
     ],
     restrictions: []
